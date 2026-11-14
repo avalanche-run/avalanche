@@ -229,20 +229,6 @@ function mapRunLinks(value: unknown): RunLinks {
 }
 
 export interface OperatorApi {
-  /**
-   * The host's live run statuses: a run in one of them is still changing, so its
-   * page shows no snapshot banner, offers Cancel and keeps its machine reads fresh.
-   * Every other status is settled. Defaults to the local operator's statuses
-   * (`requesting`, `pending`, `running`, `waiting`, `interrupted`, `needs_attention`).
-   */
-  readonly liveRunStatuses?: readonly string[];
-  /**
-   * The host's terminal outcomes: a settled run whose status is one of them shows
-   * `Terminal: <status>` when the host reports no terminal seal. Any other settled
-   * status (a sentinel such as `unknown`) shows no outcome. Defaults to the local
-   * operator's outcomes (`success`, `failed`, `cancelled`).
-   */
-  readonly terminalRunStatuses?: readonly string[];
   // Optional capabilities. Run IDs address reads; adapters resolve their host's key/scope.
   getMachineInstance?(runId: string, signal?: AbortSignal): Promise<MachineInstance>;
   getMachineHistory?(
@@ -1488,10 +1474,12 @@ export class GrpcWebOperatorApi implements OperatorApi {
       }
       case "runStatusChanged": {
         const summary = payload.runStatusChanged.summary;
+        if (!summary) throw new Error("Run status update omitted its summary");
         return update({
           oneofKind: "runStatusChanged",
           runStatusChanged: {
-            runId: summary?.runId ?? "",
+            summary: mapRunSummary(summary),
+            runId: summary.runId,
             status: summary?.status ?? "",
             startedAt: summary?.startedAt ?? 0,
             endedAt: summary?.endedAt ?? 0,
@@ -1651,6 +1639,20 @@ function mapRunSummary(summary: RunSummaryV2): RunSummaryMsg {
     runId: summary.runId,
     flowName: summary.workflowSelector,
     status: summary.status,
+    lifecycle: summary.lifecycle,
+    kind: summary.kind,
+    waitingOn: summary.waitingOn
+      ? [
+          summary.waitingOn.operator,
+          summary.waitingOn.decision,
+          summary.waitingOn.event,
+          summary.waitingOn.run,
+          summary.waitingOn.sleep,
+        ]
+      : undefined,
+    errorCode: summary.errorCode,
+    errorStep: summary.errorStep,
+    errorMessage: summary.errorMessage,
     startedAt: summary.startedAt,
     endedAt: summary.endedAt,
     triggeredBy: mapTriggerKind(summary.triggeredBy),

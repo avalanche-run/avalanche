@@ -41,6 +41,18 @@ def _operator_update(*, sequence: int, change, event_ulid: str | None = None) ->
     )
 
 
+def _summary(status: RunStatus, revision: int) -> RunSummary:
+    return RunSummary(
+        run_id="run-1",
+        flow_name="flow",
+        status=status,
+        workflow_id="flow.py::flow",
+        workflow_display_name="Flow",
+        created_sequence=1,
+        revision=revision,
+    )
+
+
 def _created(sequence: int = 1, *, epoch: str = "operator-1") -> OperatorUpdateEnvelope:
     return OperatorUpdateEnvelope(
         operator_instance_id=epoch,
@@ -78,7 +90,12 @@ def test_ordered_updates_ignore_replays_but_reject_conflicting_or_backwards_even
             operator_instance_id="operator-1",
             update=_operator_update(
                 sequence=2,
-                change=RunStatusChanged("run-1", RunStatus.RUNNING, revision=2),
+                change=RunStatusChanged(
+                    "run-1",
+                    RunStatus.RUNNING,
+                    revision=2,
+                    summary=_summary(RunStatus.RUNNING, 2),
+                ),
             ),
         )
         current, _ = provider._apply_update_envelope(running)
@@ -88,7 +105,13 @@ def test_ordered_updates_ignore_replays_but_reject_conflicting_or_backwards_even
         conflict = dataclasses.replace(
             running,
             update=dataclasses.replace(
-                running.update, change=RunStatusChanged("run-1", RunStatus.FAILED, revision=2)
+                running.update,
+                change=RunStatusChanged(
+                    "run-1",
+                    RunStatus.FAILED,
+                    revision=2,
+                    summary=_summary(RunStatus.FAILED, 2),
+                ),
             ),
         )
         with pytest.raises(_RunUpdateResetError):
@@ -96,7 +119,13 @@ def test_ordered_updates_ignore_replays_but_reject_conflicting_or_backwards_even
         success = dataclasses.replace(
             running,
             update=_operator_update(
-                sequence=4, change=RunStatusChanged("run-1", RunStatus.SUCCESS, revision=4)
+                sequence=4,
+                change=RunStatusChanged(
+                    "run-1",
+                    RunStatus.SUCCESS,
+                    revision=4,
+                    summary=_summary(RunStatus.SUCCESS, 4),
+                ),
             ),
         )
         current, _ = provider._apply_update_envelope(success)
@@ -104,7 +133,13 @@ def test_ordered_updates_ignore_replays_but_reject_conflicting_or_backwards_even
         backwards = dataclasses.replace(
             running,
             update=_operator_update(
-                sequence=3, change=RunStatusChanged("run-1", RunStatus.FAILED, revision=3)
+                sequence=3,
+                change=RunStatusChanged(
+                    "run-1",
+                    RunStatus.FAILED,
+                    revision=3,
+                    summary=_summary(RunStatus.FAILED, 3),
+                ),
             ),
         )
         with pytest.raises(_RunUpdateResetError):

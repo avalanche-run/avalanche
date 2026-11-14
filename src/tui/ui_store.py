@@ -2198,7 +2198,7 @@ class UIStore:
                 or not detail.operator_instance_id
                 or summary.operator_instance_id == detail.operator_instance_id
             )
-            if summary.details_hydrated or not same_epoch:
+            if summary.details_hydrated or detail is None or not same_epoch:
                 merged.append(summary)
                 continue
 
@@ -2214,6 +2214,11 @@ class UIStore:
                 run.operator_instance_id = summary.operator_instance_id
                 run.created_sequence = summary.created_sequence
                 run.revision = summary.revision
+                run.open_waits = summary.waiting_on or (0, 0, 0, 0, 0)
+                run.running_outside_wait = summary.running_outside_wait
+                run.error_code = summary.error_code
+                run.error_step = summary.error_step
+                run.error_message = summary.error_message
             merged.append(run)
         return merged
 

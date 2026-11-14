@@ -417,7 +417,11 @@ describe("operator workflows", () => {
     const started = Promise.withResolvers<void>();
     const prepare = Promise.withResolvers<void>();
     const preparedSnapshot = Promise.withResolvers<RunSnapshotMsg>();
-    const requesting = RunSummaryMsg.create({ ...summary, status: "requesting" });
+    const requesting = RunSummaryMsg.create({
+      ...summary,
+      status: "queued",
+      lifecycle: "requesting",
+    });
     const definition = FlowInfoMsg.create({
       ...workflow,
       nodeIds: ["fetch", "save"],
@@ -460,7 +464,8 @@ describe("operator workflows", () => {
           oneofKind: "runStatusChanged",
           runStatusChanged: {
             runId: requesting.runId,
-            status: "pending",
+            summary: { ...requesting, status: "queued", lifecycle: "pending", revision: "2" },
+            status: "queued",
             startedAt: 0,
             endedAt: 0,
             revision: "2",
@@ -474,7 +479,7 @@ describe("operator workflows", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run" }));
 
     expect(await screen.findByRole("status", { name: "Run preparation" })).toBeVisible();
-    expect(await screen.findByRole("button", { name: /run-1, requesting/ })).toHaveAttribute(
+    expect(await screen.findByRole("button", { name: /run-1, queued/ })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
@@ -495,7 +500,12 @@ describe("operator workflows", () => {
     act(() =>
       preparedSnapshot.resolve(
         RunSnapshotMsg.create({
-          ...snapshotFor({ ...requesting, status: "pending", revision: "2" }),
+          ...snapshotFor({
+            ...requesting,
+            status: "queued",
+            lifecycle: "pending",
+            revision: "2",
+          }),
           asOfEventUlid: eventUlid(3),
           topology: WorkflowTopologyMsg.create({
             ...snapshotFor().topology,
@@ -574,35 +584,30 @@ describe("operator workflows", () => {
   );
 
   it.each([
-    { declared: ["admitted", "parked"], status: "admitted", live: true },
-    { declared: ["admitted", "parked"], status: "running", live: false },
-    { declared: undefined, status: "admitted", live: false },
-    { declared: undefined, status: "waiting", live: true },
-  ])(
-    "reads run status $status as live=$live from the host's live statuses ($declared)",
-    async ({ declared, status, live }) => {
-      // A host with its own run vocabulary (a queue, an admission step) declares which
-      // statuses are live; the run page never hardcodes another host's names.
-      const run = RunSummaryMsg.create({ ...summary, status });
-      const api = createApi({
-        liveRunStatuses: declared,
-        loadBaseline: async () => ({ ...baseline, runs: [run] }),
-        getLatestRunSnapshot: async () => snapshotFor(run),
-      });
-      render(
-        <WorkflowWorkspace
-          api={api}
-          workflowId={workflow.workflowId}
-          navigation={{ selectedRunId: run.runId, onSelectRun: () => undefined }}
-        />,
-      );
-      await screen.findByRole("button", { name: "Inspect Fetch" });
-      await waitFor(() =>
-        expect(screen.queryByRole("button", { name: "Cancel run" }) !== null).toBe(live),
-      );
-      expect(screen.queryByText("Viewing a run snapshot") !== null).toBe(!live);
-    },
-  );
+    { status: "running", live: true },
+    { status: "succeeded", live: false },
+    { status: "queued", live: true },
+    { status: "waiting", live: true },
+  ])("reads human status $status as live=$live", async ({ status, live }) => {
+    // Every host uses the shared human vocabulary, independent of raw lifecycle.
+    const run = RunSummaryMsg.create({ ...summary, status });
+    const api = createApi({
+      loadBaseline: async () => ({ ...baseline, runs: [run] }),
+      getLatestRunSnapshot: async () => snapshotFor(run),
+    });
+    render(
+      <WorkflowWorkspace
+        api={api}
+        workflowId={workflow.workflowId}
+        navigation={{ selectedRunId: run.runId, onSelectRun: () => undefined }}
+      />,
+    );
+    await screen.findByRole("button", { name: "Inspect Fetch" });
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Cancel run" }) !== null).toBe(live),
+    );
+    expect(screen.queryByText("Viewing a run snapshot") !== null).toBe(!live);
+  });
 
   it("keeps a collapsed rail available and pins a hovered Explorer", async () => {
     render(<OperatorUi host={{ api: createApi(), presentation }} />);

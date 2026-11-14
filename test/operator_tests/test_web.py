@@ -454,7 +454,7 @@ def _wait_for_rest_status(server, run_id: str, expected: str, timeout: float = 1
         actual = snapshot["summary"]["status"]
         if actual == expected:
             return snapshot
-        assert actual not in {"success", "failed", "cancelled"}, [
+        assert actual not in {"succeeded", "failed", "cancelled"}, [
             (node["node_id"], node.get("error")) for node in snapshot["nodes"]
             if node.get("error")
         ]
@@ -483,7 +483,7 @@ def test_rest_live_run_output_cancellation_and_conflicts(tmp_path):
         )
         assert status == 202
         run_id = created["run_id"]
-        snapshot = _wait_for_rest_status(server, run_id, "success")
+        snapshot = _wait_for_rest_status(server, run_id, "succeeded")
         assert isinstance(snapshot["summary"]["created_sequence"], str)
         status, result = _rest(server, "GET", f"/api/v1/runs/{run_id}/output")
         assert status == 200
@@ -553,7 +553,7 @@ def test_rest_runtime_map_children_are_published_before_evidence(tmp_path):
         )
         assert status == 202, created
         run_id = created["run_id"]
-        snapshot = _wait_for_rest_status(server, run_id, "success", timeout=90)
+        snapshot = _wait_for_rest_status(server, run_id, "succeeded", timeout=90)
         nodes = snapshot["nodes"]
         items = [node for node in nodes if node.get("map_parent")]
         assert len(items) == 8

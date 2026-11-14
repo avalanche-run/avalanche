@@ -12,6 +12,7 @@ import grpc
 import pytest
 from pydantic import ValidationError
 
+from avalanche.run_status import local_human_status
 from avalanche.runtime import File
 from runtime.operator import Operator
 from runtime.operator.client import (
@@ -73,7 +74,9 @@ def _run_created_envelope(sequence, run_id, *, instance, status="pending"):
                 run_id=run_id,
                 workflow_selector="flow",
                 workflow_display_name="flow",
-                status=status,
+                status=local_human_status(status, 0, 0),
+                lifecycle=status,
+                kind="flow",
                 created_sequence=sequence,
                 revision=sequence,
                 triggered_by="manual",

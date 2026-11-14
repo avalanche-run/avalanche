@@ -22,12 +22,12 @@ class RunHooks:
     still overlap in the thread pool.
     """
 
-    machine_step: (
-        Callable[[MachineStepRequest], Future[HostStepOutput]] | None
-    ) = None
+    machine_step: Callable[[MachineStepRequest], Future[HostStepOutput]] | None = None
     machine_payload: JsonValue = None
     resume_results: dict[str, str] | None = None
     on_nodes_expanded: Callable[[NodesExpanded], None] | None = None
+    on_wait_armed: Callable[[str, str], None] | None = None
+    on_wait_resolved: Callable[[str], None] | None = None
     on_node_start: Callable[[str], None] | None = None
     on_node_success: Callable[[str], None] | None = None
     on_node_failure: Callable[[str, Exception], None] | None = None

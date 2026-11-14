@@ -275,6 +275,12 @@ export const CatalogSnapshotMsg = {
 };
 
 export interface RunSummaryMsg {
+  lifecycle?: string;
+  kind?: string;
+  waitingOn?: import("./runStatus").WaitingOn;
+  errorCode?: string;
+  errorStep?: string;
+  errorMessage?: string;
   /**
    * Host-supplied run label: the input-derived key of a keyed run, machine or
    * flow alike (format it with `runKeyLabel`). It never expires.
@@ -1023,6 +1029,7 @@ export const RunCreated = {
 };
 
 export interface RunStatusChanged {
+  summary?: RunSummaryMsg;
   /**
    * @generated from protobuf field: string run_id = 1
    */

@@ -602,7 +602,8 @@ describe("run timeline in the bottom pane", () => {
   it("is the same tab for a flow run: steps, and the inspected step filters it", async () => {
     const run = RunSummaryMsg.create({
       ...summary,
-      status: "success",
+      status: "succeeded",
+      lifecycle: "success",
       startedAt: 10,
       endedAt: 13,
       triggeredAt: T0,

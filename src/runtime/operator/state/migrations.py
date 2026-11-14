@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pydantic import BaseModel, ConfigDict
 
 from avalanche.run_keys import canonical_json
+from avalanche.run_status import error_message, error_step
 
 from ._transaction import sqlite_transaction
 from .errors import StateSchemaMismatchError, StateSchemaTooNewError
@@ -377,8 +378,11 @@ MIGRATIONS += (
 )
 
 MIGRATIONS += (
-    Migration(version=11, name="native child links and run waits", statements=(
-        """CREATE TABLE run_links (
+    Migration(
+        version=11,
+        name="native child links and run waits",
+        statements=(
+            """CREATE TABLE run_links (
             parent_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
             node_id TEXT NOT NULL,
             child_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -386,8 +390,8 @@ MIGRATIONS += (
             receipt_json TEXT NOT NULL,
             PRIMARY KEY(parent_run_id, node_id)
         ) STRICT""",
-        "CREATE INDEX run_links_child ON run_links(child_run_id)",
-        """CREATE TABLE run_waits (
+            "CREATE INDEX run_links_child ON run_links(child_run_id)",
+            """CREATE TABLE run_waits (
             parent_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
             node_id TEXT NOT NULL,
             child_run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -395,8 +399,9 @@ MIGRATIONS += (
             response_json TEXT,
             PRIMARY KEY(parent_run_id, node_id)
         ) STRICT""",
-        "CREATE INDEX run_waits_child ON run_waits(child_run_id)",
-    )),
+            "CREATE INDEX run_waits_child ON run_waits(child_run_id)",
+        ),
+    ),
 )
 
 # Migrations 8 and 10 keep their recorded names and original "visit" columns:
@@ -404,11 +409,14 @@ MIGRATIONS += (
 # local machine data instead of translating its records: machine runs and their
 # journals are dropped (children cascade), then the machine tables are recreated.
 MIGRATIONS += (
-    Migration(version=12, name="state entry rename resets machine records", statements=(
-        "DELETE FROM runs WHERE machine_json IS NOT NULL",
-        "DROP TABLE machine_visits",
-        "DROP TABLE machine_facts",
-        """
+    Migration(
+        version=12,
+        name="state entry rename resets machine records",
+        statements=(
+            "DELETE FROM runs WHERE machine_json IS NOT NULL",
+            "DROP TABLE machine_visits",
+            "DROP TABLE machine_facts",
+            """
         CREATE TABLE machine_state_entries (
             run_id TEXT NOT NULL REFERENCES runs (run_id) ON DELETE CASCADE,
             entry INTEGER NOT NULL CHECK (entry > 0),
@@ -420,7 +428,7 @@ MIGRATIONS += (
             PRIMARY KEY (run_id, entry)
         ) STRICT
         """,
-        """
+            """
         CREATE TABLE machine_facts (
             run_id TEXT NOT NULL REFERENCES runs (run_id) ON DELETE CASCADE,
             tseq INTEGER NOT NULL CHECK (tseq > 0),
@@ -430,11 +438,57 @@ MIGRATIONS += (
             PRIMARY KEY (run_id, tseq)
         ) STRICT
         """,
-        "ALTER TABLE step_results RENAME COLUMN visit TO entry",
-    )),
+            "ALTER TABLE step_results RENAME COLUMN visit TO entry",
+        ),
+    ),
+)
+
+MIGRATIONS += (
+    Migration(
+        version=13,
+        name="shared run summaries",
+        statements=(
+            "ALTER TABLE runs ADD COLUMN open_waits TEXT NOT NULL DEFAULT '[0,0,0,0,0]'",
+            "ALTER TABLE runs ADD COLUMN running_outside_wait INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE runs ADD COLUMN error_code TEXT",
+            "ALTER TABLE runs ADD COLUMN error_step TEXT",
+            "ALTER TABLE runs ADD COLUMN error_message TEXT",
+        ),
+    ),
 )
 
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
+
+
+def _backfill_summary_errors(connection: sqlite3.Connection) -> None:
+    """Upgrade historical failures without parsing or copying exception text.
+
+    One migration-only joined scan, not a read per run or a hot-path check.
+    Node revision is the persisted publication order; node ID breaks ties.
+    """
+    rows = connection.execute("""
+        SELECT runs.run_id, failed.node_id FROM runs LEFT JOIN (
+            SELECT run_id, node_id, ROW_NUMBER() OVER (
+                PARTITION BY run_id ORDER BY revision DESC, node_id DESC
+            ) AS position FROM run_nodes WHERE status = 'failed'
+        ) AS failed ON failed.run_id = runs.run_id AND failed.position = 1
+        WHERE runs.status = 'failed'
+    """)
+    while batch := rows.fetchmany(256):
+        connection.executemany(
+            "UPDATE runs SET error_code=?, error_step=?, error_message=? WHERE run_id=?",
+            (
+                ("unknown", None, error_message("unknown"), row["run_id"])
+                if row["node_id"] is None
+                else (
+                    "node_failed",
+                    error_step(row["node_id"]),
+                    error_message("node_failed", row["node_id"]),
+                    row["run_id"],
+                )
+                for row in batch
+            ),
+        )
 
 
 def _canonicalize_run_keys(connection: sqlite3.Connection) -> None:
@@ -514,6 +568,8 @@ def migrate(
                     connection.execute(statement)
                 if migration.version == 9:
                     _canonicalize_run_keys(connection)
+                elif migration.version == 13:
+                    _backfill_summary_errors(connection)
                 if rebuild_runs and connection.execute("PRAGMA foreign_key_check").fetchone():
                     raise StateSchemaMismatchError("Run table rebuild broke a foreign key")
                 connection.execute(

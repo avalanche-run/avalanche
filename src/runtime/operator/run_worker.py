@@ -259,11 +259,23 @@ def _run_worker(
             return future
 
         def record_result(node_id, value):
-            _put_run_event(event_queue, {"type": "step_result", "node_id": node_id,
-                                        "value_json": encode_workflow_result(value).value_json})
+            _put_run_event(
+                event_queue,
+                {
+                    "type": "step_result",
+                    "node_id": node_id,
+                    "value_json": encode_workflow_result(value).value_json,
+                },
+            )
             return value
 
         hooks = RunHooks(
+            on_wait_armed=lambda node_id, kind: _put_run_event(
+                event_queue, {"type": "wait_armed", "node_id": node_id, "kind": kind}
+            ),
+            on_wait_resolved=lambda node_id: _put_run_event(
+                event_queue, {"type": "wait_resolved", "node_id": node_id}
+            ),
             resume_results=resume_results,
             unwrap_result=record_result,
             machine_step=machine_step,
@@ -305,6 +317,7 @@ def _run_worker(
                     event_queue,
                     {
                         "type": "node_failed",
+                        "error_type": type(exc).__name__,
                         "node_id": show_groups.get(node_id, node_id),
                         "timestamp": time.monotonic(),
                         "error": _bounded_event_text(

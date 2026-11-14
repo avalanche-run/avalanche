@@ -111,6 +111,11 @@ class OperatorServiceV2Stub(object):
                 request_serializer=operator__pb2.ListRunSummariesRequestV2.SerializeToString,
                 response_deserializer=operator__pb2.RunSummaryPageV2.FromString,
                 _registered_method=True)
+        self.GetRunSummary = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/GetRunSummary',
+                request_serializer=operator__pb2.GetRunSummaryRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.GetRunSummaryResponseV2.FromString,
+                _registered_method=True)
         self.GetRunSnapshot = channel.unary_unary(
                 '/avalanche.operator.OperatorServiceV2/GetRunSnapshot',
                 request_serializer=operator__pb2.GetRunSnapshotRequestV2.SerializeToString,
@@ -257,6 +262,12 @@ class OperatorServiceV2Servicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetRunSummary(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetRunSnapshot(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -372,6 +383,11 @@ def add_OperatorServiceV2Servicer_to_server(servicer, server):
                     servicer.ListRunSummaries,
                     request_deserializer=operator__pb2.ListRunSummariesRequestV2.FromString,
                     response_serializer=operator__pb2.RunSummaryPageV2.SerializeToString,
+            ),
+            'GetRunSummary': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetRunSummary,
+                    request_deserializer=operator__pb2.GetRunSummaryRequestV2.FromString,
+                    response_serializer=operator__pb2.GetRunSummaryResponseV2.SerializeToString,
             ),
             'GetRunSnapshot': grpc.unary_unary_rpc_method_handler(
                     servicer.GetRunSnapshot,
@@ -777,6 +793,33 @@ class OperatorServiceV2(object):
             '/avalanche.operator.OperatorServiceV2/ListRunSummaries',
             operator__pb2.ListRunSummariesRequestV2.SerializeToString,
             operator__pb2.RunSummaryPageV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetRunSummary(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/GetRunSummary',
+            operator__pb2.GetRunSummaryRequestV2.SerializeToString,
+            operator__pb2.GetRunSummaryResponseV2.FromString,
             options,
             channel_credentials,
             insecure,

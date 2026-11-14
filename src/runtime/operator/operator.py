@@ -21,7 +21,7 @@ from collections.abc import Collection, Iterable, Iterator, Mapping
 from concurrent.futures import Future
 from contextlib import contextmanager
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from functools import partial
 from multiprocessing.connection import Connection
@@ -43,6 +43,7 @@ from avalanche.evaluations import EvaluationDeclaration
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
 from avalanche.references import read_stored_trees
+from avalanche.run_status import EMPTY_WAITING_ON, WAIT_KIND_SLOT, error_message, error_step
 from avalanche.step_interface import StepInterface
 
 from ._signals import shutdown_cleanup
@@ -294,6 +295,20 @@ class _RunStart:
 
     request: RunRequest
     process: RunProcess | None
+
+
+@dataclass
+class _SummaryReducer:
+    """Coordinator-lifetime identities, not structural snapshots or detail.
+
+    Each event changes one dictionary entry and one of five counters. Only the
+    fixed counters are persisted: in-flight flows fail on operator restart.
+    """
+
+    wait_kinds: dict[str, str] = field(default_factory=dict)
+    wait_owners: dict[str, int] = field(default_factory=dict)
+    running_nodes: set[str] = field(default_factory=set)
+    failure_node: str | None = None
 
 
 @dataclass(frozen=True)
@@ -595,6 +610,7 @@ class Operator:
             self._run_detail_bytes: dict[str, int] = {}
             self._node_detail_bytes: dict[tuple[str, str], int] = {}
             self._active_runs: dict[str, _RunHandle] = {}
+            self._summary_reducers: dict[str, _SummaryReducer] = {}
             self._wait_controls: dict[str, RunControls] = {}
             self._run_callbacks: list[Callable[[RunState], None]] = []
             self._log_callbacks: list[Callable[[LogEntry], None]] = []
@@ -974,6 +990,11 @@ class Operator:
             run = self._runs.get(run_id)
             capture = self._capture_run_detail_locked(run) if run is not None else None
         return _materialize_run_detail(capture) if capture is not None else None
+
+    def get_run_summary(self, run_id: str) -> tuple[RunSummary, int]:
+        """Capture one list-safe row and its watch cut under the publication lock."""
+        with self._lock:
+            return self._run_summary_locked(self._runs[run_id]), self._sequence
 
     def list_run_summaries(
         self,
@@ -1775,6 +1796,12 @@ class Operator:
             workflow_display_name=run.workflow_display_name,
             created_sequence=self._run_created_sequences.get(run.run_id, 0),
             revision=self._run_revisions.get(run.run_id, 0),
+            kind=run.kind,
+            waiting_on=run.waiting_on,
+            running_outside_wait=run.running_outside_wait,
+            error_code=run.error_code,
+            error_step=run.error_step,
+            error_message=run.error_message,
         )
 
     def get_run_result(
@@ -3149,6 +3176,9 @@ class Operator:
                 if run is None:
                     discard_stored_result = stored_result is not None
                 else:
+                    reducer = self._summary_reducers.get(run_id)
+                    if reducer is None:
+                        reducer = self._summary_reducers[run_id] = _SummaryReducer()
                     summary_changed = False
                     changed_node_ids: tuple[str, ...] = ()
                     status_node_ids: tuple[str, ...] | None = None
@@ -3165,6 +3195,41 @@ class Operator:
                             run.started_at = event["timestamp"]
                             summary_changed = True
                             mutated = True
+                    elif event_type in {"wait_armed", "wait_resolved"}:
+                        if run.status in {
+                            RunStatus.SUCCESS,
+                            RunStatus.FAILED,
+                            RunStatus.CANCELLED,
+                        }:
+                            return False  # Cancellation can race already queued wait events.
+                        node_id = event["node_id"]
+                        owner = node_id if node_id in run.nodes else node_id.split("[", 1)[0]
+                        if owner not in run.nodes:
+                            raise _CoordinatorProtocolError("wait references unpublished node")
+                        counts = list(run.open_waits)
+                        if event_type == "wait_armed":
+                            if node_id in reducer.wait_kinds:
+                                raise _CoordinatorProtocolError("wait armed twice")
+                            kind = event["kind"]
+                            reducer.wait_kinds[node_id] = kind
+                            counts[WAIT_KIND_SLOT[kind]] += 1
+                            previous = reducer.wait_owners.get(owner, 0)
+                            reducer.wait_owners[owner] = previous + 1
+                            if previous == 0 and owner in reducer.running_nodes:
+                                run.running_outside_wait -= 1
+                        else:
+                            kind = reducer.wait_kinds.pop(node_id)
+                            counts[WAIT_KIND_SLOT[kind]] -= 1
+                            remaining = reducer.wait_owners[owner] - 1
+                            if remaining:
+                                reducer.wait_owners[owner] = remaining
+                            else:
+                                del reducer.wait_owners[owner]
+                                if owner in reducer.running_nodes:
+                                    run.running_outside_wait += 1
+                        run.open_waits = (counts[0], counts[1], counts[2], counts[3], counts[4])
+                        summary_changed = True
+                        mutated = True
                     elif event_type == "nodes_expanded":
                         try:
                             expansion = NodesExpanded.model_validate_json(
@@ -3188,6 +3253,25 @@ class Operator:
                                 "node_succeeded": NodeStatus.SUCCESS,
                                 "node_failed": NodeStatus.FAILED,
                             }[event_type]
+                            if node.node_id in reducer.running_nodes:
+                                reducer.running_nodes.remove(node.node_id)
+                                if node.node_id not in reducer.wait_owners:
+                                    run.running_outside_wait -= 1
+                            if status == NodeStatus.RUNNING:
+                                reducer.running_nodes.add(node.node_id)
+                                if node.node_id not in reducer.wait_owners:
+                                    run.running_outside_wait += 1
+                            if status == NodeStatus.FAILED:
+                                reducer.failure_node = node.node_id
+                                run.error_code = "node_failed"
+                                run.error_step = error_step(node.node_id)
+                                run.error_message = error_message(
+                                    "node_failed", node.node_id, error_type=event["error_type"]
+                                )
+                            elif reducer.failure_node == node.node_id:
+                                reducer.failure_node = None
+                                run.error_code = run.error_step = run.error_message = None
+                            summary_changed = True
                             node.status = status
                             if status == NodeStatus.RUNNING:
                                 node.started_at = event["timestamp"]
@@ -3882,6 +3966,15 @@ class Operator:
         if self._notification_stop_enqueued:
             raise RuntimeError("Operator notification dispatcher is closed")
 
+        if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}:
+            run.open_waits = EMPTY_WAITING_ON
+            run.running_outside_wait = 0
+            if run.status != RunStatus.FAILED:
+                run.error_code = run.error_step = run.error_message = None
+            elif run.error_code is None:
+                run.error_code = "unknown"
+                run.error_message = error_message("unknown")
+
         is_new = run.run_id not in self._run_created_sequences
         status_node_ids = changed_node_ids if status_node_ids is None else status_node_ids
         status_node_ids = tuple(dict.fromkeys(status_node_ids))
@@ -4024,6 +4117,7 @@ class Operator:
                         RunStatusChanged(
                             run_id=run.run_id,
                             status=run.status,
+                            summary=self._run_summary_locked(run),
                             started_at=run.started_at,
                             ended_at=run.ended_at,
                             revision=publication_sequence,
@@ -4111,8 +4205,12 @@ class Operator:
             self._store_run_locked(
                 run,
                 is_new=is_new,
-                # A new or re-prepared run (whose nodes are replaced) stores every node.
-                node_ids=run.nodes.keys() if is_new or summary_changed else changed_node_ids,
+                # Preparation installs the topology once. Later summary-only wait
+                # changes must not rewrite the run's entire node table.
+                node_ids=run.nodes.keys()
+                if is_new
+                or (summary_changed and run.status in {RunStatus.REQUESTING, RunStatus.PENDING})
+                else changed_node_ids,
                 start=start,
                 update_sequence=publication_sequence,
                 machine_write=machine_write,
@@ -4127,6 +4225,8 @@ class Operator:
             rollback.restore(self, run)
             raise
         self._sequence = publication_sequence
+        if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}:
+            self._summary_reducers.pop(run.run_id, None)
         self._stream_history.extend(updates)
 
         envelopes = tuple(
@@ -4590,7 +4690,13 @@ def _summary_wire_size(summary: RunSummary) -> int:
         + len(summary.triggered_by.value.encode())
         + len(summary.workflow_id.encode())
         + len(summary.workflow_display_name.encode())
-        + 96
+        + len(summary.status.value.encode())
+        + len(summary.human_status.encode())
+        + len((summary.error_code or "").encode())
+        + len((summary.error_step or "").encode())
+        + len((summary.error_message or "").encode())
+        + (40 if summary.waiting_on is not None else 0)
+        + 112
     )
 
 
@@ -4668,6 +4774,8 @@ _RUN_EVENT_TYPES = {
     "log",
     "terminal",
     "wait_snapshot",
+    "wait_armed",
+    "wait_resolved",
 }
 _NODE_EVENT_TYPES = {"node_started", "node_succeeded", "node_failed"}
 _TERMINAL_STATUSES = {"success", "failed", "cancelled"}
@@ -5039,6 +5147,16 @@ def _validate_run_event(event: object, *, validate_result: bool = True) -> str:
     if event_type == "machine_step":
         _require_exact_event_keys(event, {"type", "request_json"})
         _string_field(event, "request_json", maximum_length=_MAX_EVENT_MESSAGE_LENGTH)
+    elif event_type in {"wait_armed", "wait_resolved"}:
+        keys = {"type", "node_id"}
+        if event_type == "wait_armed":
+            keys.add("kind")
+        _require_exact_event_keys(event, keys)
+        _string_field(event, "node_id", maximum_length=_MAX_EVENT_FIELD_LENGTH)
+        if event_type == "wait_armed":
+            kind = _string_field(event, "kind", maximum_length=32)
+            if kind not in WAIT_KIND_SLOT:
+                raise _CoordinatorProtocolError("invalid wait kind")
     elif event_type == "wait_snapshot":
         _require_exact_event_keys(event, {"type", "snapshot"})
         try:
@@ -5054,12 +5172,13 @@ def _validate_run_event(event: object, *, validate_result: bool = True) -> str:
     elif event_type in _NODE_EVENT_TYPES:
         expected = {"type", "node_id", "timestamp"}
         if event_type == "node_failed":
-            expected.add("error")
+            expected.update({"error", "error_type"})
         _require_exact_event_keys(event, expected)
         _string_field(event, "node_id", maximum_length=_MAX_EVENT_FIELD_LENGTH)
         _timestamp_field(event, "timestamp")
         if event_type == "node_failed":
             _string_field(event, "error", maximum_length=_MAX_EVENT_MESSAGE_LENGTH)
+            _string_field(event, "error_type", maximum_length=256)
     elif event_type == "agent_evidence":
         _require_exact_event_keys(event, {"type", "node_id", "event"})
         _string_field(event, "node_id", maximum_length=_MAX_EVENT_FIELD_LENGTH)

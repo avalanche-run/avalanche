@@ -239,19 +239,17 @@ it("drops invalid typed text when the draft is replaced", () => {
   expect(draft.current!.pending).toEqual({});
 });
 
-it("offers Cancel for the statuses the host's api declares live", () => {
-  const run = snapshotFor(RunSummaryMsg.create({ ...summary, status: "admitted" }));
-  const controls = (api?: { liveRunStatuses?: readonly string[] }) => (
+it("offers Cancel for a live human status", () => {
+  const controls = (status: string) => (
     <RunControls
-      run={run}
-      api={api}
+      run={snapshotFor(RunSummaryMsg.create({ ...summary, status }))}
       onStart={async () => "run-1"}
       onCancel={async () => undefined}
     />
   );
-  const view = render(controls());
+  const view = render(controls("succeeded"));
   expect(screen.queryByRole("button", { name: "Cancel run" })).toBeNull();
-  view.rerender(controls({ liveRunStatuses: ["admitted"] }));
+  view.rerender(controls("running"));
   expect(screen.getByRole("button", { name: "Cancel run" })).toBeTruthy();
 });
 
@@ -259,7 +257,6 @@ it("shows a settled run's outcome from its seal, else its status, and no empty b
   const controls = (status: string, seal?: RunSnapshotMsg["terminalSeal"]) => (
     <RunControls
       run={{ ...snapshotFor(RunSummaryMsg.create({ ...summary, status })), terminalSeal: seal }}
-      api={{ liveRunStatuses: ["admitted"], terminalRunStatuses: ["succeeded", "failed"] }}
       onStart={async () => "run-1"}
       onCancel={async () => undefined}
     />
@@ -274,14 +271,13 @@ it("shows a settled run's outcome from its seal, else its status, and no empty b
   );
   expect(outcome()).toBe("Terminal: failedReason: boom");
   // A live run has no outcome yet; it offers Cancel instead.
-  view.rerender(controls("admitted"));
+  view.rerender(controls("running"));
   expect(outcome()).toBeUndefined();
   expect(screen.getByRole("button", { name: "Cancel run" })).toBeTruthy();
   // Read-only and live: nothing to offer or report, so no controls box at all.
   view.rerender(
     <RunControls
-      run={snapshotFor(RunSummaryMsg.create({ ...summary, status: "admitted" }))}
-      api={{ liveRunStatuses: ["admitted"] }}
+      run={snapshotFor(RunSummaryMsg.create({ ...summary, status: "running" }))}
       runActionsEnabled={false}
       onStart={async () => "run-1"}
       onCancel={async () => undefined}
@@ -291,11 +287,7 @@ it("shows a settled run's outcome from its seal, else its status, and no empty b
 });
 
 it("shows no outcome for a sentinel status or a run whose status is not loaded", () => {
-  const controls = (
-    status: string | undefined,
-    api?: { liveRunStatuses?: string[]; terminalRunStatuses?: string[] },
-    seal?: RunSnapshotMsg["terminalSeal"],
-  ) => (
+  const controls = (status: string | undefined, seal?: RunSnapshotMsg["terminalSeal"]) => (
     <RunControls
       run={{
         ...snapshotFor(
@@ -305,7 +297,6 @@ it("shows no outcome for a sentinel status or a run whose status is not loaded",
         ),
         terminalSeal: seal,
       }}
-      api={api}
       runActionsEnabled={false}
       onStart={async () => "run-1"}
       onCancel={async () => undefined}
@@ -313,8 +304,8 @@ it("shows no outcome for a sentinel status or a run whose status is not loaded",
   );
   const outcome = () => document.querySelector("[data-terminal-status]")?.textContent;
   // The local operator's outcomes by default.
-  const view = render(controls("success"));
-  expect(outcome()).toBe("Terminal: success");
+  const view = render(controls("succeeded"));
+  expect(outcome()).toBe("Terminal: succeeded");
   // Settled sentinels are not outcomes: no Terminal box, and no empty box either.
   for (const status of ["unknown", "integrity", "admitted"]) {
     view.rerender(controls(status));
@@ -322,18 +313,14 @@ it("shows no outcome for a sentinel status or a run whose status is not loaded",
     expect(document.querySelector(".run-controls")).toBeNull();
   }
   // A host's own vocabulary, declared by its api.
-  view.rerender(controls("succeeded", { terminalRunStatuses: ["succeeded"] }));
+  view.rerender(controls("succeeded"));
   expect(outcome()).toBe("Terminal: succeeded");
-  view.rerender(controls("unknown", { terminalRunStatuses: ["succeeded"] }));
+  view.rerender(controls("unknown"));
   expect(outcome()).toBeUndefined();
   // Status not loaded yet: unknown, so no outcome even with a seal in hand.
-  view.rerender(
-    controls(undefined, undefined, TerminalSealMsg.create({ terminalStatus: "success" })),
-  );
+  view.rerender(controls(undefined, TerminalSealMsg.create({ terminalStatus: "success" })));
   expect(outcome()).toBeUndefined();
   // A settled run with a seal shows the seal.
-  view.rerender(
-    controls("failed", undefined, TerminalSealMsg.create({ terminalStatus: "failed" })),
-  );
+  view.rerender(controls("failed", TerminalSealMsg.create({ terminalStatus: "failed" })));
   expect(outcome()).toBe("Terminal: failed");
 });

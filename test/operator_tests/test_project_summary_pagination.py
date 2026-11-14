@@ -71,6 +71,8 @@ def _summary_pages(
                     workflow_selector="flow",
                     workflow_display_name="flow",
                     status="running",
+                    lifecycle="running",
+                    kind="flow",
                     created_sequence=index,
                     revision=index,
                     triggered_by="manual",

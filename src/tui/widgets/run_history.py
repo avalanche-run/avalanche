@@ -11,6 +11,13 @@ from textual.message import Message
 from textual.strip import Strip
 from textual.widgets import Static
 
+from avalanche.run_status import (
+    EMPTY_WAITING_ON,
+    WAITING_ON_SLOTS,
+    local_human_status,
+    waiting_on_label,
+)
+
 from ..models import NodeStatus, RunState, RunStatus
 from ..state import status_label
 from ..theme import (
@@ -26,7 +33,6 @@ from ..theme import (
     OTHER_STATUS_STYLE,
     SPINNER_FRAMES,
     node_status_display,
-    run_wait_kind,
     status_display,
 )
 
@@ -98,8 +104,8 @@ class RunHistoryWidget(Static):
             if run.status is RunStatus.RUNNING
             else status_display(run.status, RUN_STATUS_ICONS, OTHER_STATUS_CHAR)
         )
-        detail = store.current_run if selected else run
-        kind = run_wait_kind(detail, store.current_workflow)
+        waits = run.waiting_on or EMPTY_WAITING_ON
+        kind = next((slot for slot, count in zip(WAITING_ON_SLOTS, waits) if count), None)
         if kind is not None:
             icon, style = node_status_display(NodeStatus.RUNNING, kind)
         # started_at is a process-monotonic duration clock, not a calendar date.
@@ -115,7 +121,13 @@ class RunHistoryWidget(Static):
         text = Text("  ", bg)
         text.append(f"{run.run_id:<14}", Style(color=ICE_FROST, bold=selected) + bg)
         text.append(f"{ts}  {duration}   ", DIM_STYLE + bg)
-        text.append(f"{status_label(run.status)} {icon}", style + bg)
+        label = (
+            local_human_status(run.status.value, sum(waits), run.running_outside_wait)
+            if isinstance(run.status, RunStatus)
+            else status_label(run.status)
+        )
+        note = waiting_on_label(waits) if label == "waiting" else run.error_message
+        text.append(f"{label} {icon}" + (f"  {note}" if note else ""), style + bg)
         return text
 
     def get_content_height(self, container, viewport, width: int) -> int:

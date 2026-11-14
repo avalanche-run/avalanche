@@ -27,6 +27,8 @@ from pydantic import (
     TypeAdapter,
 )
 
+from avalanche.run_status import WaitingOn
+
 from ..input_files import StagedInputFile
 from ..models import (
     NodeState,
@@ -49,6 +51,7 @@ _NODES = "run_nodes"
 _INPUT_FILES = "run_input_files"
 _TOPOLOGY = TypeAdapter(WorkflowTopology)
 _EXPANSIONS = TypeAdapter(dict[str, int])
+_OPEN_WAITS = TypeAdapter(WaitingOn)
 _RUN_INPUT = TypeAdapter(RunInput)
 _TERMINAL_SEAL = TypeAdapter(TerminalSealDescriptor)
 
@@ -129,6 +132,12 @@ class _RunRow(BaseModel):
     created_sequence: PositiveInt
     revision: PositiveInt
     activity_sequence: NonNegativeInt
+    is_machine: int
+    open_waits: str
+    running_outside_wait: NonNegativeInt
+    error_code: str | None
+    error_step: str | None
+    error_message: str | None
     process_group: PositiveInt | None
     process_started: str | None
     process_booted: str | None
@@ -191,6 +200,11 @@ _STATE_COLUMNS = (
     "created_sequence",
     "revision",
     "activity_sequence",
+    "open_waits",
+    "running_outside_wait",
+    "error_code",
+    "error_step",
+    "error_message",
 )
 _START_COLUMNS = ("request_json", "process_group", "process_started", "process_booted")
 _NODE_COLUMNS = (
@@ -377,7 +391,7 @@ class RunsTable:
         runs = []
         for row in connection.execute(
             f"SELECT run_id, {', '.join(_STATE_COLUMNS)}, process_group, process_started, "
-            "process_booted "
+            "process_booted, machine_json IS NOT NULL AS is_machine "
             f"FROM {_RUNS} ORDER BY created_sequence, run_id"
         ):
             run_row = row_model(_RunRow, row, table=_RUNS)
@@ -449,6 +463,11 @@ def _state_values(stored: StoredRun) -> tuple[str | float | int | None, ...]:
         stored.created_sequence,
         stored.revision,
         stored.activity_sequence,
+        _OPEN_WAITS.dump_json(run.open_waits).decode(),
+        run.running_outside_wait,
+        run.error_code,
+        run.error_step,
+        run.error_message,
     )
 
 
@@ -486,6 +505,12 @@ def _loaded_run(row: _RunRow, node_rows: Collection[_NodeRow]) -> LoadedRun:
         run_id=row.run_id,
         flow_name=row.flow_name,
         status=row.status,
+        kind="machine" if row.is_machine else "flow",
+        open_waits=json_value(_OPEN_WAITS, row.open_waits, table=_RUNS, column="open_waits"),
+        running_outside_wait=row.running_outside_wait,
+        error_code=row.error_code,
+        error_step=row.error_step,
+        error_message=row.error_message,
         triggered_at=row.triggered_at,
         started_at=row.started_at,
         ended_at=row.ended_at,

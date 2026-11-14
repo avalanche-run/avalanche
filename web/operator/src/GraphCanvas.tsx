@@ -87,7 +87,7 @@ import {
   useGraphOrientation,
 } from "./useGraphOrientation";
 import { ClaudeLogo, isClaudeRuntime } from "./ClaudeLogo";
-import { RunStatus, statusTone, statusToneColor, type WaitKind } from "./RunStatus";
+import { RunStatus, statusTone, statusToneColor, type WaitKind } from "./RunStatusBadge";
 import type { WaitCard } from "./RunWaitPanel";
 import {
   INPUT_NODE_ID,

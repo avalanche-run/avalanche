@@ -540,10 +540,10 @@ def test_keyed_flow_start_restart_and_expired_history(tmp_path):
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
                     snapshot = stub.GetRunSnapshot(pb.GetRunSnapshotRequestV2(run_id=run_id))
-                    if snapshot.summary.status in {"success", "failed", "cancelled"}:
+                    if snapshot.summary.status in {"succeeded", "failed", "cancelled"}:
                         break
                     time.sleep(0.05)
-                assert snapshot.summary.status == "success", snapshot
+                assert snapshot.summary.status == "succeeded", snapshot
                 assert len(stub.ListRunSummaries(pb.ListRunSummariesRequestV2()).runs) == 1
                 assert journal.read_text().splitlines() == [f"{run_id}:observe_1"]
                 # Replay validates only the typed key, not new input or stale uploads.

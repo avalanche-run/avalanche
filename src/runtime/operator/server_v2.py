@@ -835,7 +835,8 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             rows = {
                 row["run_id"]: row
                 for row in connection.execute(
-                    "SELECT run_id, key, read_state, machine_json IS NOT NULL AS is_machine "
+                    "SELECT run_id, key, read_state, machine_json IS NOT NULL AS is_machine, "
+                    "revision, open_waits, error_code, error_step, error_message "
                     "FROM runs WHERE run_id IN (" + ",".join("?" for _ in summaries) + ")",
                     tuple(summary.run_id for summary in summaries),
                 )
@@ -846,6 +847,23 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             if row is None:
                 continue
             message = run_summary_to_v2(summary)
+            # Metadata and the new summary columns share this one page query.
+            # Retained pages must not mix a newer row with their frozen revision.
+            if row["revision"] == summary.revision:
+                if message.HasField("waiting_on"):
+                    waits = json.loads(row["open_waits"])
+                    message.waiting_on.CopyFrom(
+                        pb.RunWaitingOnV2(
+                            operator=waits[0],
+                            decision=waits[1],
+                            event=waits[2],
+                            run=waits[3],
+                            sleep=waits[4],
+                        )
+                    )
+                for name in ("error_code", "error_step", "error_message"):
+                    if row[name] is not None:
+                        setattr(message, name, row[name])
             message.key_json = row["key"] or ""
             message.read_state = row["read_state"]
             message.kind = "machine" if row["is_machine"] else "flow"
@@ -1304,6 +1322,17 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
         if next_page is not None:
             message.next_page.CopyFrom(next_page)
         return message
+
+    def GetRunSummary(self, request, context):  # noqa: N802
+        if not request.run_id:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "run_id is required")
+        try:
+            summary, sequence = self._op.get_run_summary(request.run_id)
+        except KeyError:
+            context.abort(grpc.StatusCode.NOT_FOUND, "Run not found")
+        return pb.GetRunSummaryResponseV2(
+            summary=self._summary_message(summary), cursor=self._cursor(sequence)
+        )
 
     def GetRunSnapshot(self, request, context):  # noqa: N802
         try:

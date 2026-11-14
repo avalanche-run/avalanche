@@ -284,8 +284,6 @@ function publish(change: OperatorUpdate["change"]) {
 // receipt ids) whose first snapshot arrives late, behind the host's loading fallback.
 // It reports no terminal seals, deferred events or receipts.
 const foreignHost = new URLSearchParams(location.search).has("host");
-const FOREIGN_LIVE_STATUSES = ["submitted", "queued", "admitted", "parked"];
-const FOREIGN_TERMINAL_STATUSES = ["succeeded", "failed", "cancelled"];
 let failSend = !foreignHost;
 let failRead = false;
 
@@ -349,14 +347,7 @@ function enter(
     },
   });
   const summary = runs.get(runId)!;
-  summary.status =
-    source === "cancel"
-      ? "cancelled"
-      : item.finished
-        ? "succeeded"
-        : foreignHost
-          ? "parked"
-          : "waiting";
+  summary.status = source === "cancel" ? "cancelled" : item.finished ? "succeeded" : "waiting";
   summary.revision = String(item.entry);
   publish({
     oneofKind: "runStatusChanged",
@@ -901,13 +892,10 @@ if (readOnly) {
   });
 }
 if (foreignHost) {
-  Object.assign(api, {
-    liveRunStatuses: FOREIGN_LIVE_STATUSES,
-    terminalRunStatuses: FOREIGN_TERMINAL_STATUSES,
-  });
+  // All hosts publish the shared human vocabulary.
   // machine-1 is admitted (a state entry executing); machine-2 already closed.
   await api.startRun("review", { repo: "acme/api", pr: 8, priority: 1 });
-  runs.get("machine-1")!.status = "admitted";
+  runs.get("machine-1")!.status = "running";
   await api.startRun("review", { repo: "acme/api", pr: 9, priority: 1 });
   enter("machine-2", "closed", "external", "advance");
   calls.length = 0;

@@ -123,18 +123,47 @@ def run_command(argv: list[str]) -> int:
                         break
                     request.continuation.CopyFrom(page.next_page)
                 if args.json:
-                    print(json.dumps({"runs": [
-                        json.loads(MessageToJson(run, preserving_proto_field_name=True))
-                        for run in runs
-                    ]}))
-                else:
-                    print("TYPE\tRUN\tDEFINITION\tSTATUS")
+                    rows = []
                     for run in runs:
-                        print(f"{run.kind}\t{run.run_id}\t{run.workflow_selector}\t{run.status}")
+                        row = json.loads(MessageToJson(run, preserving_proto_field_name=True))
+                        if run.HasField("waiting_on"):
+                            waits = run.waiting_on
+                            row["waiting_on"] = [
+                                waits.operator,
+                                waits.decision,
+                                waits.event,
+                                waits.run,
+                                waits.sleep,
+                            ]
+                        rows.append(row)
+                    print(json.dumps({"runs": rows}, separators=(",", ":")))
+                else:
+                    from avalanche.run_status import waiting_on_label
+
+                    print("TYPE\tRUN\tDEFINITION\tSTATUS\tNOTE")
+                    for run in runs:
+                        note = run.error_message
+                        if run.status == "waiting" and run.HasField("waiting_on"):
+                            waits = run.waiting_on
+                            note = waiting_on_label(
+                                (
+                                    waits.operator,
+                                    waits.decision,
+                                    waits.event,
+                                    waits.run,
+                                    waits.sleep,
+                                )
+                            )
+                        print(
+                            f"{run.kind}\t{run.run_id}\t{run.workflow_selector}"
+                            f"\t{run.status}\t{note}"
+                        )
             elif argv[1] == "history":
-                result = control(MachineControlRequest(
-                    op="history", run_id=run_id, limit=args.limit, cursor=args.cursor
-                ))
+                result = control(
+                    MachineControlRequest(
+                        op="history", run_id=run_id, limit=args.limit, cursor=args.cursor
+                    )
+                )
                 print(json.dumps(result))
             elif argv[1] == "cancel":
                 stub.CancelRun(pb.CancelRunRequestV2(run_id=run_id), timeout=30)

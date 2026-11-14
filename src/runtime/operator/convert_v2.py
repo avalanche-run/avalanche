@@ -16,6 +16,7 @@ from avalanche.agent.native import TraceHeaderNative
 from avalanche.agent.trace import AgentTraceStatus, TokenUsage
 from avalanche.mapping import MapSpec
 from avalanche.policies import StepPolicy, WaitSpec
+from avalanche.run_status import WAITING_ON_SLOTS
 from avalanche.run_steps import RunOpSpec
 
 from .models import (
@@ -213,18 +214,31 @@ def flow_list_to_v2(
 
 
 def run_summary_to_v2(summary) -> pb.RunSummaryV2:
-    return pb.RunSummaryV2(
+    message = pb.RunSummaryV2(
         run_id=summary.run_id,
         workflow_selector=summary.workflow_id or summary.flow_name,
         workflow_display_name=summary.workflow_display_name or summary.flow_name,
-        status=summary.status.value,
+        status=summary.human_status,
+        lifecycle=summary.status.value,
         started_at=summary.started_at or 0.0,
         ended_at=summary.ended_at or 0.0,
         created_sequence=summary.created_sequence,
         revision=summary.revision,
         triggered_by=summary.triggered_by.value,
         triggered_at=summary.triggered_at or 0.0,
+        kind=summary.kind,
     )
+    if summary.waiting_on is not None:
+        message.waiting_on.CopyFrom(
+            pb.RunWaitingOnV2(**dict(zip(WAITING_ON_SLOTS, summary.waiting_on)))
+        )
+    if summary.error_code is not None:
+        message.error_code = summary.error_code
+    if summary.error_step is not None:
+        message.error_step = summary.error_step
+    if summary.error_message is not None:
+        message.error_message = summary.error_message
+    return message
 
 
 _TRACE_STATUS_TO_V2: Mapping[AgentTraceStatus, int] = {
@@ -717,15 +731,7 @@ def update_envelope_to_v2(
         )
     elif isinstance(change, RunStatusChanged):
         message.run_status_changed.CopyFrom(
-            pb.RunStatusChangedV2(
-                summary=pb.RunSummaryV2(
-                    run_id=change.run_id,
-                    status=change.status.value,
-                    started_at=change.started_at or 0.0,
-                    ended_at=change.ended_at or 0.0,
-                    revision=change.revision,
-                )
-            )
+            pb.RunStatusChangedV2(summary=run_summary_to_v2(change.summary))
         )
     elif isinstance(change, NodeStatusChanged):
         message.node_status_changed.CopyFrom(
@@ -1006,7 +1012,21 @@ def run_summary_from_v2(msg: pb.RunSummaryV2) -> RunSummary:
     return RunSummary(
         run_id=msg.run_id,
         flow_name=msg.workflow_selector.rsplit("::", 1)[-1] or msg.workflow_display_name,
-        status=RunStatus(msg.status),
+        status=RunStatus(msg.lifecycle),
+        waiting_on=(
+            msg.waiting_on.operator,
+            msg.waiting_on.decision,
+            msg.waiting_on.event,
+            msg.waiting_on.run,
+            msg.waiting_on.sleep,
+        )
+        if msg.HasField("waiting_on")
+        else None,
+        running_outside_wait=int(msg.status == "running"),
+        error_code=msg.error_code if msg.HasField("error_code") else None,
+        error_step=msg.error_step if msg.HasField("error_step") else None,
+        error_message=msg.error_message if msg.HasField("error_message") else None,
+        kind=msg.kind,
         started_at=msg.started_at or None,
         ended_at=msg.ended_at or None,
         triggered_at=msg.triggered_at or None,
@@ -1264,7 +1284,8 @@ def operator_update_envelope_from_v2(
         summary = msg.run_status_changed.summary
         change = RunStatusChanged(
             run_id=summary.run_id,
-            status=RunStatus(summary.status),
+            status=RunStatus(summary.lifecycle),
+            summary=run_summary_from_v2(summary),
             started_at=summary.started_at or None,
             ended_at=summary.ended_at or None,
             revision=summary.revision,

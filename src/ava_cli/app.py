@@ -700,22 +700,36 @@ def _wait_for_result(
 
 
 def _wait_for_terminal_run(provider: GrpcStateProvider, run_id: str, *, timeout: float) -> bool:
-    from runtime.operator.models import RunStatus
+    import grpc
+
+    from avalanche.run_status import TERMINAL_STATUSES
 
     deadline = time.monotonic() + timeout
-    while True:
-        run = provider.get_run(run_id)
-        if run is None:
-            if not provider.last_error:
-                provider.last_error = f"Run {run_id} not found"
-            return False
-        if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}:
+    try:
+        response = provider.get_run_summary(run_id)
+        if response.summary.status in TERMINAL_STATUSES:
             return True
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             provider.last_error = f"Timed out waiting for run {run_id}"
             return False
-        time.sleep(min(0.1, remaining))
+        for envelope in provider.watch_run_status(response.cursor, timeout=remaining):
+            if envelope.HasField("reset_required"):
+                provider.last_error = "Run status history changed; retry the result command"
+                return False
+            if envelope.HasField("run_status_changed"):
+                summary = envelope.run_status_changed.summary
+                if summary.run_id == run_id and summary.status in TERMINAL_STATUSES:
+                    return True
+    except grpc.RpcError as exc:
+        provider.last_error = (
+            f"Timed out waiting for run {run_id}"
+            if exc.code() == grpc.StatusCode.DEADLINE_EXCEEDED
+            else exc.details()
+        )
+        return False
+    provider.last_error = f"Run status stream ended before run {run_id} finished"
+    return False
 
 
 def _materialize_result(run_id: str, value, output_directory: Path) -> dict:

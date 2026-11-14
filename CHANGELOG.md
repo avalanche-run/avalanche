@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Breaking:** run summary `status` now uses the same human vocabulary on every
+  host: queued, running, waiting, succeeded, failed, cancelled and unknown. The
+  host's original value is `lifecycle`. Run lists include waiting-on counts and
+  safe error templates; exception text remains in node detail. `ava run list`
+  adds a NOTE column, the browser and TUI show why a run waits, and `ava result
+  --wait` follows one status stream rather than polling full snapshots.
+
 - Fixed: a machine event whose validation failed three times (`ava operator`)
   looked like a transient source outage. The run's reason is now
   `validation_retry_limit` in REST, gRPC and `ava run show`, and validator

@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { formatElapsedSeconds } from "./elapsedDuration";
-import { WaitStatus } from "./RunStatus";
+import { WaitStatus } from "./RunStatusBadge";
 import { formatRemaining } from "./machineGraph";
 import type { PendingItem, TimelineEntry, TimelineTone } from "./timelineEntries";
 

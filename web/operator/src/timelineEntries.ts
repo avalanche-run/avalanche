@@ -354,7 +354,7 @@ export interface FlowTimelineInput {
   waits?: readonly WaitCard[];
   /** The run has settled on its host (not one of its live statuses). */
   settled: boolean;
-  /** The host's terminal outcomes (OperatorApi.terminalRunStatuses). */
+  /** Terminal outcomes from the shared human run-status vocabulary. */
   terminalStatuses: readonly string[];
 }
 

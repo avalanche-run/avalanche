@@ -178,9 +178,13 @@ class MachineHost:
         self._command_queued_at = 0.0
         self._deferred: deque[tuple[float, Command]] = deque()
         self.run_waiters: dict[tuple[str, str], Future[HostStepOutput]] = {}
-        self.op.on_run_update(lambda run: self.queue.put(RunChanged(run.run_id))
-                              if run.status in {RunStatus.SUCCESS, RunStatus.FAILED,
-                                                RunStatus.CANCELLED} else None)
+        self.op.on_run_update(
+            lambda run: (
+                self.queue.put(RunChanged(run.run_id))
+                if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}
+                else None
+            )
+        )
         self.thread = threading.Thread(target=self._loop, name="avalanche-machine", daemon=True)
         self.thread.start()
         reply: Future[None] = Future()
@@ -410,6 +414,22 @@ class MachineHost:
         with self.op._lock:
             run = self.op._runs[record.run_id]
             run.status = status
+            run.kind = "machine"
+            if status == RunStatus.WAITING:
+                state = record.spec.states.get(record.state)
+                run.open_waits = (
+                    0,
+                    0,
+                    1,
+                    0,
+                    int(state is not None and bool(state.timers)),
+                )
+                run.running_outside_wait = 0
+            elif status == RunStatus.PENDING:
+                run.open_waits = (0, 0, 0, 0, 0)
+                self.op._summary_reducers.pop(record.run_id, None)
+                run.running_outside_wait = 0
+                run.error_code = run.error_step = run.error_message = None
             record.run_status = status
             if status in {RunStatus.SUCCESS, RunStatus.CANCELLED, RunStatus.FAILED}:
                 self._definition_retries.pop(record.machine, None)
@@ -646,8 +666,7 @@ class MachineHost:
         if failures >= 3:
             retry.next_at = float("inf")
             summary = (
-                "validation_retry_limit: " + summary
-                + "; repair source and retry state entry"
+                "validation_retry_limit: " + summary + "; repair source and retry state entry"
             )
             self._definition_unavailable(record, summary, reason="validation_retry_limit")
             return
@@ -884,10 +903,16 @@ class MachineHost:
         return receipt
 
     def _drive(
-        self, record: InstanceRecord, *, manual: bool = False, catchup: bool = False
+        self,
+        record: InstanceRecord,
+        *,
+        manual: bool = False,
+        catchup: bool = False,
+        restoring: bool = False,
     ) -> None:
         if record.phase != "waiting":
             return
+        previous_spec, previous_reason = record.spec, record.reason
         spec = self._current_spec(record)
         if spec is None:
             if record.phase == "waiting":
@@ -956,8 +981,29 @@ class MachineHost:
                 ),
             )
         else:
+            consumed_changed = record.internal_consumed != reduction.record.internal_consumed
             record.internal_consumed = reduction.record.internal_consumed
-            self._commit(record, lambda connection: None, RunStatus.WAITING)
+            # Restarting an idle machine with no new fact must preserve the row,
+            # including its per-run revision. Rebuild only the timer heap.
+            with self.op._lock:
+                run = self.op._runs[record.run_id]
+                expected_waits = (
+                    0,
+                    0,
+                    1,
+                    0,
+                    int(bool(record.spec.states[record.state].timers)),
+                )
+                changed = (
+                    not restoring
+                    or previous_spec != record.spec
+                    or previous_reason != record.reason
+                    or consumed_changed
+                    or run.status != RunStatus.WAITING
+                    or run.open_waits != expected_waits
+                )
+            if changed:
+                self._commit(record, lambda connection: None, RunStatus.WAITING)
             self._arm_timers(record)
 
     def _finished(self, command: StateEntryFinished) -> None:
@@ -1036,7 +1082,7 @@ class MachineHost:
                     RunStatus.FAILED if called else RunStatus.WAITING,
                 )
             elif record.phase == "waiting":
-                self._drive(record, catchup=True)
+                self._drive(record, catchup=True, restoring=True)
 
     def _step(self, request: MachineStepRequest) -> HostStepOutput:
         if not request.enabled:

@@ -171,10 +171,20 @@ class TuiResourceReader:
             row: dict[str, JsonValue] = {
                 "id": run.run_id,
                 "flow": run.workflow_id or run.flow_name,
-                "status": run.status.value,
+                "status": run.human_status,
+                "lifecycle": run.status.value,
+                "kind": run.kind,
                 "triggered_at": run.triggered_at,
                 "revision": run.revision,
             }
+            if run.waiting_on is not None:
+                row["waiting_on"] = list(run.waiting_on)
+            if run.error_code is not None:
+                row["error_code"] = run.error_code
+            if run.error_step is not None:
+                row["error_step"] = run.error_step
+            if run.error_message is not None:
+                row["error_message"] = run.error_message
             after = (
                 _Position(target, revision, run_token=page.next_page_token)
                 if page.next_page_token

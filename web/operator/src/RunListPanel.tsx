@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "rea
 import { ChevronUp, Maximize2, Minimize2, Workflow } from "lucide-react";
 
 import { formatElapsedSeconds } from "./elapsedDuration";
+import { waitingOnLabel } from "./runStatus";
 import type { RunSummaryMsg } from "./model";
 import {
   type PriorityFit,
@@ -13,7 +14,7 @@ import {
   twoLineWidth,
   useObservedWidth,
 } from "./priorityFit";
-import { RunStatus, type WaitKind } from "./RunStatus";
+import { RunStatus, type WaitKind } from "./RunStatusBadge";
 import { DeploymentList } from "./DeploymentList";
 import { formatAbsoluteTime, formatTimeAgo, useNow } from "./timeAgo";
 import { useTimelineScrollHandle } from "./useTimelineScrollHandle";
@@ -240,8 +241,24 @@ export function RunListPanel({
       );
     });
   }, [filteredRuns, fontSize, listWidth, now, pageOffset, visibleRunCount]);
-  // A wrapped (two-line) key label adds one line to its row.
-  const rowHeights = rowFits.map((fit) => rowHeight + (fit?.wrapped.has("key") ? fontSize : 0));
+  // Notes own a full-width second line, never the fixed status column. Reserve
+  // enough lines before virtualizing so long safe messages cannot overlap rows.
+  const rowNotes = filteredRuns
+    .slice(pageOffset, pageOffset + visibleRunCount)
+    .map((summary) =>
+      summary.status === "waiting"
+        ? waitingOnLabel(summary.waitingOn)
+        : (summary.errorMessage ?? ""),
+    );
+  const noteWidth = Math.max(fontSize, (listWidth ?? 300) - 46);
+  const rowHeights = rowFits.map(
+    (fit, index) =>
+      rowHeight +
+      (fit?.wrapped.has("key") ? fontSize : 0) +
+      (rowNotes[index]
+        ? 4 + Math.ceil((rowNotes[index].length * fontSize * 0.7) / noteWidth) * (fontSize + 3)
+        : 0),
+  );
   const rowHeightsKey = rowHeights.join(",");
   useEffect(() => {
     setTimelinePageCount(1);
@@ -569,7 +586,7 @@ export function RunListPanel({
                     return (
                       <button
                         type="button"
-                        className={`run-list-row run-list-columns absolute top-0 left-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_100px] items-center gap-3 border-0 border-b border-run-list-line text-left font-mono text-ink leading-none ${expanded ? "pl-[16px] pr-[30px] text-[11px]" : "pl-[16px] pr-[30px] text-[10px]"} ${selectedRunId === summary.runId ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
+                        className={`run-list-row run-list-columns absolute top-0 left-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_100px] items-center gap-x-3 gap-y-1 border-0 border-b border-run-list-line text-left font-mono text-ink leading-none ${expanded ? "pl-[16px] pr-[30px] text-[11px]" : "pl-[16px] pr-[30px] text-[10px]"} ${selectedRunId === summary.runId ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
                         key={summary.runId}
                         onClick={() => onSelectRun(summary.runId)}
                         aria-pressed={selectedRunId === summary.runId}
@@ -634,6 +651,14 @@ export function RunListPanel({
                             }
                           />
                         </span>
+                        {rowNotes[virtualRow.index] && (
+                          <span
+                            className="run-summary-note col-span-2 break-all text-secondary normal-case tracking-normal"
+                            style={{ lineHeight: `${fontSize + 3}px` }}
+                          >
+                            {rowNotes[virtualRow.index]}
+                          </span>
+                        )}
                       </button>
                     );
                   })}

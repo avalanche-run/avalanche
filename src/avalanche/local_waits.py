@@ -11,7 +11,7 @@ import json
 import re
 import time
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -126,11 +126,15 @@ class LocalWaits:
         run_id: str,
         declarations: Mapping[str, tuple[WaitSpec, type[BaseModel] | None]],
         *,
+        on_wait_armed: Callable[[str, str], None] | None = None,
+        on_wait_resolved: Callable[[str], None] | None = None,
         fast_timers: bool = False,
         max_events: int = 64,
         max_payload_bytes: int = 1024 * 1024,
     ) -> None:
         self.run_id = run_id
+        self._on_wait_armed = on_wait_armed
+        self._on_wait_resolved = on_wait_resolved
         self.condition = Condition()
         self.fast_timers = fast_timers
         self.max_events = max_events
@@ -183,8 +187,12 @@ class LocalWaits:
         with self.condition:
             return (
                 self.condition.wait_for(
-                    lambda: self._closed
-                    or any(slot.armed and not slot.resolved for slot in self._waits.values()),
+                    lambda: (
+                        self._closed
+                        or any(
+                            slot.armed and not slot.resolved for slot in self._waits.values()
+                        )
+                    ),
                     timeout,
                 )
                 and not self._closed
@@ -279,6 +287,8 @@ class LocalWaits:
             if slot.armed:
                 return
             slot.armed = True
+            if self._on_wait_armed is not None:
+                self._on_wait_armed(node, slot.spec.kind)
             slot.reviewed = reviewed_preview(
                 reviewed if slot.spec.show_node_id is not None else slot.spec.show
             )
@@ -325,6 +335,7 @@ class LocalWaits:
             if not slot.armed or slot.resolved or slot.deadline is None or now < slot.deadline:
                 continue
             slot.resolved = True
+            self._emit_resolved(node)
             if slot.spec.kind == "decision":
                 if slot.spec.on_timeout is None:
                     slot.failure = DecisionTimeoutError("decision_timeout")
@@ -347,6 +358,11 @@ class LocalWaits:
             self._queued_bytes -= size
             self._queued_count -= 1
             slot.resolved = True
+            self._emit_resolved(node)
+
+    def _emit_resolved(self, node: str) -> None:
+        if self._on_wait_resolved is not None:
+            self._on_wait_resolved(node)
 
     def _receipt(
         self,
@@ -464,6 +480,7 @@ class LocalWaits:
             slot.value = value
             slot.audit = receipt
             slot.resolved = True
+            self._emit_resolved(node)
             self.condition.notify_all()
             return receipt.model_copy(deep=True)
 
@@ -474,7 +491,10 @@ class LocalWaits:
 
     def finish_run(self, node: str) -> None:
         with self.condition:
-            self._waits[node].resolved = True
+            if not self._waits[node].resolved:
+                self._waits[node].resolved = True
+                if self._waits[node].armed:
+                    self._emit_resolved(node)
             self.condition.notify_all()
 
     def resolved(self, node: str) -> bool:

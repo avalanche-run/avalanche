@@ -1758,6 +1758,10 @@ class GrpcStateProvider:
                         raise _DetailHydrationRaceError(
                             f"agent events advanced during hydration for {node_id}"
                         )
+                if current.summary_only and current.revision > hydrated.revision:
+                    raise _DetailHydrationRaceError(
+                        "summary advanced during structural hydration"
+                    )
                 structural = current if current.revision > hydrated.revision else hydrated
                 result = deepcopy(structural)
                 if result.terminal_seal is None:
@@ -2165,9 +2169,15 @@ class GrpcStateProvider:
     def _load_authoritative_reset_baseline(self, notice: StreamResetNotice) -> ResetBaseline:
         catalog = self.get_catalog()
         marker, summaries = self._list_run_summaries()
-        snapshots = [
-            self._get_consistent_run_snapshot(summary, marker) for summary in summaries
-        ]
+        # Reset is a list baseline, not a detail read per run. Selection hydrates
+        # the one inspected run on demand, using its row revision.
+        runs_by_workflow: dict[str, list[RunState]] = {
+            workflow.selector: [] for workflow in catalog.workflows
+        }
+        for summary in summaries:
+            runs_by_workflow.setdefault(summary.workflow_id or summary.flow_name, []).append(
+                _run_from_summary(marker[0], summary)
+            )
         confirmed_catalog = self.get_catalog()
         if replace(
             confirmed_catalog,
@@ -2186,15 +2196,29 @@ class GrpcStateProvider:
                 "workflow catalog does not span the run baseline high-water mark"
             )
 
-        runs_by_workflow = self._group_snapshot_runs(catalog.workflows, snapshots)
         return ResetBaseline(
             generation=notice.generation,
             operator_instance_id=marker[0],
             as_of_event_ulid=marker[1].event_ulid,
             catalog=catalog,
-            runs_by_workflow=runs_by_workflow,
+            runs_by_workflow={key: tuple(runs) for key, runs in runs_by_workflow.items()},
             cursor=marker[1],
         )
+
+    def get_run_summary(self, run_id: str) -> pb.GetRunSummaryResponseV2:
+        """Read a cheap row and a gap-free cursor for WatchRunStatus."""
+        return self._call(self._stub.GetRunSummary, pb.GetRunSummaryRequestV2(run_id=run_id))
+
+    def watch_run_status(
+        self, after_cursor: pb.LifecycleCursorV2, *, timeout: float
+    ) -> Iterator[pb.RunStatusEnvelopeV2]:
+        stream = self._stub.WatchRunStatus(
+            pb.WatchRunStatusRequestV2(after_cursor=after_cursor), timeout=timeout
+        )
+        try:
+            yield from stream
+        finally:
+            stream.cancel()
 
     def _list_run_summaries(
         self,
@@ -2256,60 +2280,6 @@ class GrpcStateProvider:
                 )
             seen_tokens.add(next_page.continuation_id)
             page_token = next_page
-
-    def _get_consistent_run_snapshot(
-        self,
-        summary: RunSummary,
-        marker: tuple[str, ResetBaselineCursor],
-    ) -> RunSnapshot:
-        message = self._call(
-            self._stub.GetRunSnapshot,
-            pb.GetRunSnapshotRequestV2(run_id=summary.run_id),
-        )
-        self._remember_snapshot_bindings(message)
-        snapshot = run_snapshot_from_v2(message)
-        if snapshot.operator_instance_id != marker[0]:
-            raise _ResetBaselineMismatchError(
-                f"run snapshot {summary.run_id!r} crossed the operator epoch"
-            )
-        if snapshot.as_of_event_ulid != marker[1].event_ulid:
-            raise _ResetBaselineMismatchError(
-                f"run snapshot {summary.run_id!r} crossed the baseline cursor"
-            )
-        if snapshot.summary != summary:
-            raise _ResetBaselineMismatchError(
-                f"run snapshot {summary.run_id!r} changed after summary pagination"
-            )
-        return snapshot
-
-    @staticmethod
-    def _group_snapshot_runs(
-        workflows: tuple[WorkflowInfo, ...],
-        snapshots: list[RunSnapshot],
-    ) -> dict[str, tuple[RunState, ...]]:
-        runs_by_workflow: dict[str, list[RunState]] = {
-            workflow.selector: [] for workflow in workflows
-        }
-        selectors_by_name: dict[str, list[str]] = {}
-        for workflow in workflows:
-            selectors_by_name.setdefault(workflow.name, []).append(workflow.selector)
-
-        for snapshot in sorted(
-            snapshots,
-            key=lambda item: (
-                item.summary.created_sequence,
-                item.summary.run_id,
-            ),
-        ):
-            selector = snapshot.summary.workflow_id
-            if not selector:
-                candidates = selectors_by_name.get(snapshot.summary.flow_name, [])
-                selector = candidates[0] if len(candidates) == 1 else snapshot.summary.flow_name
-            if selector not in runs_by_workflow:
-                runs_by_workflow[selector] = []
-            runs_by_workflow[selector].append(_run_from_snapshot(snapshot))
-
-        return {selector: tuple(runs) for selector, runs in runs_by_workflow.items()}
 
     @staticmethod
     def _validate_reset_baseline(
@@ -2943,7 +2913,14 @@ class GrpcStateProvider:
             if current is None:
                 raise _RunUpdateResetError(f"update references unknown run {change.run_id}")
             run = replace(current)
-            if isinstance(change, RunNodesExpanded):
+            if current.summary_only and not isinstance(
+                change, (RunStatusChanged, TerminalSealAppended)
+            ):
+                # A reset/list row has no node baseline to reduce detail against.
+                # Keep it summary-only until selection hydrates the run; never
+                # turn a node update on an unselected row into another reset.
+                run = None
+            elif isinstance(change, RunNodesExpanded):
                 run.topology = change.topology
                 run.expansions = dict(change.expansions)
                 run.nodes = dict(current.nodes)
@@ -2968,6 +2945,11 @@ class GrpcStateProvider:
                     run.started_at = change.started_at
                     run.ended_at = change.ended_at
                     run.revision = change.revision
+                    run.open_waits = change.summary.waiting_on or (0, 0, 0, 0, 0)
+                    run.running_outside_wait = change.summary.running_outside_wait
+                    run.error_code = change.summary.error_code
+                    run.error_step = change.summary.error_step
+                    run.error_message = change.summary.error_message
                     self._run_revisions[change.run_id] = change.revision
             elif isinstance(change, NodeStatusChanged):
                 node = run.nodes.get(change.node_id)
@@ -3281,6 +3263,7 @@ def _run_from_summary(
         RunCreated(summary=summary),
     )
     run.details_hydrated = False
+    run.summary_only = True
     return run
 
 
@@ -3290,6 +3273,12 @@ def _run_from_created(operator_instance_id: str, created: RunCreated) -> RunStat
         run_id=summary.run_id,
         flow_name=summary.flow_name,
         status=summary.status,
+        kind=summary.kind,
+        open_waits=summary.waiting_on or (0, 0, 0, 0, 0),
+        running_outside_wait=summary.running_outside_wait,
+        error_code=summary.error_code,
+        error_step=summary.error_step,
+        error_message=summary.error_message,
         started_at=summary.started_at,
         triggered_at=summary.triggered_at,
         ended_at=summary.ended_at,

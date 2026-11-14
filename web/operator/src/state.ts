@@ -220,6 +220,8 @@ function applyEnvelope(
   }
   if (change.oneofKind === "runCreated" && change.runCreated.summary) {
     const summary = change.runCreated.summary;
+    const current = state.runs[summary.runId];
+    if (current && BigInt(current.revision) > BigInt(summary.revision)) return next;
     next.runs = { ...state.runs, [summary.runId]: summary };
     return next;
   }
@@ -237,11 +239,12 @@ function applyEnvelope(
   if (change.oneofKind === "runStatusChanged") {
     const changed = change.runStatusChanged;
     const summary = state.runs[runId];
-    if (summary) {
+    if (summary && BigInt(changed.revision) >= BigInt(summary.revision)) {
       next.runs = {
         ...state.runs,
         [runId]: {
           ...summary,
+          ...changed.summary,
           status: changed.status,
           startedAt: changed.startedAt,
           endedAt: changed.endedAt,
@@ -249,8 +252,11 @@ function applyEnvelope(
         },
       };
     }
-    if (selected?.summary) {
-      if (selected.summary.status === "requesting" && changed.status !== "requesting") {
+    if (selected?.summary && BigInt(changed.revision) >= BigInt(selected.summary.revision)) {
+      if (
+        selected.summary.lifecycle === "requesting" &&
+        changed.summary?.lifecycle !== "requesting"
+      ) {
         // Preparation installs the run-pinned topology, but its live update carries only status.
         next.selectedRunStructureRepairEventUlid = update.eventUlid;
       }
@@ -258,6 +264,7 @@ function applyEnvelope(
         ...selected,
         summary: {
           ...selected.summary,
+          ...changed.summary,
           status: changed.status,
           startedAt: changed.startedAt,
           endedAt: changed.endedAt,

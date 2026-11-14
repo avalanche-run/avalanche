@@ -5,7 +5,7 @@ import type { OperatorApi, RunLink, RunLinks } from "./api";
 import { type MachineReadRefresh, useRead } from "./MachineWorkspace";
 import type { RunSummaryMsg } from "./model";
 import { shortRunId } from "./RunListPanel";
-import { RunStatus } from "./RunStatus";
+import { RunStatus } from "./RunStatusBadge";
 import { formatAbsoluteTime, formatTimeAgo, useNow } from "./timeAgo";
 
 /**

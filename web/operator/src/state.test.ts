@@ -238,7 +238,7 @@ describe("live operator projection", () => {
   it("refreshes a requesting snapshot with the prepared run topology and node history", async () => {
     const release = Promise.withResolvers<void>();
     const prepared = Promise.withResolvers<RunSnapshotMsg>();
-    const requestingSummary = { ...summary, status: "requesting" };
+    const requestingSummary = { ...summary, status: "queued", lifecycle: "requesting" };
     const declaration = JSON.stringify({
       input_schema: null,
       step_inputs: [],
@@ -272,7 +272,8 @@ describe("live operator projection", () => {
           oneofKind: "runStatusChanged",
           runStatusChanged: {
             runId: summary.runId,
-            status: "pending",
+            summary: { ...summary, status: "queued", lifecycle: "pending", revision: "2" },
+            status: "queued",
             startedAt: 0,
             endedAt: 0,
             revision: "2",
@@ -303,7 +304,7 @@ describe("live operator projection", () => {
     act(() =>
       prepared.resolve(
         RunSnapshotMsg.create({
-          ...snapshotFor({ ...summary, status: "pending", revision: "2" }),
+          ...snapshotFor({ ...summary, status: "queued", lifecycle: "pending", revision: "2" }),
           asOfEventUlid: eventUlid(3),
           topology: preparedTopology,
           nodes: [

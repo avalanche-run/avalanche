@@ -54,8 +54,12 @@ def test_operator_native_calls(tmp_path):
         raise AssertionError("native call did not progress")
 
     def terminal(run_id):
-        return wait_for(lambda: op.get_run(run_id).status in {
-            RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED})
+        return wait_for(
+            lambda: (
+                op.get_run(run_id).status
+                in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}
+            )
+        )
 
     try:
         for target in ("echo_child", "flow_call_machine", "call_machine"):
@@ -73,6 +77,7 @@ def test_operator_native_calls(tmp_path):
 
         # A retained key can outlive its result: fail the call, not the host owner.
         from runtime.operator.state.results import RunResultTable
+
         expired = op.start_run("keyed_echo_child", input={"id": 19})
         terminal(expired)
         with op._state_store.transaction() as connection:
@@ -84,8 +89,10 @@ def test_operator_native_calls(tmp_path):
         )
         terminal(unavailable)
         assert op.get_run(unavailable).status == RunStatus.FAILED
-        assert any("child_run_failed" in (node.error or "") and expired in node.error
-                   for node in op.get_run(unavailable).nodes.values())
+        assert any(
+            "child_run_failed" in (node.error or "") and expired in node.error
+            for node in op.get_run(unavailable).nodes.values()
+        )
 
         large = op.start_run("large_call_parent")
         terminal(large)
@@ -102,11 +109,24 @@ def test_operator_native_calls(tmp_path):
             )
             terminal(failed)
             assert op.get_run(failed).status == RunStatus.FAILED
-            assert any("child_run_failed" in (node.error or "")
-                       for node in op.get_run(failed).nodes.values())
+            assert any(
+                "child_run_failed" in (node.error or "")
+                for node in op.get_run(failed).nodes.values()
+            )
 
-        lifecycle = op.start_run("lifecycle_call_parent", input={
-            "ticket": 70, "journal": str(tmp_path / "lifecycle-state-entries")})
+        # A7: idle machines expose event waits without inspecting node detail.
+        idle = op.start_run(
+            "approval", input={"ticket": 71, "journal": str(tmp_path / "idle-state-entries")}
+        )
+        wait_for(lambda: op.get_run_summary(idle)[0].human_status == "waiting")
+        idle_summary = op.get_run_summary(idle)[0]
+        assert idle_summary.kind == "machine"
+        assert idle_summary.waiting_on == (0, 0, 1, 0, 0)
+
+        lifecycle = op.start_run(
+            "lifecycle_call_parent",
+            input={"ticket": 70, "journal": str(tmp_path / "lifecycle-state-entries")},
+        )
         lifecycle_link = wait_for(lambda: op.run_links(lifecycle)["children"])[0]
         wait_for(lambda: op.get_run(lifecycle_link.child_run_id).status == RunStatus.WAITING)
         assert op.get_run(lifecycle).status == RunStatus.RUNNING
@@ -116,8 +136,10 @@ def test_operator_native_calls(tmp_path):
 
         timed = op.start_run("timeout_parent", input={"id": 30})
         terminal(timed)
-        assert any("child_run_timeout" in (node.error or "")
-                   for node in op.get_run(timed).nodes.values())
+        assert any(
+            "child_run_timeout" in (node.error or "")
+            for node in op.get_run(timed).nodes.values()
+        )
         timed_child = op.run_links(timed)["children"][0].child_run_id
         wait_for(lambda: op.get_run(timed_child).status == RunStatus.RUNNING)
         op.cancel_run(timed)  # Cancelling a terminal timeout must not cancel its live child.
@@ -127,8 +149,10 @@ def test_operator_native_calls(tmp_path):
         cancel_child = wait_for(lambda: op.run_links(cancelled)["children"])[0].child_run_id
         op.cancel_run(cancel_child)
         terminal(cancelled)
-        assert any("child_run_cancelled" in (node.error or "")
-                   for node in op.get_run(cancelled).nodes.values())
+        assert any(
+            "child_run_cancelled" in (node.error or "")
+            for node in op.get_run(cancelled).nodes.values()
+        )
 
         created = op.start_run("call_parent", input={"id": 40, "target": "slow_child"})
         link = wait_for(lambda: op.run_links(created)["children"])[0]
@@ -138,15 +162,19 @@ def test_operator_native_calls(tmp_path):
         terminal(link.child_run_id)
         assert op.get_run(link.child_run_id).status == RunStatus.CANCELLED
 
-        for name, code in (("self_wait_machine", "child_run_self_wait"),
-                           ("cycle_a", "child_run_wait_cycle")):
+        for name, code in (
+            ("self_wait_machine", "child_run_self_wait"),
+            ("cycle_a", "child_run_wait_cycle"),
+        ):
             refused = op.start_run(name, input={"id": 60})
             terminal(refused)
             states = [op.get_run(refused)]
-            states += [op.get_run(link.child_run_id)
-                       for link in op.run_links(refused)["children"]]
-            assert any(code in (node.error or "") for state in states
-                       for node in state.nodes.values()), states
+            states += [
+                op.get_run(link.child_run_id) for link in op.run_links(refused)["children"]
+            ]
+            assert any(
+                code in (node.error or "") for state in states for node in state.nodes.values()
+            ), states
 
         existing = op.start_run("slow_child", input={"id": 50})
         attached = op.start_run("call_parent", input={"id": 50, "target": "slow_child"})
@@ -156,6 +184,14 @@ def test_operator_native_calls(tmp_path):
         terminal(attached)
         assert op.get_run(existing).status not in {RunStatus.CANCELLED, RunStatus.FAILED}
 
+        # A7 also counts an armed state timer as sleep, not only its accept wait.
+        timed_idle = op.start_run(
+            "approval", input={"ticket": 72, "journal": str(tmp_path / "timer-state-entries")}
+        )
+        wait_for(lambda: op.get_run_summary(timed_idle)[0].human_status == "waiting")
+        op._machine_host.send(timed_idle, "approved", {}, "arm-state-timer")
+        wait_for(lambda: op.get_run_summary(timed_idle)[0].waiting_on == (0, 0, 1, 0, 1))
+
         # Read the same persisted tree through the real REST bridge and CLI transport.
         import socket
         import subprocess
@@ -164,6 +200,7 @@ def test_operator_native_calls(tmp_path):
 
         from runtime.operator.server import serve
         from runtime.operator.web import start_browser_server
+
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
@@ -175,14 +212,66 @@ def test_operator_native_calls(tmp_path):
                 rest_links = json.load(reply)
             assert rest_links["children"][0]["child_run_id"] == existing
             command = subprocess.run(
-                [sys.executable, "-m", "ava_cli", "run", "links", attached,
-                 "--connect", f"127.0.0.1:{port}", "--json"],
-                capture_output=True, text=True, timeout=30, check=True)
+                [
+                    sys.executable,
+                    "-m",
+                    "ava_cli",
+                    "run",
+                    "links",
+                    attached,
+                    "--connect",
+                    f"127.0.0.1:{port}",
+                    "--json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=True,
+            )
             assert json.loads(command.stdout) == rest_links
+            import grpc
+
+            from runtime.operator.proto import operator_pb2 as pb
+            from runtime.operator.proto import operator_pb2_grpc as rpc
+
+            with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+                before = (
+                    rpc.OperatorServiceV2Stub(channel)
+                    .GetRunSummary(pb.GetRunSummaryRequestV2(run_id=idle))
+                    .summary
+                )
+            assert before.kind == "machine" and before.status == "waiting"
+            assert before.waiting_on.event == 1
         finally:
             browser.close()
             server.stop(grace=0).wait()
     finally:
+        op.close()
+
+    # A8: one process owns the same database after the first host shuts down.
+    op = Operator([str(fixture)], watch=False, schedule=False, state_db=tmp_path / "state.db")
+    server = serve(op, port=0, block=False)
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{server._avalanche_bound_port}") as channel:
+            after = (
+                rpc.OperatorServiceV2Stub(channel)
+                .GetRunSummary(pb.GetRunSummaryRequestV2(run_id=idle))
+                .summary
+            )
+        assert after.SerializeToString(deterministic=True) == before.SerializeToString(
+            deterministic=True
+        )
+        from google.protobuf.json_format import MessageToDict
+
+        evidence = {
+            "A7": MessageToDict(after, preserving_proto_field_name=True),
+            "A8_byte_equal": after.SerializeToString(deterministic=True)
+            == before.SerializeToString(deterministic=True),
+        }
+        (tmp_path / "machine-status-evidence.json").write_text(json.dumps(evidence, indent=2))
+        print("MACHINE_STATUS_EVIDENCE", json.dumps(evidence, sort_keys=True))
+    finally:
+        server.stop(grace=0).wait()
         op.close()
 
 
@@ -233,6 +322,7 @@ def test_native_calls():
 
     from avalanche.machine_test import MachineTest, WorkflowTest
     from avalanche.run_steps import ChildRunError
+
     spec = importlib.util.spec_from_file_location(
         "calls_fixture", SDK / "test/fixtures/local_machine.py"
     )
@@ -247,16 +337,21 @@ def test_native_calls():
     cycle = MachineTest(fixture.cycle_a, fixture.CallInput(id=9), stub=None)
     with pytest.raises(ChildRunError, match="child_run_failed"):
         cycle._sync(cycle._drive())
-    assert any("child_run_wait_cycle" in str(item.handle.exception())
-               for item in cycle.host.instances.values())
+    assert any(
+        "child_run_wait_cycle" in str(item.handle.exception())
+        for item in cycle.host.instances.values()
+    )
 
-    parked = fixture.call_parent().test(fixture.CallInput(id=80, target="slow_child"),
-                                       targets=(fixture.slow_child,))
+    parked = fixture.call_parent().test(
+        fixture.CallInput(id=80, target="slow_child"), targets=(fixture.slow_child,)
+    )
     parked_child = parked.host.flow_runs[0]
     # Re-attach to the same keyed child and ignore changed non-key input.
-    attached = WorkflowTest(fixture.call_parent(),
-                           fixture.CallInput(id=80, target="slow_child", fail=True),
-                           host=parked.host)
+    attached = WorkflowTest(
+        fixture.call_parent(),
+        fixture.CallInput(id=80, target="slow_child", fail=True),
+        host=parked.host,
+    )
     attached._sync(attached._drive())
     attached.handle.cancel()
     assert attached.handle.cancelled() and not parked_child.handle.cancelled()

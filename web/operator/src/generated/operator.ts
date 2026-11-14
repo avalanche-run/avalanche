@@ -1022,6 +1022,73 @@ export interface RunSummaryV2 {
      * @generated from protobuf field: string kind = 13
      */
     kind: string;
+    /**
+     * @generated from protobuf field: string lifecycle = 14
+     */
+    lifecycle: string;
+    /**
+     * @generated from protobuf field: optional avalanche.operator.RunWaitingOnV2 waiting_on = 15
+     */
+    waitingOn?: RunWaitingOnV2;
+    /**
+     * @generated from protobuf field: optional string error_code = 16
+     */
+    errorCode?: string;
+    /**
+     * @generated from protobuf field: optional string error_step = 17
+     */
+    errorStep?: string;
+    /**
+     * @generated from protobuf field: optional string error_message = 18
+     */
+    errorMessage?: string;
+}
+/**
+ * @generated from protobuf message avalanche.operator.RunWaitingOnV2
+ */
+export interface RunWaitingOnV2 {
+    /**
+     * @generated from protobuf field: uint32 operator = 1
+     */
+    operator: number;
+    /**
+     * @generated from protobuf field: uint32 decision = 2
+     */
+    decision: number;
+    /**
+     * @generated from protobuf field: uint32 event = 3
+     */
+    event: number;
+    /**
+     * @generated from protobuf field: uint32 run = 4
+     */
+    run: number;
+    /**
+     * @generated from protobuf field: uint32 sleep = 5
+     */
+    sleep: number;
+}
+/**
+ * @generated from protobuf message avalanche.operator.GetRunSummaryRequestV2
+ */
+export interface GetRunSummaryRequestV2 {
+    /**
+     * @generated from protobuf field: string run_id = 1
+     */
+    runId: string;
+}
+/**
+ * @generated from protobuf message avalanche.operator.GetRunSummaryResponseV2
+ */
+export interface GetRunSummaryResponseV2 {
+    /**
+     * @generated from protobuf field: avalanche.operator.RunSummaryV2 summary = 1
+     */
+    summary?: RunSummaryV2;
+    /**
+     * @generated from protobuf field: avalanche.operator.LifecycleCursorV2 cursor = 2
+     */
+    cursor?: LifecycleCursorV2;
 }
 /**
  * @generated from protobuf message avalanche.operator.ListRunSummariesRequestV2
@@ -5144,7 +5211,12 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
             { no: 10, name: "triggered_at", kind: "scalar", T: 1 /*ScalarType.DOUBLE*/ },
             { no: 11, name: "key_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 12, name: "read_state", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
-            { no: 13, name: "kind", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+            { no: 13, name: "kind", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 14, name: "lifecycle", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 15, name: "waiting_on", kind: "message", T: () => RunWaitingOnV2 },
+            { no: 16, name: "error_code", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 17, name: "error_step", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 18, name: "error_message", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<RunSummaryV2>): RunSummaryV2 {
@@ -5162,6 +5234,7 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
         message.keyJson = "";
         message.readState = "";
         message.kind = "";
+        message.lifecycle = "";
         if (value !== undefined)
             reflectionMergePartial<RunSummaryV2>(this, message, value);
         return message;
@@ -5209,6 +5282,21 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
                     break;
                 case /* string kind */ 13:
                     message.kind = reader.string();
+                    break;
+                case /* string lifecycle */ 14:
+                    message.lifecycle = reader.string();
+                    break;
+                case /* optional avalanche.operator.RunWaitingOnV2 waiting_on */ 15:
+                    message.waitingOn = RunWaitingOnV2.internalBinaryRead(reader, reader.uint32(), options, message.waitingOn);
+                    break;
+                case /* optional string error_code */ 16:
+                    message.errorCode = reader.string();
+                    break;
+                case /* optional string error_step */ 17:
+                    message.errorStep = reader.string();
+                    break;
+                case /* optional string error_message */ 18:
+                    message.errorMessage = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -5261,6 +5349,21 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
         /* string kind = 13; */
         if (message.kind !== "")
             writer.tag(13, WireType.LengthDelimited).string(message.kind);
+        /* string lifecycle = 14; */
+        if (message.lifecycle !== "")
+            writer.tag(14, WireType.LengthDelimited).string(message.lifecycle);
+        /* optional avalanche.operator.RunWaitingOnV2 waiting_on = 15; */
+        if (message.waitingOn)
+            RunWaitingOnV2.internalBinaryWrite(message.waitingOn, writer.tag(15, WireType.LengthDelimited).fork(), options).join();
+        /* optional string error_code = 16; */
+        if (message.errorCode !== undefined)
+            writer.tag(16, WireType.LengthDelimited).string(message.errorCode);
+        /* optional string error_step = 17; */
+        if (message.errorStep !== undefined)
+            writer.tag(17, WireType.LengthDelimited).string(message.errorStep);
+        /* optional string error_message = 18; */
+        if (message.errorMessage !== undefined)
+            writer.tag(18, WireType.LengthDelimited).string(message.errorMessage);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -5271,6 +5374,185 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
  * @generated MessageType for protobuf message avalanche.operator.RunSummaryV2
  */
 export const RunSummaryV2 = new RunSummaryV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class RunWaitingOnV2$Type extends MessageType<RunWaitingOnV2> {
+    constructor() {
+        super("avalanche.operator.RunWaitingOnV2", [
+            { no: 1, name: "operator", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 2, name: "decision", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 3, name: "event", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 4, name: "run", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 5, name: "sleep", kind: "scalar", T: 13 /*ScalarType.UINT32*/ }
+        ]);
+    }
+    create(value?: PartialMessage<RunWaitingOnV2>): RunWaitingOnV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.operator = 0;
+        message.decision = 0;
+        message.event = 0;
+        message.run = 0;
+        message.sleep = 0;
+        if (value !== undefined)
+            reflectionMergePartial<RunWaitingOnV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: RunWaitingOnV2): RunWaitingOnV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* uint32 operator */ 1:
+                    message.operator = reader.uint32();
+                    break;
+                case /* uint32 decision */ 2:
+                    message.decision = reader.uint32();
+                    break;
+                case /* uint32 event */ 3:
+                    message.event = reader.uint32();
+                    break;
+                case /* uint32 run */ 4:
+                    message.run = reader.uint32();
+                    break;
+                case /* uint32 sleep */ 5:
+                    message.sleep = reader.uint32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: RunWaitingOnV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* uint32 operator = 1; */
+        if (message.operator !== 0)
+            writer.tag(1, WireType.Varint).uint32(message.operator);
+        /* uint32 decision = 2; */
+        if (message.decision !== 0)
+            writer.tag(2, WireType.Varint).uint32(message.decision);
+        /* uint32 event = 3; */
+        if (message.event !== 0)
+            writer.tag(3, WireType.Varint).uint32(message.event);
+        /* uint32 run = 4; */
+        if (message.run !== 0)
+            writer.tag(4, WireType.Varint).uint32(message.run);
+        /* uint32 sleep = 5; */
+        if (message.sleep !== 0)
+            writer.tag(5, WireType.Varint).uint32(message.sleep);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.RunWaitingOnV2
+ */
+export const RunWaitingOnV2 = new RunWaitingOnV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetRunSummaryRequestV2$Type extends MessageType<GetRunSummaryRequestV2> {
+    constructor() {
+        super("avalanche.operator.GetRunSummaryRequestV2", [
+            { no: 1, name: "run_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetRunSummaryRequestV2>): GetRunSummaryRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.runId = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetRunSummaryRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetRunSummaryRequestV2): GetRunSummaryRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string run_id */ 1:
+                    message.runId = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetRunSummaryRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string run_id = 1; */
+        if (message.runId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.runId);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.GetRunSummaryRequestV2
+ */
+export const GetRunSummaryRequestV2 = new GetRunSummaryRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetRunSummaryResponseV2$Type extends MessageType<GetRunSummaryResponseV2> {
+    constructor() {
+        super("avalanche.operator.GetRunSummaryResponseV2", [
+            { no: 1, name: "summary", kind: "message", T: () => RunSummaryV2 },
+            { no: 2, name: "cursor", kind: "message", T: () => LifecycleCursorV2 }
+        ]);
+    }
+    create(value?: PartialMessage<GetRunSummaryResponseV2>): GetRunSummaryResponseV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<GetRunSummaryResponseV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetRunSummaryResponseV2): GetRunSummaryResponseV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* avalanche.operator.RunSummaryV2 summary */ 1:
+                    message.summary = RunSummaryV2.internalBinaryRead(reader, reader.uint32(), options, message.summary);
+                    break;
+                case /* avalanche.operator.LifecycleCursorV2 cursor */ 2:
+                    message.cursor = LifecycleCursorV2.internalBinaryRead(reader, reader.uint32(), options, message.cursor);
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetRunSummaryResponseV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* avalanche.operator.RunSummaryV2 summary = 1; */
+        if (message.summary)
+            RunSummaryV2.internalBinaryWrite(message.summary, writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* avalanche.operator.LifecycleCursorV2 cursor = 2; */
+        if (message.cursor)
+            LifecycleCursorV2.internalBinaryWrite(message.cursor, writer.tag(2, WireType.LengthDelimited).fork(), options).join();
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.GetRunSummaryResponseV2
+ */
+export const GetRunSummaryResponseV2 = new GetRunSummaryResponseV2$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class ListRunSummariesRequestV2$Type extends MessageType<ListRunSummariesRequestV2> {
     constructor() {
@@ -8429,6 +8711,7 @@ export const OperatorServiceV2 = new ServiceType("avalanche.operator.OperatorSer
     { name: "StageInputFile", options: {}, I: StageInputFileRequestV2, O: FileAttachmentV2 },
     { name: "StageInputWorkspace", clientStreaming: true, options: {}, I: StageInputWorkspaceRequestV2, O: StagedInputWorkspaceV2 },
     { name: "ListRunSummaries", options: {}, I: ListRunSummariesRequestV2, O: RunSummaryPageV2 },
+    { name: "GetRunSummary", options: {}, I: GetRunSummaryRequestV2, O: GetRunSummaryResponseV2 },
     { name: "GetRunSnapshot", options: {}, I: GetRunSnapshotRequestV2, O: RunSnapshotV2 },
     { name: "ListRunActivity", options: {}, I: ListRunActivityRequestV2, O: RunActivityPageV2 },
     { name: "ListEvaluations", options: {}, I: ListEvaluationsRequestV2, O: EvaluationListV2 },

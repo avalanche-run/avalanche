@@ -41,6 +41,7 @@ service OperatorServiceV2 {
   rpc StageInputWorkspace(stream StageInputWorkspaceRequestV2)
       returns (StagedInputWorkspaceV2);
   rpc ListRunSummaries(ListRunSummariesRequestV2) returns (RunSummaryPageV2);
+  rpc GetRunSummary(GetRunSummaryRequestV2) returns (GetRunSummaryResponseV2);
   rpc GetRunSnapshot(GetRunSnapshotRequestV2) returns (RunSnapshotV2);
   rpc ListRunActivity(ListRunActivityRequestV2) returns (RunActivityPageV2);
   rpc ListEvaluations(ListEvaluationsRequestV2) returns (EvaluationListV2);
@@ -400,6 +401,28 @@ message RunSummaryV2 {
   string read_state = 12;
   // Immutable run kind, independent of the current definition catalog.
   string kind = 13;
+  string lifecycle = 14;
+  optional RunWaitingOnV2 waiting_on = 15;
+  optional string error_code = 16;
+  optional string error_step = 17;
+  optional string error_message = 18;
+}
+
+message RunWaitingOnV2 {
+  uint32 operator = 1;
+  uint32 decision = 2;
+  uint32 event = 3;
+  uint32 run = 4;
+  uint32 sleep = 5;
+}
+
+message GetRunSummaryRequestV2 {
+  string run_id = 1;
+}
+
+message GetRunSummaryResponseV2 {
+  RunSummaryV2 summary = 1;
+  LifecycleCursorV2 cursor = 2;
 }
 
 message ListRunSummariesRequestV2 {

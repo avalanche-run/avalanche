@@ -27,6 +27,7 @@ from avalanche.agent.trace import AgentTraceStatus, TokenUsage
 from avalanche.machine_host import MachineOpSpec
 from avalanche.mapping import MapSpec
 from avalanche.policies import StepPolicy, WaitSpec
+from avalanche.run_status import EMPTY_WAITING_ON, WaitingOn, local_human_status
 from avalanche.run_steps import RunOpSpec
 
 from .step_io import StepIo
@@ -315,10 +316,30 @@ class RunState:
     created_sequence: int = 0
     revision: int = 0
     latest_log_sequence: int = 0
-    details_hydrated: bool = True  # False only for summary-only list projections.
+    details_hydrated: bool = True  # Log/trace bodies have been loaded, not node structure.
+    summary_only: bool = False  # No structural node baseline (distinct from detail bodies).
     terminal_seal: TerminalSealDescriptor | None = None
     input: RunInput | None = None
     expansions: dict[str, int] = field(default_factory=dict)
+    # Fixed-width summary counters are persisted; coordinator identities are local
+    # to its lifetime (in-flight flow coordinators fail on restart).
+    kind: str = "flow"
+    open_waits: WaitingOn = EMPTY_WAITING_ON
+    running_outside_wait: int = 0
+    error_code: str | None = None
+    error_step: str | None = None
+    error_message: str | None = None
+
+    @property
+    def waiting_on(self) -> WaitingOn | None:
+        return (
+            None
+            if any(
+                self.status is status
+                for status in (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED)
+            )
+            else self.open_waits
+        )
 
     @property
     def elapsed(self) -> float | None:
@@ -423,6 +444,20 @@ class RunSummary:
     workflow_display_name: str = ""
     created_sequence: int = 0
     revision: int = 0
+    waiting_on: WaitingOn | None = EMPTY_WAITING_ON
+    running_outside_wait: int = 0
+    error_code: str | None = None
+    error_step: str | None = None
+    error_message: str | None = None
+    kind: str = "flow"
+
+    @property
+    def human_status(self) -> str:
+        return local_human_status(
+            self.status.value,
+            sum(self.waiting_on or EMPTY_WAITING_ON),
+            self.running_outside_wait,
+        )
 
 
 @dataclass(frozen=True)
@@ -713,6 +748,7 @@ class RunNodesExpanded:
 class RunStatusChanged:
     run_id: str
     status: RunStatus
+    summary: RunSummary
     started_at: float | None = None
     ended_at: float | None = None
     revision: int = 0

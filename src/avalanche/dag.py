@@ -2374,6 +2374,8 @@ class Workflow:
                 if isinstance(ref.node, WaitNode)
             },
             fast_timers=fast_timers,
+            on_wait_armed=hooks.on_wait_armed if hooks is not None else None,
+            on_wait_resolved=hooks.on_wait_resolved if hooks is not None else None,
         )
         for key, value in (events or {}).items():
             handle.send_event(key, value, idempotency_key=f"preload:{key}", principal=principal)

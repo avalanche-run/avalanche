@@ -49,7 +49,7 @@ import { useOperatorProjection } from "./state";
 import { WorkspaceDivider } from "./WorkspaceDivider";
 import { useRunEvaluations } from "./useRunEvaluations";
 import { INPUT_NODE_ID } from "./workflowInput";
-import { LOCAL_TERMINAL_RUN_STATUSES, runStatusLive } from "./runLiveness";
+import { TERMINAL_STATUSES, runStatusLive } from "./runStatus";
 
 import {
   INSPECTOR_MIN_WIDTH,
@@ -537,7 +537,7 @@ export function WorkflowWorkspaceSurface({
   const runStatusValue =
     (selectedRunId !== undefined ? state.runs[selectedRunId]?.status : undefined) ??
     run?.summary?.status;
-  const runLive = runStatusLive(api, runStatusValue);
+  const runLive = runStatusLive(runStatusValue);
   const machineRefresh = useMemo(
     () => ({ live: runLive, refreshKey: runRevision }),
     [runLive, runRevision],
@@ -649,7 +649,7 @@ export function WorkflowWorkspaceSurface({
     ],
   );
   const requestingRun =
-    run?.summary?.status === "requesting" ||
+    run?.summary?.lifecycle === "requesting" ||
     (run !== undefined &&
       run === loadedRun &&
       state.selectedRunStructureRepairEventUlid !== undefined);
@@ -743,7 +743,7 @@ export function WorkflowWorkspaceSurface({
     `${machineInstance?.entry}:${machineInstance?.status}:${runRevision}`,
     !runExpired,
   );
-  const terminalStatuses = api.terminalRunStatuses ?? LOCAL_TERMINAL_RUN_STATUSES;
+  const terminalStatuses = TERMINAL_STATUSES;
   const fromStart =
     machineHistory.cursor === undefined &&
     hiddenStateEntries === 0 &&
@@ -1148,7 +1148,6 @@ export function WorkflowWorkspaceSurface({
       runActionsEnabled={runActionsEnabled}
       inputDraft={!historical ? inputDraft : undefined}
       onEditInput={() => openNode(INPUT_NODE_ID)}
-      api={api}
     />
   ) : undefined;
   // Machine-only actions sit beside the normal run controls (Cancel).

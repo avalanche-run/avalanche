@@ -64,12 +64,7 @@ export type {
   TimelineKind,
 } from "./timelineEntries";
 export type { MachineHistory, MachineReadRefresh } from "./MachineWorkspace";
-export {
-  LOCAL_LIVE_RUN_STATUSES,
-  LOCAL_TERMINAL_RUN_STATUSES,
-  runStatusLive,
-  runStatusTerminal,
-} from "./runLiveness";
+export * from "./runStatus";
 export { runKeyLabel } from "./runKey";
 // Relative run times on one shared low-frequency clock, and the no-truncation
 // priority fit for run rows, for hosts' own run surfaces (the console top bar).
