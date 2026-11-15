@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.14
 
 - **Breaking:** run summary `status` now uses the same human vocabulary on every
   host: queued, running, waiting, succeeded, failed, cancelled and unknown. The
