@@ -3,17 +3,29 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def main() -> None:
+async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--catalog-url", help="Public catalog route to refresh the offline names")
     args = parser.parse_args()
     names = json.loads((ROOT / "catalog_entries.json").read_text())
+    if args.catalog_url:
+        import httpx
+
+        from avalanche.integrations.providers import CatalogEntry
+
+        async with httpx.AsyncClient(timeout=30, trust_env=False, follow_redirects=False) as client:
+            response = await client.get(args.catalog_url)
+            response.raise_for_status()
+            entries = [CatalogEntry.model_validate(entry) for entry in response.json()["entries"]]
+        names = [entry.name for entry in entries]
     if (
         not isinstance(names, list)
         or not all(isinstance(name, str) and name.isidentifier() for name in names)
@@ -31,8 +43,10 @@ def main() -> None:
         if not target.exists() or target.read_text() != generated:
             parser.exit(1, "Catalog imports are stale. Run scripts/generate_catalog.py.\n")
     else:
+        if args.catalog_url:
+            (ROOT / "catalog_entries.json").write_text(json.dumps(names, indent=2) + "\n")
         target.write_text(generated)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

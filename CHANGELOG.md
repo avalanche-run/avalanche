@@ -5,6 +5,9 @@
 - The browser interface's tests and build work again from a checkout on a
   case-insensitive filesystem (the macOS default): two source files no longer
   differ only by letter case.
+- The offline catalog generator can refresh names from a provider's public catalog
+  URL with `--catalog-url`, or check that those names match the packaged imports.
+
 - The operator UI shows built-in integrations with provider names and image icons,
   connected, missing and reconnect-needed states, provider browser login and
   disconnect. Provider setup and outage messages remain visible unchanged.
