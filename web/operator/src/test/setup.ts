@@ -1,6 +1,11 @@
-import { cleanup } from "@testing-library/react";
+
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 import "@testing-library/jest-dom/vitest";
+
+// findBy*/waitFor default to 1 s, which a loaded host misses while rendering;
+// see vite.config.ts testTimeout.
+configure({ asyncUtilTimeout: 5_000 });
 
 const viewportGeometry = [
   { selector: ".run-list-scroll", width: 300, height: 192 },

@@ -28,6 +28,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: "./src/test/setup.ts",
+    // Wall-clock budgets sized for a shared, loaded host: one worker scheduled on
+    // an efficiency core runs these jsdom tests 2-3x slower than on a P-core.
+    // A hung test still fails; only time-to-render variance is absorbed.
+    testTimeout: 20_000,
   },
   css: {
     postcss: {
