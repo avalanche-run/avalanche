@@ -37,7 +37,8 @@ export interface ControlMachineResponseV2 {
 export interface ListIntegrationsRequestV2 {
 }
 /**
- * integrations_json is an IntegrationStatusList document.
+ * integrations_json is an IntegrationStatusList document: {integrations: [...]}.
+ * Each row has the IntegrationStatusV2.status_json schema below.
  *
  * @generated from protobuf message avalanche.operator.IntegrationListV2
  */
@@ -59,7 +60,14 @@ export interface ConnectIntegrationRequestV2 {
     requestJson: string;
 }
 /**
- * status_json is one IntegrationStatus document.
+ * status_json is one IntegrationStatus document. declaration.kind is connector,
+ * mcp, or catalog. A catalog declaration carries name and allow (nullable list).
+ * display_name (nullable string) and icon_url (nullable HTTP image address) are
+ * provider metadata, not workflow declarations. Never fetch icon_url as markup.
+ * account_state is connected | missing | none | reconnect_needed. connected is
+ * true only for connected. provider_error is a nullable actionable message;
+ * a catalog setup failure does not prevent listing unrelated integrations.
+ * No credential or temporary tool-session pass is returned.
  *
  * @generated from protobuf message avalanche.operator.IntegrationStatusV2
  */
@@ -96,7 +104,11 @@ export interface GetIntegrationLoginRequestV2 {
     waitSeconds: number;
 }
 /**
- * login_json is one IntegrationLogin document.
+ * login_json is one IntegrationLogin document: login_id, name,
+ * authorization_url, status (waiting | connected | failed), error (nullable).
+ * Catalog login addresses come from the selected provider; no local token is
+ * stored. Provider setup errors use FAILED_PRECONDITION; outages UNAVAILABLE.
+ * DisconnectIntegration accepts every kind, including catalog.
  *
  * @generated from protobuf message avalanche.operator.IntegrationLoginV2
  */

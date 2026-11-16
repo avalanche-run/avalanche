@@ -25,6 +25,7 @@ import shutil
 import sys
 import tempfile
 import threading
+import time
 from collections.abc import AsyncIterator, Coroutine, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
@@ -35,11 +36,13 @@ from typing import IO, TYPE_CHECKING
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from ..policies import NonRetryableError
-from .accounts import AccessTokenCredential, ApiKeyCredential
+from .accounts import AccessTokenCredential, AccountLoginExpiredError, ApiKeyCredential
 from .core import (
     MCP,
+    Catalog,
     IntegrationError,
     IntegrationNotConnectedError,
+    IntegrationReconnectError,
     IntegrationTool,
     MCPServerUnavailableError,
     MCPToolError,
@@ -47,6 +50,7 @@ from .core import (
     StepAccounts,
     _no_account_store,
 )
+from .providers import CatalogToolSession, integration_provider
 
 if TYPE_CHECKING:
     import httpx2
@@ -105,6 +109,7 @@ class _Server:
 
     declaration: MCP
     account: StepAccount | None
+    session: CatalogToolSession | None = field(default=None, repr=False)
     # Resolved with the server's tools once it is connected, or with why not.
     ready: concurrent.futures.Future[tuple[_OfferedTool, ...]] = field(
         default_factory=concurrent.futures.Future
@@ -119,16 +124,52 @@ class _Server:
 class MCPConnections:
     """The connections to one running step's MCP servers."""
 
-    def __init__(self, step_name: str, servers: Sequence[MCP], accounts: StepAccounts) -> None:
+    def __init__(
+        self, step_name: str, servers: Sequence[MCP | Catalog], accounts: StepAccounts
+    ) -> None:
         self._step_name = step_name
         self._connect_command = accounts.connect_command
-        self._servers = tuple(
-            _Server(
-                declaration=server,
-                account=accounts.account(server.name) if server.accepts_account else None,
-            )
-            for server in servers
-        )
+        builtins = tuple(server.name for server in servers if isinstance(server, Catalog))
+        session = None
+        if builtins:
+            provider = integration_provider()
+            connected = {item.name: item for item in provider.connections()}
+            missing = [name for name in builtins if name not in connected]
+            command = accounts.connect_command or "ava connect"
+            if missing:
+                raise IntegrationNotConnectedError(step_name, missing, command)
+            for name in builtins:
+                if connected[name].state == "reconnect_needed":
+                    raise IntegrationReconnectError(
+                        step_name, name, command, "the provider requires a new login"
+                    )
+            try:
+                session = provider.open_tool_session(step_name, builtins)
+            except AccountLoginExpiredError as expired:
+                raise IntegrationReconnectError(
+                    step_name, expired.name, command, expired.reason
+                ) from None
+        resolved: list[_Server] = []
+        for server in servers:
+            if isinstance(server, Catalog):
+                assert session is not None
+                resolved.append(
+                    _Server(
+                        declaration=MCP(server.name, url=session.url, allow=server.allow),
+                        account=None,
+                        session=session,
+                    )
+                )
+            else:
+                resolved.append(
+                    _Server(
+                        declaration=server,
+                        account=accounts.account(server.name)
+                        if server.accepts_account
+                        else None,
+                    )
+                )
+        self._servers = tuple(resolved)
         self._thread = threading.Thread(
             target=self._run, name=f"avalanche-mcp-{step_name}", daemon=True
         )
@@ -136,6 +177,16 @@ class MCPConnections:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._stop: asyncio.Event | None = None
         self._closed = False
+        self._unavailable: MCPServerUnavailableError | None = None
+
+    def raise_if_unavailable(self) -> None:
+        """A model cannot turn an expired pass or relay outage into step success."""
+        if self._unavailable is not None:
+            raise self._unavailable
+
+    def _catalog_failure(self, message: str) -> MCPServerUnavailableError:
+        self._unavailable = MCPServerUnavailableError(message)
+        return self._unavailable
 
     async def open(self) -> tuple[IntegrationTool, ...]:
         """Connect to every server and return their tools, in declaration order.
@@ -280,12 +331,20 @@ class MCPConnections:
 
         async def record(response: httpx2.Response) -> None:
             server.statuses.append(response.status_code)
+            if server.session is not None and response.status_code in (401, 403):
+                self._catalog_failure("The catalog tool session expired; retry the step.")
 
         # The library follows a redirect only within the server's own origin,
         # so the account's header never leaves for another host.
         http = await stack.enter_async_context(
             httpx2.AsyncClient(
-                auth=None if server.account is None else _account_auth(server.account),
+                auth=(
+                    _session_auth(server.session)
+                    if server.session is not None
+                    else None
+                    if server.account is None
+                    else _account_auth(server.account)
+                ),
                 timeout=httpx2.Timeout(CONNECT_TIMEOUT_SECONDS, read=TOOL_CALL_TIMEOUT_SECONDS),
                 event_hooks={"response": [record]},
             )
@@ -346,6 +405,12 @@ class MCPConnections:
         # An error that already says what to do, such as a login to connect again.
         if isinstance(cause, NonRetryableError):
             return cause
+        if server.session is not None:
+            if self._unavailable is not None:
+                return self._unavailable
+            return MCPServerUnavailableError(
+                f"step {self._step_name!r}: catalog tool server is unavailable"
+            )
         step, name = self._step_name, declaration.name
         if declaration.command is not None:
             program = declaration.command[0]
@@ -471,14 +536,26 @@ class MCPConnections:
         from mcp import MCPError
 
         tool, name = offered.agent_name, server.declaration.name
+        self.raise_if_unavailable()
+        if server.session is not None and time.time() >= server.session.expires_at:
+            raise self._catalog_failure("The catalog tool session expired; retry the step.")
         client = server.client
         if client is None:
+            if server.session is not None:
+                raise self._catalog_failure("The catalog tool server is unavailable.")
             why = f": {server.closed}" if server.closed else ""
             raise MCPToolError(f"{tool}: the connection to MCP server {name!r} is closed{why}")
         try:
             with anyio.fail_after(TOOL_CALL_TIMEOUT_SECONDS):
                 result = await client.call_tool(offered.server_name, arguments)
+        except MCPServerUnavailableError:
+            raise self._catalog_failure(
+                "The catalog tool session expired; retry the step."
+            ) from None
         except TimeoutError:
+            if server.session is not None:
+                self.raise_if_unavailable()
+                raise self._catalog_failure("The catalog tool server is unavailable.") from None
             raise MCPToolError(
                 f"{tool}: MCP server {name!r} did not answer within "
                 f"{TOOL_CALL_TIMEOUT_SECONDS:g} seconds"
@@ -490,6 +567,9 @@ class MCPConnections:
             anyio.BrokenResourceError,
             anyio.ClosedResourceError,
         ) as exc:
+            if server.session is not None:
+                self.raise_if_unavailable()
+                raise self._catalog_failure("The catalog tool server is unavailable.") from None
             raise MCPToolError(
                 f"{tool}: MCP server {name!r} failed: {_described(exc)}"
             ) from exc
@@ -498,6 +578,21 @@ class MCPConnections:
         if result.structured_content is not None:
             return _JSON.validate_python(result.structured_content)
         return _text(result)
+
+
+def _session_auth(session: CatalogToolSession) -> httpx2.Auth:
+    import httpx2
+
+    class SessionAuth(httpx2.Auth):
+        def auth_flow(self, request: httpx2.Request):
+            if time.time() >= session.expires_at:
+                raise MCPServerUnavailableError(
+                    "The catalog tool session expired; retry the step."
+                )
+            request.headers["Authorization"] = "Bearer " + session.pass_value.get_secret_value()
+            yield request
+
+    return SessionAuth()
 
 
 def _account_auth(account: StepAccount) -> httpx2.Auth:

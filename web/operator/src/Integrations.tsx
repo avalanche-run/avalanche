@@ -24,6 +24,7 @@ import { formatAbsoluteTime } from "./timeAgo";
 const ACCOUNT_LABELS: Record<IntegrationAccountState, string> = {
   connected: "Connected",
   missing: "Not connected",
+  reconnect_needed: "Reconnect needed",
   none: "No account needed",
 };
 
@@ -86,8 +87,10 @@ export function NodeIntegrationBadges({
         const status = view.status(declaration.name);
         const state = accountState(status);
         // Only an account a step cannot start without is flagged on the graph.
-        const blocking = state === "missing" && status?.requires_account === true;
-        const label = integrationLabel(declaration);
+        const blocking =
+          state === "reconnect_needed" ||
+          (state === "missing" && status?.requires_account === true);
+        const label = integrationLabel(declaration, status);
         return (
           <li
             key={declaration.name}
@@ -101,7 +104,7 @@ export function NodeIntegrationBadges({
               className={compact ? "size-4" : "size-3"}
             />
             <span className="min-w-0 truncate">{label}</span>
-            {blocking && <span className="sr-only">, not connected</span>}
+            {blocking && <span className="sr-only">, {ACCOUNT_LABELS[state]}</span>}
           </li>
         );
       })}
@@ -112,12 +115,12 @@ export function NodeIntegrationBadges({
 function AccountState({ state }: { state: IntegrationAccountState }) {
   return (
     <span
-      className={`integration-account inline-flex items-center gap-1.5 font-mono text-[9px] uppercase ${state === "connected" ? "text-mint" : state === "missing" ? "text-amber" : "text-muted"}`}
+      className={`integration-account inline-flex items-center gap-1.5 font-mono text-[9px] uppercase ${state === "connected" ? "text-mint" : state === "missing" || state === "reconnect_needed" ? "text-amber" : "text-muted"}`}
       data-account={state}
     >
       <span
         aria-hidden="true"
-        className={`size-[6px] rounded-full ${state === "connected" ? "bg-mint" : state === "missing" ? "bg-amber" : "bg-muted"}`}
+        className={`size-[6px] rounded-full ${state === "connected" ? "bg-mint" : state === "missing" || state === "reconnect_needed" ? "bg-amber" : "bg-muted"}`}
       />
       {ACCOUNT_LABELS[state]}
     </span>
@@ -136,7 +139,9 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
   const declarations = useStepIntegrations();
   const view = useIntegrationsView();
   if (declarations.length === 0) return null;
-  const missing = integrationsMissingAccount(error, declarations);
+  const missing = integrationsMissingAccount(error, declarations, view.statuses);
+  const label = (declaration: IntegrationDeclaration) =>
+    integrationLabel(declaration, view.status(declaration.name));
   return (
     <section
       aria-label="Integrations"
@@ -149,8 +154,8 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
           className="integration-missing-account mb-3 rounded border border-warning-line bg-warning-surface px-3 py-2 text-[11px] text-warning-ink"
         >
           <p className="m-0">
-            This step did not start: {missing.map(integrationLabel).join(" and ")}{" "}
-            {missing.length === 1 ? "has" : "have"} no connected account.
+            {missing.map(label).join(" and ")} {missing.length === 1 ? "needs" : "need"} a
+            connected account to start this step.
           </p>
           {view.openIntegrations && (
             <p className="m-0 mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
@@ -161,7 +166,7 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
                   className={LINK_BUTTON}
                   onClick={() => view.openIntegrations?.(declaration.name)}
                 >
-                  Connect {integrationLabel(declaration)}
+                  Connect {label(declaration)}
                 </button>
               ))}
             </p>
@@ -170,19 +175,25 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
       )}
       <ul className="m-0 grid list-none gap-2.5 p-0">
         {declarations.map((declaration) => {
-          const state = accountState(view.status(declaration.name));
+          const status = view.status(declaration.name);
+          const state = accountState(status);
           return (
             <li key={declaration.name} data-integration={declaration.name} className="min-w-0">
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <IntegrationIcon declaration={declaration} className="size-4" />
                 <strong className="min-w-0 text-xs text-ink [overflow-wrap:anywhere]">
-                  {integrationLabel(declaration)}
+                  {integrationLabel(declaration, view.status(declaration.name))}
                 </strong>
                 <span className="rounded border border-line px-1.5 py-px font-mono text-[8px] tracking-[.08em] text-secondary uppercase">
                   {integrationKindLabel(declaration)}
                 </span>
                 {state && <AccountState state={state} />}
               </div>
+              {status?.provider_error && (
+                <p role="alert" className="m-0 mt-1 text-[11px] text-error-ink">
+                  {status.provider_error}
+                </p>
+              )}
               {declaration.kind === "connector" ? (
                 <details className="mt-1 min-w-0 pl-6">
                   <summary className="cursor-pointer text-[11px] text-secondary focus-visible:outline-2 focus-visible:outline-acid">
@@ -190,7 +201,7 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
                   </summary>
                   <ul
                     className="m-0 mt-1.5 grid list-none gap-1.5 p-0"
-                    aria-label={`${integrationLabel(declaration)} tools`}
+                    aria-label={`${integrationLabel(declaration, view.status(declaration.name))} tools`}
                   >
                     {declaration.tools.map((tool) => (
                       <li key={tool.name} className="min-w-0">
@@ -208,7 +219,9 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
                 </details>
               ) : (
                 <p className="m-0 mt-1 pl-6 text-[10px] text-muted [overflow-wrap:anywhere]">
-                  {declaration.url ?? declaration.command?.join(" ")}
+                  {declaration.kind === "mcp"
+                    ? (declaration.url ?? declaration.command?.join(" "))
+                    : "Provider-hosted tools"}
                   {declaration.allow
                     ? ` · tools: ${declaration.allow.join(", ")}`
                     : " · every tool the server offers"}
@@ -225,6 +238,7 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
 /** Names the integration a traced tool call belongs to, when its step declares one. */
 export function ToolIntegrationTag({ toolName }: { toolName: string }) {
   const declaration = integrationForTool(toolName, useStepIntegrations());
+  const view = useIntegrationsView();
   if (!declaration) return null;
   return (
     <span
@@ -233,7 +247,9 @@ export function ToolIntegrationTag({ toolName }: { toolName: string }) {
       title={`${integrationKindLabel(declaration)} ${declaration.name}`}
     >
       <IntegrationIcon declaration={declaration} className="size-2.5" />
-      <span className="truncate">{integrationLabel(declaration)}</span>
+      <span className="truncate">
+        {integrationLabel(declaration, view.status(declaration.name))}
+      </span>
     </span>
   );
 }
@@ -267,7 +283,7 @@ function ConnectForm({ status, onClose }: { status: IntegrationStatus; onClose: 
   );
   const [chosen, setChosen] = useState<IntegrationLoginKind>();
   const kind = chosen ?? kinds[0];
-  const label = integrationLabel(status.declaration);
+  const label = integrationLabel(status.declaration, status);
   const choice = (
     <div
       role="radiogroup"
@@ -448,7 +464,9 @@ function BrowserLoginForm({
                 className="size-3 animate-spin motion-reduce:animate-none"
               />
             )}
-            {status.connected ? "Log in again" : "Log in with browser"}
+            {status.connected || status.account_state === "reconnect_needed"
+              ? "Log in again"
+              : "Log in with browser"}
           </button>
           <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
             Cancel
@@ -471,11 +489,9 @@ function BrowserLoginForm({
         </p>
       )}
       <p className="m-0 text-[10px] text-muted">
-        {asksClientId
-          ? "The client ID and secret are those of the app you registered with the service. "
-          : "The login is the one the server describes. "}
-        The page opens in a browser on the machine the operator runs on. The tokens are stored
-        by the operator and are never shown.
+        {declaration.kind === "catalog"
+          ? "The provider's login opens in a new tab. The provider keeps the account; no credential is read back."
+          : `${asksClientId ? "Use the client ID and secret of your registered app. " : "Use the login the server describes. "}The login opens in a new tab. The operator stores the tokens and never shows them.`}
       </p>
       {error && (
         <p role="alert" className="m-0 text-[11px] text-error-ink">
@@ -539,7 +555,7 @@ function KeyForm({
   return (
     <form
       className="integration-connect-form mt-3 grid gap-3 rounded border border-line bg-canvas p-3"
-      aria-label={`Connect ${integrationLabel(declaration)}`}
+      aria-label={`Connect ${integrationLabel(declaration, status)}`}
       onSubmit={submit}
     >
       {choice}
@@ -635,7 +651,7 @@ function IntegrationRow({
   const [error, setError] = useState<string>();
   const { declaration } = status;
   const state = integrationAccountState(status);
-  const label = integrationLabel(declaration);
+  const label = integrationLabel(declaration, status);
   const takesAccount = integrationTakesAccount(declaration);
   const steps = status.used_by.map((use) => `${use.workflow} / ${use.node_id}`);
   const canConnect = status.login.some((kind) =>
@@ -687,7 +703,9 @@ function IntegrationRow({
             {status.name}
             {declaration.kind === "connector"
               ? ` · ${declaration.base_url}`
-              : ` · ${declaration.url ?? declaration.command?.join(" ")}`}
+              : declaration.kind === "mcp"
+                ? ` · ${declaration.url ?? declaration.command?.join(" ")}`
+                : ""}
           </p>
           <p className="m-0 mt-1 text-[10px] text-secondary [overflow-wrap:anywhere]">
             Used by {steps.join(", ")}
@@ -720,21 +738,28 @@ function IntegrationRow({
               {status.connected ? again : "Connect"}
             </button>
           )}
-          {status.connected && view.disconnect && !confirming && (
-            <button
-              type="button"
-              className={DANGER_BUTTON}
-              aria-label={`Disconnect ${label}`}
-              onClick={() => {
-                onConnecting(false);
-                setConfirming(true);
-              }}
-            >
-              Disconnect
-            </button>
-          )}
+          {(status.connected || state === "reconnect_needed") &&
+            view.disconnect &&
+            !confirming && (
+              <button
+                type="button"
+                className={DANGER_BUTTON}
+                aria-label={`Disconnect ${label}`}
+                onClick={() => {
+                  onConnecting(false);
+                  setConfirming(true);
+                }}
+              >
+                Disconnect
+              </button>
+            )}
         </div>
       </div>
+      {status.provider_error && (
+        <p role="alert" className="m-0 mt-2 text-[11px] text-error-ink">
+          {status.provider_error}
+        </p>
+      )}
       {connecting && canConnect && (
         <ConnectForm status={status} onClose={() => onConnecting(false)} />
       )}
@@ -827,6 +852,10 @@ export function IntegrationsScreen({
     (status) => integrationAccountState(status) === "missing" && status.requires_account,
   ).length;
 
+  const reconnect = view.statuses.filter(
+    (status) => integrationAccountState(status) === "reconnect_needed",
+  ).length;
+
   return (
     <section
       className={`integrations-panel min-h-0 min-w-0 overflow-auto bg-canvas ${className}`}
@@ -877,6 +906,7 @@ export function IntegrationsScreen({
               <p className="m-0 font-mono text-[10px] text-muted" role="status">
                 {view.statuses.length} integration{view.statuses.length === 1 ? "" : "s"}
                 {missing > 0 ? ` · ${missing} not connected` : ""}
+                {reconnect > 0 ? ` · ${reconnect} reconnect needed` : ""}
               </p>
               <ul className="m-0 list-none rounded border border-line bg-panel p-0">
                 {view.statuses.map((status) => (

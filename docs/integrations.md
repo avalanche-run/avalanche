@@ -5,12 +5,61 @@ with `integrations=[...]`, and each integration's account (an API key, or a
 login done in the browser) is connected on the host that runs the workflow,
 never written in code.
 
-There are two kinds:
+There are three kinds:
 
+- A **built-in** is declared with `ava.Catalog(...)` or imported from
+  `ava.catalog`. Its provider owns login, connection status and the tool session.
 - A **Connector** is a Python class you write for an HTTP API. Its tools are
   methods that call the API through a client that is already logged in.
 - An **MCP server** is declared with `ava.MCP(...)`. An agent step that
   declares it gets the tools the server offers.
+
+## Use a built-in
+
+```python
+import avalanche as ava
+from avalanche.catalog import asana
+
+@ava.agent_step(Research, integrations=[asana])
+async def research(topic: str, *, agent: ava.Agent) -> list[str]:
+    return (await agent(topic=topic)).outputs.findings
+```
+
+`ava.catalog.asana` is the same import. `ava.Catalog("asana", allow=["search"])`
+selects tools explicitly, or names an entry newer than the installed import list.
+Built-ins are for agent steps only. Display names and image addresses come from
+an installed provider, not workflow code. Importing or describing this workflow
+loads no provider and contacts no service. Connect and run it under the local
+operator, after installing and signing in to a provider package:
+
+```sh
+ava connect asana                  # open its login and wait for Connected
+ava connect asana --no-browser     # print the address instead
+ava connect --json                 # declared entries and account states
+ava disconnect asana               # also works for Connectors and custom MCP
+```
+
+A provider package registers a zero-argument factory in the Python entry-point
+group `avalanche.integration_providers`. With more than one installed, set
+`AVALANCHE_INTEGRATION_PROVIDER` to the entry name; the SDK never silently picks
+one. Implement the public `IntegrationProvider` protocol from
+`avalanche.integrations.providers`: `entries()`, `connections()`,
+`start_login(name)`, `login_status(login_id)`, `disconnect(name)` and
+`open_tool_session(step, names)`. These synchronous methods return the typed
+catalog models from the same module. The provider owns persistent connections
+and sign-in guidance. No provider implementation ships in the SDK.
+
+The SDK opens one tool session per step start, reuses MCP tool naming, allow
+selection, argument checks and teardown, and keeps the temporary bearer pass
+in memory only. An expired pass fails the next call as retryable unavailable;
+it is never renewed in place. Missing connections and revoked logins fail
+before the body without retries. Missing provider, provider not signed in,
+missing integration and unreachable provider have separate messages. Custom
+Connectors and MCP servers need no catalog provider.
+
+The checked-in `catalog_entries.json` drives `scripts/generate_catalog.py`.
+Regenerate offline with `uv run python scripts/generate_catalog.py`; the
+release gate uses `--check` to reject stale imports.
 
 ## Write a Connector
 

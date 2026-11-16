@@ -12,6 +12,7 @@ from __future__ import annotations
 import threading
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from multiprocessing.connection import Connection
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -25,7 +26,16 @@ from avalanche.integrations.accounts import (
 
 # Re-exported: the operator's callers catch it from this module.
 from avalanche.integrations.connect import IntegrationConnectError as IntegrationConnectError
-from avalanche.integrations.declaration import IntegrationDeclaration
+from avalanche.integrations.declaration import CatalogDeclaration, IntegrationDeclaration
+from avalanche.integrations.providers import (
+    CatalogConnection,
+    CatalogEntry,
+    ProviderNotInstalledError,
+    ProviderNotSignedInError,
+    ProviderSelectionError,
+    ProviderUnavailableError,
+    integration_provider,
+)
 
 from .models import WorkflowDescriptor
 from .state.integration_accounts import ConnectedAccount
@@ -145,6 +155,10 @@ class IntegrationStatus(BaseModel):
     connected: bool
     connected_at: float | None
     used_by: tuple[IntegrationUse, ...]
+    display_name: str | None = None
+    icon_url: str | None = None
+    account_state: Literal["connected", "missing", "none", "reconnect_needed"] = "missing"
+    provider_error: str | None = None
 
 
 class IntegrationStatusList(BaseModel):
@@ -187,18 +201,57 @@ def integration_statuses(
                     )
                 )
     statuses = []
+    entries: dict[str, CatalogEntry] = {}
+    connections: dict[str, CatalogConnection] = {}
+    provider_error = None
+    if any(isinstance(item, CatalogDeclaration) for item in declarations.values()):
+        try:
+            provider = integration_provider()
+            entries = {entry.name: entry for entry in provider.entries()}
+            connections = {item.name: item for item in provider.connections()}
+        except (
+            ProviderNotInstalledError,
+            ProviderNotSignedInError,
+            ProviderSelectionError,
+            ProviderUnavailableError,
+        ) as exc:
+            # Keep unrelated integrations usable when catalog setup is missing.
+            provider_error = str(exc)
     for name in sorted(declarations):
         declaration = declarations[name]
         account = connected.get(name)
+        builtin = isinstance(declaration, CatalogDeclaration)
+        entry = entries.get(name) if builtin else None
+        connection = connections.get(name) if builtin else None
+        requires = connect.declaration_requires_account(declaration)
+        state = (
+            ("missing" if connection is None else connection.state)
+            if builtin
+            else "connected"
+            if account is not None
+            else "missing"
+            if requires or connect.declaration_login_kinds(declaration)
+            else "none"
+        )
         statuses.append(
             IntegrationStatus(
                 name=name,
                 declaration=declaration,
                 requires_account=connect.declaration_requires_account(declaration),
                 login=connect.declaration_login_kinds(declaration),
-                connected=account is not None,
-                connected_at=None if account is None else account.connected_at,
+                connected=state == "connected",
+                connected_at=(None if connection is None else connection.connected_at)
+                if builtin
+                else None
+                if account is None
+                else account.connected_at,
                 used_by=tuple(uses[name]),
+                display_name=(None if entry is None else entry.display_name)
+                if isinstance(declaration, CatalogDeclaration)
+                else declaration.display_name,
+                icon_url=None if entry is None else entry.icon_url,
+                account_state=state,
+                provider_error=provider_error if builtin else None,
             )
         )
     return tuple(statuses)

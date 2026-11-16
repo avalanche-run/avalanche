@@ -11,6 +11,7 @@ import webbrowser
 from avalanche.integrations.accounts import ApiKeyCredential
 from avalanche.integrations.declaration import (
     ApiKeyDeclaration,
+    CatalogDeclaration,
     ConnectorDeclaration,
     MCPDeclaration,
     OAuth2Declaration,
@@ -68,9 +69,38 @@ def add_connect_command(
     command.set_defaults(handler=_handle)
 
 
+def add_disconnect_command(
+    subcommands: argparse._SubParsersAction[argparse.ArgumentParser],
+) -> None:
+    command = subcommands.add_parser("disconnect", help="disconnect a declared integration")
+    command.add_argument("name", help="integration name")
+    command.add_argument("--connect", default="localhost:7433", help="operator address")
+    command.add_argument("--json", action="store_true", help="emit JSON")
+    command.set_defaults(handler=_handle_disconnect)
+
+
+def _handle_disconnect(args: argparse.Namespace) -> int:
+    from .app import _make_provider
+
+    provider = _make_provider(args.connect)
+    try:
+        status = provider.disconnect_integration(args.name)
+        print(json.dumps(_record(status)) if args.json else f"Disconnected {status.name}.")
+        return 0
+    except (OperatorCallError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    finally:
+        provider.close()
+
+
 def _label(status: IntegrationStatus) -> str:
+    if status.account_state == "reconnect_needed":
+        return "reconnect needed"
     if status.connected:
         return "connected"
+    if isinstance(status.declaration, CatalogDeclaration):
+        return "missing"
     return "not connected" if status.requires_account else "no account"
 
 
@@ -78,11 +108,14 @@ def _record(status: IntegrationStatus) -> dict[str, object]:
     return {
         "name": status.name,
         "kind": status.declaration.kind,
-        "display_name": status.declaration.display_name,
+        "display_name": status.display_name,
         "requires_account": status.requires_account,
         "login": list(status.login),
         "connected": status.connected,
         "connected_at": status.connected_at,
+        "account_state": status.account_state,
+        "icon_url": status.icon_url,
+        "provider_error": status.provider_error,
         "used_by": [f"{use.workflow}/{use.node_id}" for use in status.used_by],
     }
 
@@ -95,14 +128,14 @@ def _read_secret(prompt: str) -> str:
 
 
 def _read_key(status: IntegrationStatus) -> str:
-    key = _read_secret(f"API key for {status.declaration.display_name or status.name}: ")
+    key = _read_secret(f"API key for {status.display_name or status.name}: ")
     if not key:
         raise ValueError("No API key was given")
     return key
 
 
 def _read_client_id(status: IntegrationStatus) -> str:
-    label = status.declaration.display_name or status.name
+    label = status.display_name or status.name
     if sys.stdin.isatty():
         client_id = input(f"Client ID of your {label} app: ").strip()
     else:
@@ -131,7 +164,7 @@ def _connect_in_browser(
     login = provider.start_integration_login(
         status.name, client_id=client_id, client_secret=client_secret
     )
-    label = status.declaration.display_name or status.name
+    label = status.display_name or status.name
     # Progress goes to standard error, so --json prints only the result.
     opened = open_browser and webbrowser.open(login.authorization_url)
     if not quiet or not opened:
@@ -179,6 +212,17 @@ def _handle(args: argparse.Namespace) -> int:
             )
         status = matches[0]
         match status.declaration:
+            case CatalogDeclaration():
+                if use_key or args.client_secret:
+                    raise ValueError("Catalog integrations use the provider's browser login.")
+                connected = _connect_in_browser(
+                    provider,
+                    status,
+                    client_id=None,
+                    client_secret=None,
+                    open_browser=not args.no_browser,
+                    quiet=args.json,
+                )
             case ConnectorDeclaration(auth=None):
                 raise ValueError(
                     f"Connector {status.name!r} declares no auth, so it needs no account."

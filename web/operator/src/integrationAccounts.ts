@@ -48,10 +48,19 @@ const mcpDeclaration = z.strictObject({
   client_id: z.string().nullable(),
 });
 
+const catalogDeclaration = z.strictObject({
+  kind: z.literal("catalog"),
+  name: z.string(),
+  allow: z.array(z.string()).nullable(),
+});
+
 const integrationDeclaration = z.discriminatedUnion("kind", [
   connectorDeclaration,
   mcpDeclaration,
+  catalogDeclaration,
 ]);
+
+const accountState = z.enum(["connected", "missing", "none", "reconnect_needed"]);
 
 const stepIntegrations = z.strictObject({ integrations: z.array(integrationDeclaration) });
 
@@ -63,6 +72,11 @@ const integrationStatus = z.strictObject({
   /** The ways to connect it, the default first; empty when it takes no account. */
   login: z.array(z.enum(["api_key", "browser"])),
   connected: z.boolean(),
+  // Older hosts omit these status fields; declarations still render there.
+  display_name: z.string().nullable().optional(),
+  icon_url: z.string().url().nullable().optional(),
+  account_state: accountState.optional(),
+  provider_error: z.string().nullable().optional(),
   /** Epoch seconds. */
   connected_at: z.number().nullable(),
   used_by: z.array(
@@ -130,12 +144,24 @@ export function parseIntegrationStatus(raw: string): IntegrationStatus {
   return integrationStatus.parse(JSON.parse(raw));
 }
 
-export function integrationLabel(declaration: IntegrationDeclaration): string {
-  return declaration.display_name ?? declaration.name;
+export function integrationLabel(
+  declaration: IntegrationDeclaration,
+  status?: IntegrationStatus,
+): string {
+  return (
+    status?.display_name ??
+    (declaration.kind === "catalog"
+      ? declaration.name
+      : (declaration.display_name ?? declaration.name))
+  );
 }
 
 export function integrationKindLabel(declaration: IntegrationDeclaration): string {
-  return declaration.kind === "connector" ? "Connector" : "MCP";
+  return declaration.kind === "catalog"
+    ? "Built-in"
+    : declaration.kind === "connector"
+      ? "Connector"
+      : "MCP";
 }
 
 /**
@@ -143,13 +169,15 @@ export function integrationKindLabel(declaration: IntegrationDeclaration): strin
  * started as a local process takes none: it has no request to carry a key.
  */
 export function integrationTakesAccount(declaration: IntegrationDeclaration): boolean {
+  if (declaration.kind === "catalog") return true;
   return declaration.kind === "mcp" ? declaration.url !== null : declaration.auth !== null;
 }
 
-export type IntegrationAccountState = "connected" | "missing" | "none";
+export type IntegrationAccountState = z.infer<typeof accountState>;
 
 /** `none`: a Connector without auth or a local-process MCP server; there is no account to connect. */
 export function integrationAccountState(status: IntegrationStatus): IntegrationAccountState {
+  if (status.account_state !== undefined) return status.account_state;
   if (status.connected) return "connected";
   return integrationTakesAccount(status.declaration) ? "missing" : "none";
 }
@@ -181,11 +209,29 @@ const NOT_CONNECTED = "with no connected account";
 const LOGIN_GONE = /the login of integration '([^']+)' is no longer valid/;
 
 /**
- * The declared integrations a failed step's error names as having no account,
- * or a login to connect again.
- * Empty when the step failed for another reason.
+ * Integrations whose current account blocks the step. Structured account state
+ * wins over historical errors; error text is a fallback for older hosts and
+ * for optional MCP accounts whose requirement was learned during a run.
  */
 export function integrationsMissingAccount(
+  error: string | undefined,
+  declarations: readonly IntegrationDeclaration[],
+  statuses: readonly IntegrationStatus[] = [],
+): IntegrationDeclaration[] {
+  const known = new Map(statuses.map((status) => [status.name, status]));
+  const inferred = legacyMissingAccount(error, declarations);
+  return declarations.filter((declaration) => {
+    const status = known.get(declaration.name);
+    if (status?.account_state === undefined) return inferred.includes(declaration);
+    return (
+      status.account_state === "reconnect_needed" ||
+      (status.account_state === "missing" &&
+        (status.requires_account || inferred.includes(declaration)))
+    );
+  });
+}
+
+function legacyMissingAccount(
   error: string | undefined,
   declarations: readonly IntegrationDeclaration[],
 ): IntegrationDeclaration[] {

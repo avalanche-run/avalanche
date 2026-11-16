@@ -15,6 +15,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
 import signal
 import socket
 import sqlite3
@@ -33,7 +34,11 @@ from urllib.parse import parse_qs, urlsplit
 import grpc
 import pytest
 
-from avalanche.integrations import ConnectorDeclaration, MCPDeclaration
+from avalanche.integrations import (
+    ConnectorDeclaration,
+    IntegrationNotConnectedError,
+    MCPDeclaration,
+)
 from runtime.operator.client import GrpcStateProvider, OperatorCallError
 from runtime.operator.models import NodeStatus, RunState, RunStatus
 from runtime.operator.proto import operator_pb2 as pb
@@ -212,13 +217,17 @@ def _operator(
 class _McpServer:
     """The MCP test server as a separate process that serves HTTP and wants a key."""
 
-    def __init__(self, journal: Path, key: str) -> None:
+    def __init__(self, journal: Path, key: str, expired: Path | None = None) -> None:
         self.journal = journal
         port = _free_port()
         self.url = f"http://127.0.0.1:{port}/mcp"
         self._process = subprocess.Popen(
             [sys.executable, str(_MCP_SERVER), "--http", str(port), key],
-            env={**os.environ, "MCP_TEST_SERVER_JOURNAL": str(journal)},
+            env={
+                **os.environ,
+                "MCP_TEST_SERVER_JOURNAL": str(journal),
+                **({"MCP_TEST_EXPIRED_PASS": str(expired)} if expired is not None else {}),
+            },
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -469,6 +478,18 @@ def test_connector_accounts_from_connect_to_agent_and_plain_steps(tmp_path):
             assert crm.keyed_redirects == 1
             assert other.hits == 0
             shown.append(repr(strayed))
+            # The CLI exposes the existing disconnect operation for both older kinds.
+            for name in ("acme-crm", "kb"):
+                disconnected = subprocess.run(
+                    [sys.executable, "-m", "ava_cli", "disconnect", name, "--connect", address],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                assert disconnected.returncode == 0, disconnected.stderr
+                assert not next(
+                    row for row in provider.list_integrations() if row.name == name
+                ).connected
 
         # The agent's call is in the stored trace under its tool name. The keys
         # are in the account table and nowhere else the operator wrote or printed.
@@ -1037,3 +1058,483 @@ def test_browser_logins_refresh_and_fail_when_revoked(tmp_path):
     finally:
         service.close()
         locked.close()
+
+
+class _CatalogService:
+    """External login/connection service and real MCP relay for the plug-in proof."""
+
+    def __init__(self, root: Path) -> None:
+        self.expired_pass = root / "expired-pass"
+        self.mcp = _McpServer(root / "catalog-calls.jsonl", _KB_KEY, self.expired_pass)
+        self.mode = "ready"
+        self.connected = False
+        self.connected_at: float | None = None
+        self.sessions: list[dict[str, str | float]] = []
+        self.connection_checks: list[str] = []
+        self.logins: dict[str, str] = {}
+        self.journal = root / "provider.jsonl"
+        service = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                url = urlsplit(self.path)
+                query = parse_qs(url.query)
+                code = 200
+                body = "null"
+                if url.path == "/connections":
+                    service.connection_checks.append(service.mode)
+                if service.mode in {"signed_out", "unreachable"}:
+                    code = 401 if service.mode == "signed_out" else 503
+                elif url.path == "/entries":
+                    body = json.dumps(
+                        [
+                            {
+                                "name": "asana",
+                                "display_name": "Asana proof",
+                                "icon_url": service.url + "/icon.png",
+                            }
+                        ]
+                    )
+                elif url.path == "/connections":
+                    body = json.dumps(
+                        [
+                            {
+                                "name": "asana",
+                                "connected_at": service.connected_at,
+                                "state": "reconnect_needed"
+                                if service.mode == "expired"
+                                else "connected",
+                            }
+                        ]
+                        if service.connected
+                        else []
+                    )
+                elif url.path == "/login":
+                    login_id = str(len(service.logins) + 1)
+                    service.logins[login_id] = "waiting"
+                    with service.journal.open("a") as journal:
+                        journal.write(json.dumps({"event": "login", "id": login_id}) + "\n")
+                    body = service.login_view(login_id)
+                elif url.path == "/approve":
+                    service.connected = True
+                    service.connected_at = time.time()
+                    service.logins[query["id"][0]] = "connected"
+                elif url.path == "/status":
+                    body = service.login_view(query["id"][0])
+                elif url.path == "/disconnect":
+                    service.connected = False
+                    service.connected_at = None
+                elif url.path == "/expire-pass":
+                    service.expired_pass.touch()
+                elif url.path == "/session":
+                    entry = {
+                        "step": query["step"][0],
+                        "names": query["names"][0],
+                        "expires_at": time.time() + 3600.0,
+                    }
+                    service.sessions.append(entry)
+                    with service.journal.open("a") as journal:
+                        journal.write(json.dumps({"event": "session", **entry}) + "\n")
+                    body = json.dumps(
+                        {
+                            "url": service.mcp.url,
+                            "pass_value": _KB_KEY,
+                            "expires_at": entry["expires_at"],
+                        }
+                    )
+                else:
+                    code = 404
+                data = body.encode()
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, format: str, *args: object) -> None:
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_port}"
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def login_view(self, login_id: str) -> str:
+        return json.dumps(
+            {
+                "login_id": login_id,
+                "name": "asana",
+                "status": "failed" if self.mode == "not_connected" else self.logins[login_id],
+                "authorization_url": f"{self.url}/approve?id={login_id}",
+                "error": str(
+                    IntegrationNotConnectedError("catalog login", ["asana"], "ava connect")
+                )
+                if self.mode == "not_connected"
+                else None,
+            }
+        )
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self.mcp.close()
+
+
+@pytest.fixture
+def catalog_provider_path() -> str:
+    """Install the external distribution with uv; never import its implementation."""
+    package = Path(__file__).parents[1] / "catalog_provider"
+    installed = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--python",
+            sys.executable,
+            "--with",
+            str(package),
+            "python",
+            "-c",
+            "from importlib.metadata import distribution; "
+            "print(distribution('avalanche-test-catalog-provider').locate_file(''))",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    return installed.stdout.strip()
+
+
+def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_provider_path):
+    # These are required proof runtimes: missing extras are failures, not skips.
+    for package in ("claude_agent_sdk", "agents"):
+        assert importlib.util.find_spec(package), f"Install the {package} proof extra"
+    fixture = _FIXTURES / "catalog_tools_flow.py"
+    calls = [("asana__search", {"query": "refunds", "limit": 2})]
+    models = ScriptedModelApis(calls, answer_field="findings")
+    service = _CatalogService(tmp_path)
+    state_db, log = tmp_path / "catalog.db", tmp_path / "operator.log"
+    journal = tmp_path / "body.txt"
+    address = f"127.0.0.1:{_free_port()}"
+    environment = {
+        "PYTHONPATH": os.pathsep.join(
+            filter(None, [catalog_provider_path, os.environ.get("PYTHONPATH")])
+        ),
+        "CATALOG_PROOF_URL": service.url,
+        "ANTHROPIC_BASE_URL": models.url,
+        "ANTHROPIC_API_KEY": "scripted-model",
+        "CLAUDE_CONFIG_DIR": str(tmp_path / "claude"),
+        "OPENAI_BASE_URL": f"{models.url}/v1",
+        "OPENAI_API_KEY": "scripted-model",
+    }
+    shown: list[str] = []
+    try:
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            (status,) = provider.list_integrations()
+            assert status.declaration.kind == "catalog"
+            assert status.account_state == "missing" and not status.connected
+            assert status.display_name == "Asana proof"
+            assert status.icon_url == service.url + "/icon.png"
+            for flow in provider.list_workflows():
+                for step in flow.integration_declarations.values():
+                    assert [(entry.kind, entry.name) for entry in step.integrations] == [
+                        ("catalog", "asana")
+                    ]
+            assert not service.sessions and not service.mcp.entries("request")
+            missing = _connect(address)
+            assert missing.returncode == 0
+            assert "asana" in missing.stdout and "missing" in missing.stdout
+            checks = len(service.connection_checks)
+            refused = _finished(provider, "on_predict_rlm", journal, {"journal": str(journal)})
+            assert refused.status is RunStatus.FAILED
+            (node,) = refused.nodes.values()
+            assert node.error is not None
+            assert node.error.count("no connected account") == 1
+            assert "ava connect asana" in node.error
+            assert len(service.connection_checks) == checks + 1
+            assert not journal.exists()
+            shown.append(node.error)
+            # A provider can refuse to complete a login when the service account
+            # is missing. The CLI preserves the same actionable domain message.
+            service.mode = "not_connected"
+            refused_login = _connect(address, "asana", "--no-browser")
+            assert refused_login.returncode == 1
+            assert refused_login.stderr.count("no connected account") == 1
+            assert "ava connect asana" in refused_login.stderr
+            shown.append(refused_login.stderr)
+            service.mode = "ready"
+
+            # --no-browser prints the address and waits until the real consent URL is opened.
+            waiting = subprocess.Popen(
+                [
+                    sys.executable,
+                    "-m",
+                    "ava_cli",
+                    "connect",
+                    "asana",
+                    "--no-browser",
+                    "--connect",
+                    address,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            assert waiting.stderr is not None
+            consent = ""
+            while not consent.startswith("http"):
+                consent = waiting.stderr.readline().strip()
+                assert consent or waiting.poll() is None, "ava connect ended early"
+            assert consent.startswith(service.url + "/approve?")
+            with urllib.request.urlopen(consent, timeout=30) as response:
+                assert response.status == 200
+            stdout, stderr = waiting.communicate(timeout=60)
+            assert waiting.returncode == 0, stderr
+            assert stdout.startswith("Connected asana")
+            shown += [stdout, stderr]
+            assert provider.list_integrations()[0].account_state == "connected"
+            listed = _connect(address, "--json")
+            assert listed.returncode == 0 and json.loads(listed.stdout)[0]["connected"]
+
+            # All three agents use the same example unchanged, without an operator restart.
+            for count, runtime in enumerate(("predict_rlm", "claude", "openai"), 1):
+                run = _finished(provider, f"on_{runtime}", journal, {"journal": str(journal)})
+                assert run.status is RunStatus.SUCCESS, (
+                    runtime,
+                    [node.error for node in run.nodes.values()],
+                    log.read_text(),
+                )
+                (answer,) = provider.get_run_result(run.run_id)
+                assert "refunds-0" in answer and "refunds-1" in answer
+                assert len(service.sessions) == count
+                shown.append(repr(run))
+            assert [call["query"] for call in service.mcp.entries("call")] == ["refunds"] * 3
+            assert journal.read_text().splitlines() == ["body started"] * 3
+
+            # Definition-time names are sound, but remote tool names are checked at step start.
+            clash = _finished(provider, "clash", journal, {"journal": str(journal)})
+            assert clash.status is RunStatus.FAILED
+            (node,) = clash.nodes.values()
+            assert "asana__search" in node.error and "several tools" in node.error
+            assert len(journal.read_text().splitlines()) == 3
+            assert len(service.sessions) == 4
+
+            # Expired login and removed account both fail before the body, with existing errors.
+            for mode, reason in (
+                ("expired", "no longer valid"),
+                ("removed", "no connected account"),
+            ):
+                service.mode = mode
+                service.connected = mode != "removed"
+                checks = len(service.connection_checks)
+                failed = _finished(
+                    provider, "on_predict_rlm", journal, {"journal": str(journal)}
+                )
+                assert failed.status is RunStatus.FAILED
+                (node,) = failed.nodes.values()
+                assert node.error is not None
+                assert node.error.count(reason) == 1 and "ava connect asana" in node.error
+                assert len(service.connection_checks) == checks + 1
+                assert len(journal.read_text().splitlines()) == 3
+                assert len(service.sessions) == 4
+                shown.append(node.error)
+            service.connected = True
+            for mode, message in (
+                ("signed_out", "The proof provider is not signed in."),
+                ("unreachable", "The integration provider is unreachable."),
+            ):
+                service.mode = mode
+                refused = _connect(address, "asana", "--no-browser")
+                assert refused.returncode == 1
+                assert refused.stderr.count(message) == 1, refused.stderr
+                checks = len(service.connection_checks)
+                failed = _finished(
+                    provider, "on_predict_rlm", journal, {"journal": str(journal)}
+                )
+                assert failed.status is RunStatus.FAILED
+                (node,) = failed.nodes.values()
+                assert node.error is not None
+                assert node.error.count(message) == 1
+                # Login/setup errors are final; outages use the configured two retries.
+                attempts = 3 if mode == "unreachable" else 1
+                assert len(service.connection_checks) == checks + attempts
+                assert len(journal.read_text().splitlines()) == 3
+                shown += [refused.stderr, node.error]
+            service.mode = "ready"
+            expired = _finished(provider, "expired_pass", journal, {"journal": str(journal)})
+            assert expired.status is RunStatus.FAILED
+            (node,) = expired.nodes.values()
+            assert "session expired" in node.error, node.error
+            assert len(service.sessions) == 5  # no renewal
+            assert service.expired_pass.exists()
+            assert len(journal.read_text().splitlines()) == 4
+            assert len(service.mcp.entries("call")) == 3
+            assert any(not hit["authorized"] for hit in service.mcp.entries("request"))
+
+        # Connections live at the provider, not in operator state, and survive its restart.
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            assert provider.list_integrations()[0].account_state == "connected"
+            disconnected = subprocess.run(
+                [sys.executable, "-m", "ava_cli", "disconnect", "asana", "--connect", address],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert disconnected.returncode == 0, disconnected.stderr
+            assert provider.list_integrations()[0].account_state == "missing"
+            assert not service.connected
+        with sqlite3.connect(state_db) as database:
+            assert database.execute("SELECT COUNT(*) FROM integration_accounts").fetchone() == (
+                0,
+            )
+        stored = _stored_text_outside_accounts(state_db)
+        assert '"name":"asana__search"' in stored
+        for text in (stored, log.read_text(), service.journal.read_text(), *shown):
+            assert _KB_KEY not in text
+    finally:
+        service.close()
+        models.close()
+
+
+def test_catalog_without_provider_imports_lists_and_reports_setup_once(tmp_path):
+    fixture = _FIXTURES / "catalog_tools_flow.py"
+    address = f"127.0.0.1:{_free_port()}"
+    journal = tmp_path / "body.txt"
+    log = tmp_path / "operator.log"
+    with _operator(tmp_path / "catalog.db", address, {}, log, fixture) as provider:
+        (status,) = provider.list_integrations()
+        message = status.provider_error
+        assert message and "No integration provider is installed" in message
+        listed = _connect(address, "--json")
+        assert listed.returncode == 0
+        assert json.loads(listed.stdout)[0]["kind"] == "catalog"
+        refused = _connect(address, "asana", "--no-browser")
+        assert refused.returncode == 1 and refused.stderr.count(message) == 1
+        failed = _finished(provider, "on_predict_rlm", journal, {"journal": str(journal)})
+        assert failed.status is RunStatus.FAILED
+        (node,) = failed.nodes.values()
+        assert node.error is not None
+        assert node.error.count(message) == 1
+        assert not journal.exists()
+
+    # A plain step cannot use catalog tools, even with no plug-in installed.
+    plain = tmp_path / "plain.py"
+    plain.write_text(
+        "import avalanche as ava\n"
+        "@ava.step(integrations=[ava.catalog.asana])\n"
+        "def plain(): return 1\n"
+    )
+    refused = subprocess.run(
+        [sys.executable, str(plain)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert refused.returncode != 0 and "agent steps only" in refused.stderr
+
+
+@pytest.fixture
+def alternate_catalog_provider_path(tmp_path) -> str:
+    package = tmp_path / "alternate-provider"
+    shutil.copytree(Path(__file__).parents[1] / "catalog_provider", package)
+    manifest = package / "pyproject.toml"
+    manifest.write_text(
+        manifest.read_text()
+        .replace(
+            'name = "avalanche-test-catalog-provider"',
+            'name = "avalanche-test-alternate-provider"',
+        )
+        .replace("proof = ", "alternate = ")
+    )
+    installed = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--python",
+            sys.executable,
+            "--with",
+            str(package),
+            "python",
+            "-c",
+            "from importlib.metadata import distribution; "
+            "print(distribution('avalanche-test-alternate-provider').locate_file(''))",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    return installed.stdout.strip()
+
+
+def test_catalog_provider_selection_is_explicit(
+    tmp_path,
+    catalog_provider_path,
+    alternate_catalog_provider_path,
+):
+    service = _CatalogService(tmp_path)
+    address = f"127.0.0.1:{_free_port()}"
+    environment = {
+        "PYTHONPATH": os.pathsep.join([catalog_provider_path, alternate_catalog_provider_path]),
+        "CATALOG_PROOF_URL": service.url,
+    }
+    journal = tmp_path / "body.txt"
+    fixture = _FIXTURES / "catalog_tools_flow.py"
+    state_db, log = tmp_path / "catalog.db", tmp_path / "operator.log"
+    try:
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            (status,) = provider.list_integrations()
+            assert status.provider_error
+            assert "alternate, proof" in status.provider_error
+            assert "AVALANCHE_INTEGRATION_PROVIDER" in status.provider_error
+            failed = _finished(provider, "on_predict_rlm", journal, {"journal": str(journal)})
+            assert failed.status is RunStatus.FAILED and not journal.exists()
+            refused = _connect(address, "asana", "--no-browser")
+            assert refused.returncode == 1
+            assert refused.stderr.count(status.provider_error) == 1
+            assert not service.sessions
+        environment["AVALANCHE_INTEGRATION_PROVIDER"] = "proof"
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            (status,) = provider.list_integrations()
+            assert status.provider_error is None
+            assert status.display_name == "Asana proof"
+    finally:
+        service.close()
+
+
+def test_catalog_release_artifact_and_stale_gate(tmp_path):
+    """Exercise the real generator and wheel boundary, not a mocked build."""
+    package = Path(__file__).parents[2]
+    copy = tmp_path / "catalog-source"
+    (copy / "scripts").mkdir(parents=True)
+    (copy / "src/avalanche").mkdir(parents=True)
+    for relative in (
+        "catalog_entries.json",
+        "scripts/generate_catalog.py",
+        "src/avalanche/catalog.py",
+    ):
+        shutil.copyfile(package / relative, copy / relative)
+    command = [sys.executable, str(copy / "scripts/generate_catalog.py")]
+    generated = copy / "src/avalanche/catalog.py"
+    original = generated.read_bytes()
+    subprocess.run(command, check=True, timeout=30)
+    assert generated.read_bytes() == original
+    subprocess.run([*command, "--check"], check=True, timeout=30)
+    generated.write_text(generated.read_text() + "# stale\n")
+    stale = subprocess.run([*command, "--check"], capture_output=True, text=True, timeout=30)
+    assert stale.returncode == 1 and "stale" in stale.stderr
+    wheel_dir = tmp_path / "wheel"
+    subprocess.run(
+        ["uv", "build", "--wheel", "--out-dir", str(wheel_dir), str(package)],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    import zipfile
+
+    (wheel,) = wheel_dir.glob("*.whl")
+    with zipfile.ZipFile(wheel) as archive:
+        assert archive.read("avalanche/catalog.py") == original
+        assert not any("test_catalog_provider" in name for name in archive.namelist())

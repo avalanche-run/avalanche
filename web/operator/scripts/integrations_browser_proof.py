@@ -5,7 +5,7 @@ A real ``ava operator`` process serves its packaged UI for the fixture
 server that answers only requests carrying the connected API key, and the MCP
 server is a separate process that wants its own key. The browser sees the
 declared integrations, connects them, runs the workflow and reads the
-attributed tool calls. No Delta and no fake host.
+attributed tool calls, then exercises an installed catalog provider. No remote host.
 
 Run from ``pkgs/avalanche`` after ``make web-build``:
   uv run --frozen --package avalanche-ai --with playwright==1.55.0 python \
@@ -30,7 +30,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from playwright.sync_api import Page, expect, sync_playwright
+from playwright.sync_api import Locator, Page, expect, sync_playwright
 
 PACKAGE = Path(__file__).resolve().parents[3]
 FIXTURE = PACKAGE / "test" / "fixtures" / "integrations_flow.py"
@@ -38,6 +38,7 @@ MCP_SERVER = PACKAGE / "test" / "fixtures" / "mcp_test_server.py"
 US_KEY = "us-key-7f3c9a51d2e84b06"
 EU_KEY = "eu-key-b81d04c6a97f4e23"
 KB_KEY = "kb-key-52c0e7a3f91d4b68"
+CATALOG_PASS = "catalog-pass-83b6a947d15f420c"
 EMAIL = "ada@example.com"
 
 
@@ -82,12 +83,12 @@ def free_port() -> int:
 class KbServer:
     """The MCP test server as a separate process that serves HTTP and wants a key."""
 
-    def __init__(self, journal: Path) -> None:
+    def __init__(self, journal: Path, *, key: str = KB_KEY) -> None:
         self._journal = journal
         port = free_port()
         self.url = f"http://127.0.0.1:{port}/mcp"
         self._process = subprocess.Popen(
-            [sys.executable, str(MCP_SERVER), "--http", str(port), KB_KEY],
+            [sys.executable, str(MCP_SERVER), "--http", str(port), key],
             env={**os.environ, "MCP_TEST_SERVER_JOURNAL": str(journal)},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -118,19 +119,174 @@ class KbServer:
             self._process.wait(timeout=10)
 
 
+class CatalogService:
+    """Loopback-only service used by the separately installed proof provider."""
+
+    def __init__(self, kb: KbServer, journal: Path) -> None:
+        self.mode = "ready"
+        self.connected = False
+        self.connected_at: float | None = None
+        self.logins: dict[str, str] = {}
+        self.sessions: list[str] = []
+        self.journal = journal
+        service = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                url = urlsplit(self.path)
+                query = parse_qs(url.query)
+                code, media, body = 200, "application/json", "null"
+                with journal.open("a") as output:
+                    output.write(json.dumps({"path": url.path, "mode": service.mode}) + "\n")
+                if url.path == "/icon.svg":
+                    media = "image/svg+xml"
+                    body = (
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">'
+                        '<rect width="32" height="32" rx="7" fill="#f06a6a"/>'
+                        '<circle cx="16" cy="16" r="6" fill="white"/>'
+                        "<script>window.catalogIconScript=true</script></svg>"
+                    )
+                elif service.mode in {"signed_out", "unreachable"}:
+                    code = 401 if service.mode == "signed_out" else 503
+                elif url.path == "/entries":
+                    body = json.dumps(
+                        [
+                            {
+                                "name": "asana",
+                                "display_name": "Asana proof",
+                                "icon_url": service.url + "/icon.svg",
+                            }
+                        ]
+                    )
+                elif url.path == "/connections":
+                    body = json.dumps(
+                        [
+                            {
+                                "name": "asana",
+                                "connected_at": service.connected_at,
+                                "state": "reconnect_needed"
+                                if service.mode == "expired"
+                                else "connected",
+                            }
+                        ]
+                        if service.connected
+                        else []
+                    )
+                elif url.path == "/login":
+                    login_id = str(len(service.logins) + 1)
+                    service.logins[login_id] = "waiting"
+                    body = service.login_view(login_id)
+                elif url.path == "/approve":
+                    media = "text/html"
+                    body = (
+                        "<title>Proof provider login</title><h1>Connect Asana proof</h1>"
+                        "<p>This local provider keeps the account, not the operator.</p>"
+                        f'<a href="/finish?id={query["id"][0]}">Approve connection</a>'
+                    )
+                elif url.path == "/finish":
+                    service.connected = True
+                    service.connected_at = time.time()
+                    service.mode = "ready"
+                    service.logins[query["id"][0]] = "connected"
+                    media, body = "text/html", "<h1>Connected</h1>You can close this tab."
+                elif url.path == "/status":
+                    body = service.login_view(query["id"][0])
+                elif url.path == "/disconnect":
+                    service.connected = False
+                    service.connected_at = None
+                elif url.path == "/session":
+                    service.sessions.append(query["step"][0])
+                    body = json.dumps(
+                        {
+                            "url": kb.url,
+                            "pass_value": CATALOG_PASS,
+                            "expires_at": time.time() + 3600.0,
+                        }
+                    )
+                else:
+                    code = 404
+                data = body.encode()
+                self.send_response(code)
+                self.send_header("Content-Type", media)
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+            def log_message(self, format: str, *args: object) -> None:
+                pass
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self._server.server_port}"
+        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+
+    def login_view(self, login_id: str) -> str:
+        from avalanche.integrations.core import IntegrationNotConnectedError
+
+        return json.dumps(
+            {
+                "login_id": login_id,
+                "name": "asana",
+                "authorization_url": f"{self.url}/approve?id={login_id}",
+                "status": "failed" if self.mode == "not_connected" else self.logins[login_id],
+                "error": str(
+                    IntegrationNotConnectedError("catalog login", ["asana"], "ava connect")
+                )
+                if self.mode == "not_connected"
+                else None,
+            }
+        )
+
+    def close(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+
+
+def installed_catalog_provider() -> str:
+    """Install distribution metadata without importing the plug-in in this process."""
+    done = subprocess.run(
+        [
+            "uv",
+            "run",
+            "--no-project",
+            "--python",
+            sys.executable,
+            "--with",
+            str(PACKAGE / "test/catalog_provider"),
+            "python",
+            "-c",
+            "from importlib.metadata import distribution; "
+            "print(distribution('avalanche-test-catalog-provider').locate_file(''))",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    )
+    return done.stdout.strip()
+
+
 @contextmanager
 def operator(
-    state_db: Path, grpc_port: int, web_port: int, crm_url: str, kb_url: str, log: Path
+    state_db: Path,
+    grpc_port: int,
+    web_port: int,
+    crm_url: str,
+    kb_url: str,
+    log: Path,
+    *,
+    fixture: Path = FIXTURE,
+    environment: dict[str, str] | None = None,
 ) -> Iterator[str]:
     """Run ``ava operator`` with its browser UI until the block ends."""
     command = [
-        sys.executable, "-m", "ava_cli", "operator", str(FIXTURE),
+        sys.executable, "-m", "ava_cli", "operator", str(fixture),
         "--port", str(grpc_port), "--web-port", str(web_port), "--webhook-port", "0",
         "--state-db", str(state_db),
     ]  # fmt: skip
     # The agent runs in PredictRLM's sandbox, which records each turn's tool calls.
     environment = {
         **os.environ,
+        **(environment or {}),
         "ACME_CRM_URL": crm_url,
         "ACME_KB_URL": kb_url,
         "INTEGRATIONS_FLOW_SANDBOX": "1",
@@ -272,12 +428,12 @@ def scenario(
 ) -> Shown:
     shown = Shown(page)
     outside: list[str] = []
-    origin = url.rstrip("/")
-    page.on(
+    page.context.on(
         "request",
         lambda request: (
             outside.append(request.url)
-            if not request.url.startswith((origin, "data:", "blob:"))
+            if urlsplit(request.url).hostname not in {"127.0.0.1", "localhost", "::1"}
+            and not request.url.startswith(("data:", "blob:"))
             else None
         ),
     )
@@ -436,10 +592,139 @@ def scenario(
     return shown
 
 
-def after_restart(page: Page, url: str, shown: Shown, evidence: Path) -> None:
+def catalog_login(page: Page, row: Locator, shown: Shown, evidence: Path, name: str) -> None:
+    """The real UI starts a login, opens a tab and polls until approval."""
+    row.get_by_role("button", name="Connect Asana proof", exact=True).click()
+    form = row.get_by_role("form", name="Connect Asana proof")
+    expect(form.locator("input[type=password], input[type=text]")).to_have_count(0)
+    with page.context.expect_page() as opened:
+        form.get_by_role("button", name="Log in", exact=False).click()
+    consent = opened.value
+    expect(consent.get_by_role("heading", name="Connect Asana proof")).to_be_visible()
+    assert consent.evaluate("window.opener") is None
+    expect(form.get_by_role("status")).to_contain_text("Waiting")
+    shoot(page, shown, evidence, name + "-waiting")
+    consent.screenshot(path=str(evidence / f"{name}-provider.png"))
+    consent.get_by_role("link", name="Approve connection").click()
+    expect(row).to_have_attribute("data-account", "connected", timeout=30_000)
+    expect(form).to_have_count(0)
+    consent.close()
+
+
+def catalog_scenario(
+    page: Page,
+    url: str,
+    shown: Shown,
+    evidence: Path,
+    service: CatalogService,
+    grpc_port: int,
+) -> None:
+    page.goto(url)
+    open_workflow(page, "on_predict_rlm")
+    node = node_card(page, "research_on_predict_rlm_1")
+    badge = node.locator('[data-integration="asana"]')
+    expect(badge).to_contain_text("Asana proof")
+    expect(badge).to_have_attribute("data-account", "missing")
+    icon = badge.locator("img")
+    expect(icon).to_have_attribute("src", service.url + "/icon.svg")
+    page.wait_for_function(
+        "() => [...document.querySelectorAll('img')].some(i => "
+        "i.src.endsWith('/icon.svg') && i.naturalWidth > 0)"
+    )
+    assert page.evaluate("window.catalogIconScript") is None
+    expect(page.locator(".react-flow__node")).to_have_count(2)
+    shoot(page, shown, evidence, "08-catalog-badge")
+    node.get_by_role("button", name="Inspect research_on_predict_rlm").click()
+    detail = page.get_by_role("complementary", name="Node declaration").get_by_role(
+        "region", name="Integrations"
+    )
+    expect(detail).to_contain_text("Asana proof")
+    expect(detail).to_contain_text("Built-in")
+    expect(detail.locator("img")).to_have_attribute("src", service.url + "/icon.svg")
+    shoot(page, shown, evidence, "09-catalog-details")
+    panel = open_integrations(page)
+    row = panel.locator('.integration-row[data-integration="asana"]')
+    expect(row).to_have_attribute("data-account", "missing")
+    assert not service.sessions
+    shoot(page, shown, evidence, "10-catalog-missing")
+
+    # Provider login failure is returned verbatim, without a credential form.
+    service.mode = "not_connected"
+    row.get_by_role("button", name="Connect Asana proof", exact=True).click()
+    with page.context.expect_page() as opened:
+        row.get_by_role("button", name="Log in with browser").click()
+    refused = opened.value
+    message = json.loads(service.login_view("1"))["error"]
+    expect(row.get_by_role("alert")).to_have_text(message)
+    expect(row).to_have_attribute("data-account", "missing")
+    refused.close()
+    shoot(page, shown, evidence, "11-catalog-not-connected-error")
+    row.get_by_role("button", name="Cancel", exact=True).click()
+    service.mode = "ready"
+    catalog_login(page, row, shown, evidence, "12-catalog-connect")
+    assert stored_accounts(grpc_port) == {"asana": True}
+    shoot(page, shown, evidence, "13-catalog-connected")
+
+    # State comes from the provider, without a failed run or error-text inference.
+    service.mode = "expired"
+    page.reload()
+    panel = open_integrations(page)
+    row = panel.locator('.integration-row[data-integration="asana"]')
+    expect(row).to_have_attribute("data-account", "reconnect_needed")
+    expect(row).to_contain_text("Reconnect needed")
+    expect(row.get_by_role("button", name="Disconnect Asana proof")).to_be_visible()
+    assert stored_accounts(grpc_port) == {"asana": False}
+    shoot(page, shown, evidence, "14-catalog-reconnect-needed")
+    open_workflow(page, "on_predict_rlm")
+    expect(
+        node_card(page, "research_on_predict_rlm_1").locator('[data-integration="asana"]')
+    ).to_have_attribute("data-account", "reconnect_needed")
+    panel = open_integrations(page)
+    row = panel.locator('.integration-row[data-integration="asana"]')
+    catalog_login(page, row, shown, evidence, "15-catalog-reconnect")
+    row.get_by_role("button", name="Disconnect Asana proof").click()
+    row.get_by_role("button", name="Remove account").click()
+    expect(row).to_have_attribute("data-account", "missing")
+    assert not service.connected and stored_accounts(grpc_port) == {"asana": False}
+    shoot(page, shown, evidence, "16-catalog-disconnected")
+
+    # Both provider failures stay distinct and preserve their exact guidance.
+    for mode, name in (
+        ("signed_out", "17-catalog-signed-out"),
+        ("unreachable", "18-catalog-unreachable"),
+    ):
+        service.mode = mode
+        page.reload()
+        panel = open_integrations(page)
+        row = panel.locator('.integration-row[data-integration="asana"]')
+        status = json.loads(ava_connect(grpc_port, "--json"))[0]
+        expect(row.get_by_role("alert")).to_have_text(status["provider_error"])
+        shoot(page, shown, evidence, name)
+    service.mode = "ready"
+    page.reload()
+    panel = open_integrations(page)
+    row = panel.locator('.integration-row[data-integration="asana"]')
+    expect(row.get_by_role("alert")).to_have_count(0)
+    catalog_login(page, row, shown, evidence, "19-catalog-connect-before-restart")
+
+
+def after_restart(
+    page: Page,
+    url: str,
+    shown: Shown,
+    evidence: Path,
+    *,
+    catalog: bool = False,
+) -> None:
     """The account connected in the browser was stored: a new operator has it."""
     page.goto(url)
     panel = open_integrations(page)
+    if catalog:
+        row = panel.locator('.integration-row[data-integration="asana"]')
+        expect(row).to_have_attribute("data-account", "connected")
+        expect(row).to_contain_text("Asana proof")
+        shoot(page, shown, evidence, "20-catalog-after-restart")
+        return
     for name in ("acme-crm", "kb"):
         expect(panel.locator(f'.integration-row[data-integration="{name}"]')).to_have_attribute(
             "data-account", "connected"
@@ -460,12 +745,32 @@ def main() -> None:
     log = evidence / "operator.log"
     journal = evidence / "journal.txt"
     kb_journal = evidence / "kb.jsonl"
-    for stale in (state_db, log, journal, kb_journal):
+    for stale in (
+        state_db,
+        log,
+        journal,
+        kb_journal,
+        evidence / "catalog.db",
+        evidence / "provider.jsonl",
+    ):
         stale.unlink(missing_ok=True)
     grpc_port, web_port = free_port(), free_port()
     crm = CrmService()
     kb = KbServer(kb_journal)
+    catalog_kb = KbServer(evidence / "catalog-kb.jsonl", key=CATALOG_PASS)
+    catalog = CatalogService(catalog_kb, evidence / "provider.jsonl")
+    provider_path = installed_catalog_provider()
+    catalog_fixture = PACKAGE / "test/fixtures/catalog_tools_flow.py"
+    catalog_db = evidence / "catalog.db"
+    catalog_environment = {
+        "PYTHONPATH": os.pathsep.join(
+            filter(None, [provider_path, os.environ.get("PYTHONPATH")])
+        ),
+        "CATALOG_PROOF_URL": catalog.url,
+        "AVALANCHE_INTEGRATION_PROVIDER": "proof",
+    }
     errors: list[str] = []
+    outside: list[str] = []
     try:
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
@@ -473,26 +778,93 @@ def main() -> None:
                 viewport={"width": 1440, "height": 1000}, reduced_motion="reduce"
             )
             page.on("pageerror", lambda error: errors.append(str(error)))
+            page.context.on(
+                "request",
+                lambda request: (
+                    outside.append(request.url)
+                    if urlsplit(request.url).hostname not in {"127.0.0.1", "localhost", "::1"}
+                    and not request.url.startswith(("data:", "blob:"))
+                    else None
+                ),
+            )
             with operator(state_db, grpc_port, web_port, crm.url, kb.url, log) as url:
                 shown = scenario(page, url, evidence, crm, kb, grpc_port, journal)
             with operator(state_db, grpc_port, web_port, crm.url, kb.url, log) as url:
                 after_restart(page, url, shown, evidence)
+            # No plug-in in this operator's import path: display the SDK's setup
+            # message verbatim. Installing the proof package does not alter it.
+            with operator(
+                catalog_db, grpc_port, web_port, crm.url, kb.url, log, fixture=catalog_fixture
+            ) as url:
+                page.goto(url)
+                panel = open_integrations(page)
+                row = panel.locator('.integration-row[data-integration="asana"]')
+                message = json.loads(ava_connect(grpc_port, "--json"))[0]["provider_error"]
+                assert "No integration provider is installed" in message
+                expect(row.get_by_role("alert")).to_have_text(message)
+                shoot(page, shown, evidence, "21-catalog-no-provider")
+            with operator(
+                catalog_db,
+                grpc_port,
+                web_port,
+                crm.url,
+                kb.url,
+                log,
+                fixture=catalog_fixture,
+                environment=catalog_environment,
+            ) as url:
+                catalog_scenario(page, url, shown, evidence, catalog, grpc_port)
+            with operator(
+                catalog_db,
+                grpc_port,
+                web_port,
+                crm.url,
+                kb.url,
+                log,
+                fixture=catalog_fixture,
+                environment=catalog_environment,
+            ) as url:
+                after_restart(page, url, shown, evidence, catalog=True)
+                assert stored_accounts(grpc_port) == {"asana": True}
             browser.close()
         assert errors == [], errors
+        assert outside == [], outside
+        with sqlite3.connect(catalog_db) as database:
+            assert database.execute("SELECT COUNT(*) FROM integration_accounts").fetchone() == (
+                0,
+            )
         # The keys are in the account table and nowhere else: not in anything the
         # browser was given, the operator printed, or the operator stored.
-        for text in (*shown.captures, log.read_text(), stored_text_outside_accounts(state_db)):
+        for text in (
+            *shown.captures,
+            log.read_text(),
+            stored_text_outside_accounts(state_db),
+            stored_text_outside_accounts(catalog_db),
+            catalog.journal.read_text(),
+        ):
             assert US_KEY not in text
             assert EU_KEY not in text
             assert KB_KEY not in text
+            assert CATALOG_PASS not in text
+        # Unlike the custom MCP account key, the catalog pass belongs nowhere
+        # in the evidence, including either SQLite database.
+        for artifact in evidence.rglob("*"):
+            if artifact.is_file():
+                assert CATALOG_PASS.encode() not in artifact.read_bytes(), artifact
         result = {
             "status": "passed",
+            "non_localhost_requests": outside,
+            "catalog_logins": len(catalog.logins),
+            "catalog_connected_after_restart": catalog.connected,
+            "catalog_credentials_stored": 0,
             "crm_requests": crm.requests,
             "kb_calls": kb.entries("call"),
             "screenshots": sorted(path.name for path in evidence.glob("[0-9][0-9]-*.png")),
         }
     finally:
         crm.close()
+        catalog.close()
+        catalog_kb.close()
         kb.close()
     (evidence / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))

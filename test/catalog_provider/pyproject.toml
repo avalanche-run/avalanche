@@ -1,0 +1,14 @@
+[project]
+name = "avalanche-test-catalog-provider"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+
+[project.entry-points."avalanche.integration_providers"]
+proof = "avalanche_test_catalog_provider:Provider"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/avalanche_test_catalog_provider"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

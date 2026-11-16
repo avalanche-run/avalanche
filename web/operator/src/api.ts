@@ -343,7 +343,8 @@ export interface OperatorApi {
   /**
    * Every integration the host's workflows declare and whether each has an
    * account. Optional: a host without it shows no integration badges or screen.
-   * It must start no process, call no outside service and return no credential.
+   * It starts no tool process and returns no credential. Built-in metadata and
+   * account states come from the host's provider.
    */
   listIntegrations?(signal?: AbortSignal): Promise<IntegrationStatus[]>;
   /** Store the account of a declared integration, replacing the one it had. */

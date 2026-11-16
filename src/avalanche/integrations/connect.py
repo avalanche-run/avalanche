@@ -11,6 +11,7 @@ from typing import Literal
 from .accounts import ApiKeyCredential
 from .declaration import (
     ApiKeyDeclaration,
+    CatalogDeclaration,
     ConnectorDeclaration,
     IntegrationDeclaration,
     MCPDeclaration,
@@ -50,7 +51,9 @@ def declaration_requires_account(declaration: IntegrationDeclaration) -> bool:
     False for a Connector without ``auth`` and for an MCP server, whose need
     for a login is learned from the server.
     """
-    return isinstance(declaration, ConnectorDeclaration) and declaration.auth is not None
+    return isinstance(declaration, CatalogDeclaration) or (
+        isinstance(declaration, ConnectorDeclaration) and declaration.auth is not None
+    )
 
 
 def declaration_accepts_account(declaration: IntegrationDeclaration) -> bool:
@@ -60,6 +63,8 @@ def declaration_accepts_account(declaration: IntegrationDeclaration) -> bool:
             return auth is not None
         case MCPDeclaration(url=url):
             return url is not None
+        case CatalogDeclaration():
+            return False
 
 
 def declaration_login_kinds(declaration: IntegrationDeclaration) -> tuple[LoginKind, ...]:
@@ -67,7 +72,7 @@ def declaration_login_kinds(declaration: IntegrationDeclaration) -> tuple[LoginK
     match declaration:
         case ConnectorDeclaration(auth=ApiKeyDeclaration()):
             return ("api_key",)
-        case ConnectorDeclaration(auth=OAuth2Declaration()):
+        case ConnectorDeclaration(auth=OAuth2Declaration()) | CatalogDeclaration():
             return ("browser",)
         case MCPDeclaration(url=str()):
             # The login is discovered from the server; a key is the other way.
@@ -81,6 +86,11 @@ def check_credential_fits(
 ) -> None:
     """Refuse an API key the integration's declaration cannot use."""
     match declaration:
+        case CatalogDeclaration():
+            raise IntegrationConnectError(
+                f"Catalog integration {declaration.name!r} requires a provider browser login.",
+                "browser_login",
+            )
         case ConnectorDeclaration(auth=None):
             raise IntegrationConnectError(
                 f"Connector {declaration.name!r} declares no auth, so it needs no account.",

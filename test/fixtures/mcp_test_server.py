@@ -16,6 +16,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Annotated
 
 import anyio
@@ -99,7 +100,11 @@ class _RequireKey:
         if scope["type"] != "http":
             await self._app(scope, receive, send)
             return
-        authorized = dict(scope["headers"]).get(b"authorization") == self._expected
+        expired = os.environ.get("MCP_TEST_EXPIRED_PASS")
+        authorized = (
+            dict(scope["headers"]).get(b"authorization") == self._expected
+            and not (expired is not None and Path(expired).exists())
+        )
         _journal(event="request", authorized=authorized)
         if authorized:
             await self._app(scope, receive, send)

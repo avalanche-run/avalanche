@@ -16,6 +16,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import uuid
 from bisect import bisect_right
 from collections import OrderedDict, deque
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
@@ -49,6 +50,8 @@ from avalanche.integrations.accounts import (
     Credential,
     OAuthCredential,
 )
+from avalanche.integrations.declaration import CatalogDeclaration
+from avalanche.integrations.providers import IntegrationProvider, integration_provider
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
 from avalanche.references import read_stored_trees
@@ -572,6 +575,8 @@ class Operator:
         if not 0 < login_port <= 65535:
             raise ValueError("login_port must be between 1 and 65535")
         self._logins = IntegrationLogins(login_port, self._store_login)
+        self._catalog_logins: dict[str, tuple[IntegrationProvider, str]] = {}
+        self._catalog_logins_lock = threading.Lock()
         # One refresh at a time per account: a service may replace the refresh
         # token on use, so two refreshes with the same one would lose the login.
         self._account_refresh_locks: dict[str, threading.Lock] = {}
@@ -2378,7 +2383,13 @@ class Operator:
                 connection, name, credential, connected_at=connected_at
             )
         self.publish_update(IntegrationAccountsChanged())
-        return status.model_copy(update={"connected": True, "connected_at": connected_at})
+        return status.model_copy(
+            update={
+                "connected": True,
+                "connected_at": connected_at,
+                "account_state": "connected",
+            }
+        )
 
     def start_integration_login(
         self, request: StartIntegrationLoginRequest
@@ -2391,6 +2402,17 @@ class Operator:
         stores the tokens, replacing the account the integration had.
         """
         status = self._declared_integration(request.name)
+        if isinstance(status.declaration, CatalogDeclaration):
+            if request.client_id is not None or request.client_secret is not None:
+                raise IntegrationLoginError("Catalog logins do not accept client credentials.")
+            provider = integration_provider()
+            login = provider.start_login(request.name)
+            # Prefix the operator's public handle, not the provider's identifier,
+            # so provider IDs cannot collide with local browser login IDs.
+            login_id = "catalog:" + uuid.uuid4().hex
+            with self._catalog_logins_lock:
+                self._catalog_logins[login_id] = (provider, login.login_id)
+            return IntegrationLogin(**login.model_dump(exclude={"login_id"}), login_id=login_id)
         try:
             login = oauth.declared_login(
                 status.declaration,
@@ -2403,6 +2425,20 @@ class Operator:
 
     def integration_login(self, login_id: str, wait_seconds: float) -> IntegrationLogin:
         """How far a browser login is, waiting up to ``wait_seconds`` for it to end."""
+        with self._catalog_logins_lock:
+            catalog_login = self._catalog_logins.get(login_id)
+        if catalog_login is not None:
+            provider, provider_id = catalog_login
+            deadline = time.monotonic() + wait_seconds
+            while True:
+                login = provider.login_status(provider_id)
+                if login.status != "waiting" or time.monotonic() >= deadline:
+                    if login.status == "connected":
+                        self.publish_update(IntegrationAccountsChanged())
+                    return IntegrationLogin(
+                        **login.model_dump(exclude={"login_id"}), login_id=login_id
+                    )
+                time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
         return self._logins.get(login_id, wait_seconds)
 
     def _store_login(self, name: str, credential: OAuthCredential) -> None:
@@ -2431,11 +2467,21 @@ class Operator:
         not exist changes nothing.
         """
         status = self._declared_integration(name)
+        if isinstance(status.declaration, CatalogDeclaration):
+            integration_provider().disconnect(name)
+            self.publish_update(IntegrationAccountsChanged())
+            return self._declared_integration(name)
         with self._state_store.transaction() as connection:
             removed = IntegrationAccountsTable.delete(connection, name)
         if removed:
             self.publish_update(IntegrationAccountsChanged())
-        return status.model_copy(update={"connected": False, "connected_at": None})
+        return status.model_copy(
+            update={
+                "connected": False,
+                "connected_at": None,
+                "account_state": "missing" if status.login else "none",
+            }
+        )
 
     def integration_icon(self, name: str) -> IntegrationIcon:
         """The image file a declared integration names as its icon.
@@ -2444,6 +2490,10 @@ class Operator:
         declaration describes the integration.
         """
         status = self._declared_integration(name)
+        if isinstance(status.declaration, CatalogDeclaration):
+            raise IntegrationIconError(
+                "Catalog icons are image addresses in the integration status."
+            )
         icon = status.declaration.icon
         if icon is None:
             raise IntegrationIconError(f"Integration {name!r} declares no icon.")

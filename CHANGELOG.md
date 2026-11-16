@@ -5,6 +5,15 @@
 - The browser interface's tests and build work again from a checkout on a
   case-insensitive filesystem (the macOS default): two source files no longer
   differ only by letter case.
+- The operator UI shows built-in integrations with provider names and image icons,
+  connected, missing and reconnect-needed states, provider browser login and
+  disconnect. Provider setup and outage messages remain visible unchanged.
+
+- Added provider-hosted built-in integrations on agent steps with
+  `avalanche.catalog` imports and `Catalog(name, allow=...)`, plus provider
+  browser login, reconnect-needed status and `ava disconnect NAME` for all
+  integration kinds. Temporary tool passes stay out of operator state.
+
 - For hosts: `avalanche.integrations.oauth.declared_login` picks the browser
   login a declaration asks for (the rule the local operator used inline);
   `fresh` and `needs_refresh` take a `margin`; `connector_login`, `mcp_login`

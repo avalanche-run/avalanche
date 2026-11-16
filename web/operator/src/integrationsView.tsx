@@ -87,7 +87,7 @@ interface Listed {
 }
 
 function iconKey(status: IntegrationStatus): string {
-  return `${status.name}\u0000${status.declaration.icon}`;
+  return `${status.name}\u0000${status.declaration.kind === "catalog" ? status.icon_url : status.declaration.icon}`;
 }
 
 function replaceStatus(listed: Listed | undefined, status: IntegrationStatus) {
@@ -149,7 +149,7 @@ export function IntegrationsProvider({
     if (requestedIcons.current?.api !== api) requestedIcons.current = { api, keys: new Set() };
     const requested = requestedIcons.current.keys;
     for (const status of statuses) {
-      if (status.declaration.icon === null) continue;
+      if (status.declaration.kind === "catalog" || status.declaration.icon === null) continue;
       const key = iconKey(status);
       if (requested.has(key)) continue;
       requested.add(key);
@@ -180,14 +180,15 @@ export function IntegrationsProvider({
         throw new Error("This host has no browser login");
       }
       let current = await api.startIntegrationLogin(name, client);
+      if (signal.aborted) return;
       onPage(current.authorization_url);
       while (current.status === "waiting" && !signal.aborted) {
         current = await api.getIntegrationLogin(current.login_id, signal);
       }
       if (current.status === "failed") throw new Error(current.error ?? "The login failed");
       if (current.status === "connected" && api.listIntegrations) {
-        const statuses = await api.listIntegrations();
-        setListed({ api, statuses });
+        const statuses = await api.listIntegrations(signal);
+        if (!signal.aborted) setListed({ api, statuses });
       }
     },
     [api],
@@ -213,7 +214,11 @@ export function IntegrationsProvider({
       status: (name) => byName.get(name),
       iconUrl: (name) => {
         const status = byName.get(name);
-        return status ? icons[iconKey(status)] : undefined;
+        return status?.declaration.kind === "catalog"
+          ? (status.icon_url ?? undefined)
+          : status
+            ? icons[iconKey(status)]
+            : undefined;
       },
       connect: api.connectIntegration ? connect : undefined,
       login: api.startIntegrationLogin && api.getIntegrationLogin ? login : undefined,

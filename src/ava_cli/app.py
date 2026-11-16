@@ -135,10 +135,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     from .definition_commands import add_definition_command
-    from .integration_commands import add_connect_command
+    from .integration_commands import add_connect_command, add_disconnect_command
 
     add_definition_command(subcommands)
     add_connect_command(subcommands)
+    add_disconnect_command(subcommands)
     events = subcommands.add_parser("event", help="send a declared run event")
     events.add_subparsers(dest="event_command").add_parser(
         "send", help="send a typed JSON event"

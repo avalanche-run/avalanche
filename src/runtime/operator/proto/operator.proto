@@ -80,11 +80,19 @@ message ControlMachineRequestV2 { string request_json = 1; }
 message ControlMachineResponseV2 { string result_json = 1; }
 
 message ListIntegrationsRequestV2 {}
-// integrations_json is an IntegrationStatusList document.
+// integrations_json is an IntegrationStatusList document: {integrations: [...]}.
+// Each row has the IntegrationStatusV2.status_json schema below.
 message IntegrationListV2 { string integrations_json = 1; }
 // request_json is a ConnectIntegrationRequest document: {"name", "credential"}.
 message ConnectIntegrationRequestV2 { string request_json = 1; }
-// status_json is one IntegrationStatus document.
+// status_json is one IntegrationStatus document. declaration.kind is connector,
+// mcp, or catalog. A catalog declaration carries name and allow (nullable list).
+// display_name (nullable string) and icon_url (nullable HTTP image address) are
+// provider metadata, not workflow declarations. Never fetch icon_url as markup.
+// account_state is connected | missing | none | reconnect_needed. connected is
+// true only for connected. provider_error is a nullable actionable message;
+// a catalog setup failure does not prevent listing unrelated integrations.
+// No credential or temporary tool-session pass is returned.
 message IntegrationStatusV2 { string status_json = 1; }
 // request_json is one StartIntegrationLoginRequest document.
 message StartIntegrationLoginRequestV2 { string request_json = 1; }
@@ -93,7 +101,11 @@ message GetIntegrationLoginRequestV2 {
   // At most 30; the call returns earlier when the login ends.
   double wait_seconds = 2;
 }
-// login_json is one IntegrationLogin document.
+// login_json is one IntegrationLogin document: login_id, name,
+// authorization_url, status (waiting | connected | failed), error (nullable).
+// Catalog login addresses come from the selected provider; no local token is
+// stored. Provider setup errors use FAILED_PRECONDITION; outages UNAVAILABLE.
+// DisconnectIntegration accepts every kind, including catalog.
 message IntegrationLoginV2 { string login_json = 1; }
 message DisconnectIntegrationRequestV2 { string name = 1; }
 message GetIntegrationIconRequestV2 { string name = 1; }

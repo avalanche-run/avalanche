@@ -25,6 +25,7 @@ from .accounts import (
 from .core import (
     MCP,
     ApiKey,
+    Catalog,
     Connector,
     Integration,
     IntegrationError,
@@ -38,6 +39,7 @@ from .core import (
 )
 from .declaration import (
     ApiKeyDeclaration,
+    CatalogDeclaration,
     ConnectorDeclaration,
     IntegrationDeclaration,
     IntegrationToolDeclaration,
@@ -70,6 +72,8 @@ __all__ = [
     "ApiKeyDeclaration",
     "Client",
     "Connector",
+    "Catalog",
+    "CatalogDeclaration",
     "ConnectorDeclaration",
     "Credential",
     "Integration",

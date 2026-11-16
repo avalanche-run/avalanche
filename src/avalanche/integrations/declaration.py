@@ -98,8 +98,18 @@ class MCPDeclaration(BaseModel):
     client_id: str | None = None
 
 
+class CatalogDeclaration(BaseModel):
+    """A built-in name and tool selection, with no provider or account data."""
+
+    model_config = _STRICT
+
+    kind: Literal["catalog"] = "catalog"
+    name: str
+    allow: tuple[str, ...] | None
+
+
 IntegrationDeclaration = Annotated[
-    ConnectorDeclaration | MCPDeclaration, Field(discriminator="kind")
+    ConnectorDeclaration | MCPDeclaration | CatalogDeclaration, Field(discriminator="kind")
 ]
 
 
@@ -115,6 +125,7 @@ __all__ = [
     "ApiKeyDeclaration",
     "ConnectorAuthDeclaration",
     "ConnectorDeclaration",
+    "CatalogDeclaration",
     "IntegrationDeclaration",
     "IntegrationToolDeclaration",
     "MCPDeclaration",

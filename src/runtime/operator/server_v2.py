@@ -22,6 +22,12 @@ import grpc
 from pydantic_core import to_jsonable_python
 from ulid import ULID
 
+from avalanche.integrations.providers import (
+    ProviderNotInstalledError,
+    ProviderNotSignedInError,
+    ProviderSelectionError,
+    ProviderUnavailableError,
+)
 from avalanche.runtime import File
 
 from .convert_v2 import (
@@ -1134,6 +1140,14 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             login = self._op.start_integration_login(command)
         except UnknownIntegrationError as exc:
             context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        except (
+            ProviderNotInstalledError,
+            ProviderNotSignedInError,
+            ProviderSelectionError,
+        ) as exc:
+            context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
+        except ProviderUnavailableError as exc:
+            context.abort(grpc.StatusCode.UNAVAILABLE, str(exc))
         except IntegrationLoginError as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         return pb.IntegrationLoginV2(login_json=login.model_dump_json())
@@ -1147,6 +1161,14 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             )
         except UnknownLoginError as exc:
             context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        except (
+            ProviderNotInstalledError,
+            ProviderNotSignedInError,
+            ProviderSelectionError,
+        ) as exc:
+            context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
+        except ProviderUnavailableError as exc:
+            context.abort(grpc.StatusCode.UNAVAILABLE, str(exc))
         return pb.IntegrationLoginV2(login_json=login.model_dump_json())
 
     def DisconnectIntegration(self, request, context):  # noqa: N802
@@ -1156,6 +1178,14 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             status = self._op.disconnect_integration(request.name)
         except UnknownIntegrationError as exc:
             context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        except (
+            ProviderNotInstalledError,
+            ProviderNotSignedInError,
+            ProviderSelectionError,
+        ) as exc:
+            context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
+        except ProviderUnavailableError as exc:
+            context.abort(grpc.StatusCode.UNAVAILABLE, str(exc))
         return pb.IntegrationStatusV2(status_json=status.model_dump_json())
 
     def GetIntegrationIcon(self, request, context):  # noqa: N802

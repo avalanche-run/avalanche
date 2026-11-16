@@ -35,6 +35,7 @@ from .accounts import (
 )
 from .declaration import (
     ApiKeyDeclaration,
+    CatalogDeclaration,
     ConnectorDeclaration,
     IntegrationDeclaration,
     IntegrationToolDeclaration,
@@ -347,6 +348,26 @@ class Connector(Integration):
         )
 
 
+class Catalog(Integration):
+    """A provider-hosted built-in, available to agent steps only.
+
+    Display names and icons belong to the provider. Constructing a declaration
+    does not discover, import, or contact one.
+    """
+
+    def __init__(self, name: str, *, allow: Sequence[str] | None = None) -> None:
+        self.name = _checked_name("ava.Catalog", name)
+        self.allow = None if allow is None else _string_tuple(name, "allow", allow)
+
+    @property
+    def requires_account(self) -> bool:
+        # Catalog accounts belong to the provider, not the host's account store.
+        return False
+
+    def declaration(self) -> CatalogDeclaration:
+        return CatalogDeclaration(name=self.name, allow=self.allow)
+
+
 class MCP(Integration):
     """An MCP server a step's agent may use: a remote ``url`` or a local ``command``.
 
@@ -456,10 +477,10 @@ def step_integrations(
             )
         if not isinstance(integration, Integration):
             raise TypeError(
-                f"{owner} integrations must be ava.Connector instances or ava.MCP(...), "
-                f"not {type(integration).__name__}"
+                f"{owner} integrations must be ava.Connector, ava.Catalog or ava.MCP "
+                f"instances, not {type(integration).__name__}"
             )
-        if isinstance(integration, MCP) and not agent:
+        if isinstance(integration, MCP | Catalog) and not agent:
             raise IntegrationError(
                 f"{owner} cannot use MCP server {integration.name!r}: MCP tools are for "
                 "agent steps only; declare it on an ava.agent_step"
@@ -778,7 +799,9 @@ async def agent_integration_tools(
     or like another integration's tool, is an error.
     """
     tools = list(_connector_tools(integrations, accounts))
-    servers = [integration for integration in integrations if isinstance(integration, MCP)]
+    servers = [
+        integration for integration in integrations if isinstance(integration, MCP | Catalog)
+    ]
     if not servers:
         yield tuple(tools)
         return
@@ -798,6 +821,12 @@ async def agent_integration_tools(
                 "allow=[...]"
             )
         yield tuple(tools)
+        connections.raise_if_unavailable()
+    except Exception:
+        # Agent runtimes may wrap a failed tool call in an adapter error. The
+        # relay failure still owns retry policy and the actionable diagnosis.
+        connections.raise_if_unavailable()
+        raise
     finally:
         connections.close()
 
@@ -866,6 +895,7 @@ __all__ = [
     "MCP",
     "ApiKey",
     "Connector",
+    "Catalog",
     "Integration",
     "IntegrationError",
     "IntegrationNotConnectedError",

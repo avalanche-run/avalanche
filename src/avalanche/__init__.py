@@ -38,7 +38,7 @@ from .execution_services import (
     ExecutionTaskSpec,
 )
 from .input_ref import INPUT as input  # noqa: N811
-from .integrations import MCP, ApiKey, Connector, OAuth2, tool
+from .integrations import MCP, ApiKey, Catalog, Connector, OAuth2, tool
 from .machine import Machine, machine, state
 from .machine_host import MachineEventReceipt, MachineHost, MachineInstance
 from .mapping import DEFAULT_MAX_ITEMS, HARD_CAP, MapItemFailure, MapItemsFailed
@@ -84,7 +84,7 @@ from .references import (
 )
 
 # Submodules and names resolved lazily on first attribute access (see __getattr__).
-_LAZY_SUBMODULES = frozenset({"agent", "classifier", "iceberg", "lance", "runtimes"})
+_LAZY_SUBMODULES = frozenset({"agent", "catalog", "classifier", "iceberg", "lance", "runtimes"})
 _LAZY_EXPORTS: dict[str, str] = {
     # Agent
     "Agent": "agent",
@@ -177,6 +177,7 @@ __all__ = [
     "ApiKey",
     "Client",
     "Connector",
+    "Catalog",
     "MCP",
     "OAuth2",
     "tool",
