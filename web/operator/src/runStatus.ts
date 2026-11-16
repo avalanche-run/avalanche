@@ -68,11 +68,20 @@ export function localHumanStatus(
     ? "waiting"
     : LOCAL_STATUS_MAP[raw];
 }
+// Hosts may pass a shared status or a Delta lifecycle status (the console
+// passes Delta's verbatim, e.g. "admitted"); both resolve to a shared one.
+function sharedStatus(status: string | undefined): string | undefined {
+  return status !== undefined && Object.hasOwn(LIFECYCLE_STATUS_MAP, status)
+    ? LIFECYCLE_STATUS_MAP[status as keyof typeof LIFECYCLE_STATUS_MAP]
+    : status;
+}
 export function runStatusLive(status: string | undefined): boolean {
-  return LIVE_STATUSES.some((value) => value === status);
+  const shared = sharedStatus(status);
+  return LIVE_STATUSES.some((value) => value === shared);
 }
 export function runStatusTerminal(status: string | undefined): boolean {
-  return TERMINAL_STATUSES.some((value) => value === status);
+  const shared = sharedStatus(status);
+  return TERMINAL_STATUSES.some((value) => value === shared);
 }
 export function waitingOnLabel(counts: WaitingOn | undefined): string {
   if (!counts) return "";
