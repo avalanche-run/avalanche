@@ -29,7 +29,7 @@ export {
   parseIntegrationStatus,
   parseIntegrationStatusList,
   parseStepIntegrations,
-} from "./integrations";
+} from "./integrationAccounts";
 export type {
   ConnectorDeclaration,
   IntegrationAccountState,
@@ -40,7 +40,7 @@ export type {
   IntegrationStatus,
   IntegrationToolDeclaration,
   McpDeclaration,
-} from "./integrations";
+} from "./integrationAccounts";
 export { OperatorUi } from "./ui/OperatorUi";
 export type {
   OperatorUiHost,

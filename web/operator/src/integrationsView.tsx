@@ -16,7 +16,7 @@ import {
   type IntegrationDeclaration,
   type IntegrationLoginClient,
   type IntegrationStatus,
-} from "./integrations";
+} from "./integrationAccounts";
 import type { FlowInfoMsg } from "./model";
 
 /**

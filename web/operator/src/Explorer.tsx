@@ -1,7 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { Clock, Folder, PanelLeft, Plug, X } from "lucide-react";
 
-import { integrationAccountState } from "./integrations";
+import { integrationAccountState } from "./integrationAccounts";
 import { useIntegrationsView } from "./integrationsView";
 
 import type { CatalogSnapshotMsg, FlowInfoMsg } from "./model";

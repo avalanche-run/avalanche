@@ -42,7 +42,7 @@ import { Markdown } from "./Markdown";
 import { PythonSource } from "./PythonSource";
 import { InspectorFields, InspectorResources } from "./InspectorDefinition";
 import { StepIntegrationsSection } from "./Integrations";
-import type { IntegrationDeclaration } from "./integrations";
+import type { IntegrationDeclaration } from "./integrationAccounts";
 import { stepIntegrations, StepIntegrationsProvider } from "./integrationsView";
 import { OpenDefinitionButton } from "./OpenDefinitionButton";
 import { InitialPromptDialog } from "./InitialPromptDialog";

@@ -12,7 +12,7 @@ import {
   type IntegrationDeclaration,
   type IntegrationLoginKind,
   type IntegrationStatus,
-} from "./integrations";
+} from "./integrationAccounts";
 import {
   IntegrationsProvider,
   useIntegrationsView,

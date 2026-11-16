@@ -21,7 +21,7 @@ import {
   type IntegrationLogin,
   type IntegrationLoginClient,
   type IntegrationStatus,
-} from "./integrations";
+} from "./integrationAccounts";
 import { parseJsonValue, parseNullableSchema } from "./stepInterface";
 import type { WaitCard } from "./RunWaitPanel";
 

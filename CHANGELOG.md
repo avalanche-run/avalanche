@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The browser interface's tests and build work again from a checkout on a
+  case-insensitive filesystem (the macOS default): two source files no longer
+  differ only by letter case.
 - For hosts: `avalanche.integrations.oauth.declared_login` picks the browser
   login a declaration asks for (the rule the local operator used inline);
   `fresh` and `needs_refresh` take a `margin`; `connector_login`, `mcp_login`
