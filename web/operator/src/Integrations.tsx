@@ -729,13 +729,17 @@ function IntegrationRow({
             <button
               type="button"
               className={status.connected ? SECONDARY_BUTTON : PRIMARY_BUTTON}
-              aria-label={`${status.connected ? `${again} of` : "Connect"} ${label}`}
+              aria-label={`${state === "reconnect_needed" ? "Reconnect" : status.connected ? `${again} of` : "Connect"} ${label}`}
               onClick={() => {
                 setConfirming(false);
                 onConnecting(true);
               }}
             >
-              {status.connected ? again : "Connect"}
+              {state === "reconnect_needed"
+                ? "Reconnect"
+                : status.connected
+                  ? again
+                  : "Connect"}
             </button>
           )}
           {(status.connected || state === "reconnect_needed") &&

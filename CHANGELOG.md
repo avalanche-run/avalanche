@@ -5,6 +5,9 @@
 - The browser interface's tests and build work again from a checkout on a
   case-insensitive filesystem (the macOS default): two source files no longer
   differ only by letter case.
+- The shared integrations screen labels a revoked account action Reconnect,
+  rather than Connect; the browser form still uses the existing login flow.
+
 - The offline catalog generator can refresh names from a provider's public catalog
   URL with `--catalog-url`, or check that those names match the packaged imports.
 

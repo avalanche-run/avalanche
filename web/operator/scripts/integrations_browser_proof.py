@@ -594,7 +594,10 @@ def scenario(
 
 def catalog_login(page: Page, row: Locator, shown: Shown, evidence: Path, name: str) -> None:
     """The real UI starts a login, opens a tab and polls until approval."""
-    row.get_by_role("button", name="Connect Asana proof", exact=True).click()
+    action = (
+        "Reconnect" if row.get_attribute("data-account") == "reconnect_needed" else "Connect"
+    )
+    row.get_by_role("button", name=f"{action} Asana proof", exact=True).click()
     form = row.get_by_role("form", name="Connect Asana proof")
     expect(form.locator("input[type=password], input[type=text]")).to_have_count(0)
     with page.context.expect_page() as opened:
