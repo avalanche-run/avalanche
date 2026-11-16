@@ -136,7 +136,7 @@ uv add avalanche-ai
 Install the avalanche skill in the same project:
 
 ```bash
-npx skills add Trampoline-AI/avalanche
+npx skills add avalanche-run/avalanche
 ```
 
 ## Usage

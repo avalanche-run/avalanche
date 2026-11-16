@@ -2,8 +2,8 @@
 # Create a verified Avalanche demo workspace in the current empty directory.
 set -Eeuo pipefail
 
-readonly AVALANCHE_REPOSITORY="https://github.com/Trampoline-AI/avalanche.git"
-readonly PREDICT_RLM_REPOSITORY="https://github.com/Trampoline-AI/predict-rlm.git"
+readonly AVALANCHE_REPOSITORY="https://github.com/avalanche-run/avalanche.git"
+readonly PREDICT_RLM_REPOSITORY="https://github.com/avalanche-run/predict-rlm.git"
 readonly PROJECT_NAME="avalanche-workspace"
 readonly STARTER_WORKFLOW_NAME="start_flow"
 

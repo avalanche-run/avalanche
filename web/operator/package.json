@@ -5,12 +5,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Trampoline-AI/avalanche.git",
+    "url": "https://github.com/avalanche-run/avalanche.git",
     "directory": "web/operator"
   },
-  "homepage": "https://github.com/Trampoline-AI/avalanche#embedding-the-operator-ui",
+  "homepage": "https://github.com/avalanche-run/avalanche#embedding-the-operator-ui",
   "bugs": {
-    "url": "https://github.com/Trampoline-AI/avalanche/issues"
+    "url": "https://github.com/avalanche-run/avalanche/issues"
   },
   "type": "module",
   "types": "./dist/index.d.ts",

@@ -6,7 +6,7 @@
 > equivalent package runner in use.
 
 > Vendored from
-> `https://github.com/Trampoline-AI/predict-rlm/blob/main/.agents/skills/rlm/SKILL.md`.
+> `https://github.com/avalanche-run/predict-rlm/blob/main/.agents/skills/rlm/SKILL.md`.
 > Source SHA-256:
 > `ccc1a74a252003c7d8d219666e715401014b0d1ced0e597031477eecf0d33618`.
 
