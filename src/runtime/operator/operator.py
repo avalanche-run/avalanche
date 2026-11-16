@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
@@ -17,7 +18,7 @@ import threading
 import time
 from bisect import bisect_right
 from collections import OrderedDict, deque
-from collections.abc import Collection, Iterable, Iterator, Mapping
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import Future
 from contextlib import contextmanager
 from copy import deepcopy
@@ -40,6 +41,14 @@ from avalanche.classifier.models import (
     NoulAnswer,
 )
 from avalanche.evaluations import EvaluationDeclaration
+from avalanche.integrations import oauth
+from avalanche.integrations.accounts import (
+    AccountLoginExpiredError,
+    AccountUnavailableError,
+    ApiKeyCredential,
+    Credential,
+    OAuthCredential,
+)
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
 from avalanche.references import read_stored_trees
@@ -59,6 +68,23 @@ from .input_files import (
     InputFileStaging,
     StagedInputFile,
     StagedInputFileError,
+)
+from .integration_accounts import (
+    AccountsResponse,
+    IntegrationConnectError,
+    IntegrationStatus,
+    UnknownIntegrationError,
+    check_credential_fits,
+    integration_statuses,
+    start_account_server,
+)
+from .integration_icons import IntegrationIcon, IntegrationIconError, read_integration_icon
+from .integration_logins import (
+    DEFAULT_LOGIN_PORT,
+    IntegrationLogin,
+    IntegrationLoginError,
+    IntegrationLogins,
+    StartIntegrationLoginRequest,
 )
 from .machine_host import CatalogReloaded, MachineHost, StateEntryFinished
 from .models import (
@@ -83,6 +109,7 @@ from .models import (
     DetailUpdate,
     FinalizedTrace,
     InputFileFields,
+    IntegrationAccountsChanged,
     LogAppended,
     LogDetailAppended,
     LogEntry,
@@ -165,6 +192,7 @@ from .state import OperatorStateStore, StateDbPath, StateStoreError
 from .state.agent_events import RunAgentEventsTable
 from .state.classifier_events import RunClassifierEventsTable
 from .state.evaluations import RunEvaluationsTable
+from .state.integration_accounts import IntegrationAccountsTable
 from .state.logs import RunLogsTable
 from .state.machines import InstanceRecord, MachinesTable
 from .state.metadata import OperatorMetadataTable
@@ -473,6 +501,7 @@ class Operator:
         cancel_grace: float = DEFAULT_CANCEL_GRACE_SECONDS,
         stream_history_capacity: int = STREAM_HISTORY_CAPACITY,
         webhook_port: int = DEFAULT_WEBHOOK_PORT,
+        login_port: int = DEFAULT_LOGIN_PORT,
         structural_baseline_capacity: int = STRUCTURAL_BASELINE_CAPACITY,
         subscriber_queue_capacity: int = SUBSCRIBER_QUEUE_CAPACITY,
         max_agent_event_bytes: int = MAX_AGENT_EVENT_BYTES,
@@ -540,6 +569,12 @@ class Operator:
         self._registry = WorkflowRegistry(discovery_timeout=discovery_timeout)
         self._workflow_paths = workflow_paths or []
         self._webhooks = WebhookServer(self, webhook_port)
+        if not 0 < login_port <= 65535:
+            raise ValueError("login_port must be between 1 and 65535")
+        self._logins = IntegrationLogins(login_port, self._store_login)
+        # One refresh at a time per account: a service may replace the refresh
+        # token on use, so two refreshes with the same one would lose the login.
+        self._account_refresh_locks: dict[str, threading.Lock] = {}
         self._webhook_routes = {}
         self._state_store = OperatorStateStore.open(state_db)
         result_store: ResultStore | None = None
@@ -2062,6 +2097,7 @@ class Operator:
             control_parent, control_child = self._mp.Pipe()
             cancel_reader, cancel_writer = self._mp.Pipe(duplex=False)
             machine_reader, machine_writer = self._mp.Pipe(duplex=False)
+            accounts_parent, accounts_child = self._mp.Pipe()
             controls = RunControls(control_parent, machine_writer=machine_writer)
             cancel_event = self._mp.Event()
             start_event = self._mp.Event()
@@ -2089,6 +2125,7 @@ class Operator:
                         _machine_state_entry,
                         machine_reader,
                         self._resume_results(run_id) if _resume else None,
+                        accounts_child,
                     ),
                     name=f"avalanche-run-{run_id}",
                     daemon=False,
@@ -2103,6 +2140,8 @@ class Operator:
                     cancel_writer,
                     machine_reader,
                     machine_writer,
+                    accounts_parent,
+                    accounts_child,
                 ):
                     endpoint.close()
                 _close_event_queue(event_queue)
@@ -2128,6 +2167,7 @@ class Operator:
             # cannot create a second coordinator with the same caller-owned ID.
             self._active_runs[run_id] = handle
             self._wait_controls[run_id] = controls
+        accounts_served = False
         try:
             with self._lock:
                 if self._closed:
@@ -2136,6 +2176,13 @@ class Operator:
                 control_child.close()
                 cancel_reader.close()
                 machine_reader.close()
+                accounts_child.close()
+                # The server thread owns the operator's end from here and closes it
+                # when the worker exits.
+                start_account_server(
+                    accounts_parent, self._integration_credentials, run_id=run_id
+                )
+                accounts_served = True
                 if process.pid is None:
                     raise RuntimeError("Run coordinator did not expose a process ID")
                 assign_process(windows_job, process.pid)
@@ -2242,6 +2289,9 @@ class Operator:
             _close_run_controls(handle)
             control_child.close()
             cancel_reader.close()
+            accounts_child.close()
+            if not accounts_served:
+                accounts_parent.close()
             _close_event_queue(event_queue)
             raise
 
@@ -2252,6 +2302,154 @@ class Operator:
                 (run_id,),
             ).fetchall()
         return {row[0]: row[1] for row in rows}
+
+    def _integration_credentials(self, names: Sequence[str]) -> AccountsResponse:
+        """The stored accounts among ``names``, for a run's worker at a step start.
+
+        A browser login is answered with an access token that is valid now: an
+        expired one is refreshed first and the new tokens are stored.
+        """
+        with self._state_store.transaction() as connection:
+            stored = IntegrationAccountsTable.credentials(connection, names)
+        accounts: dict[str, Credential] = {}
+        expired: dict[str, str] = {}
+        unavailable: dict[str, str] = {}
+        for name, credential in stored.items():
+            if isinstance(credential, ApiKeyCredential):
+                accounts[name] = credential
+                continue
+            try:
+                accounts[name] = self._fresh_login(name).for_step()
+            except AccountLoginExpiredError as error:
+                expired[name] = error.reason
+            except AccountUnavailableError as error:
+                unavailable[name] = error.reason
+        return AccountsResponse(accounts=accounts, expired=expired, unavailable=unavailable)
+
+    def _fresh_login(self, name: str) -> OAuthCredential:
+        """The stored browser login of ``name`` with an access token valid now."""
+        with self._lock:
+            refresh_lock = self._account_refresh_locks.setdefault(name, threading.Lock())
+        with refresh_lock:
+            # Read again under the lock: another step may just have refreshed it.
+            with self._state_store.transaction() as connection:
+                stored = IntegrationAccountsTable.credentials(connection, (name,)).get(name)
+            if not isinstance(stored, OAuthCredential):
+                raise AccountLoginExpiredError(name, "the account was removed or replaced")
+            try:
+                renewed = asyncio.run(oauth.fresh(name, stored))
+            except AccountUnavailableError:
+                if stored.expires_at is not None and stored.expires_at > time.time():
+                    # Not refreshed, but the token it has still works for now.
+                    return stored
+                raise
+            if renewed is not stored:
+                with self._state_store.transaction() as connection:
+                    IntegrationAccountsTable.renew(
+                        connection, name, previous=stored, renewed=renewed
+                    )
+            return renewed
+
+    def list_integrations(self) -> tuple[IntegrationStatus, ...]:
+        """Every integration the current catalog declares, with its account status.
+
+        Read from discovery's stored declarations and the account table's names:
+        no workflow is imported, no network is called and no credential is read.
+        """
+        catalog = self._registry.view
+        with self._state_store.transaction() as connection:
+            connected = {
+                account.name: account
+                for account in IntegrationAccountsTable.connected(connection)
+            }
+        return integration_statuses(catalog.by_id.values(), connected)
+
+    def connect_integration(self, name: str, credential: ApiKeyCredential) -> IntegrationStatus:
+        """Store an API key as the account of a declared integration.
+
+        Connecting again replaces the account. A name no workflow declares is
+        refused, so a mistyped name cannot store a key nothing will ever use.
+        """
+        status = self._declared_integration(name)
+        check_credential_fits(status, credential)
+        connected_at = time.time()
+        with self._state_store.transaction() as connection:
+            IntegrationAccountsTable.write(
+                connection, name, credential, connected_at=connected_at
+            )
+        self.publish_update(IntegrationAccountsChanged())
+        return status.model_copy(update={"connected": True, "connected_at": connected_at})
+
+    def start_integration_login(
+        self, request: StartIntegrationLoginRequest
+    ) -> IntegrationLogin:
+        """Start a browser login for a declared integration.
+
+        Returns once the consent page's address is known. The caller opens it
+        in a browser on this machine; the service sends the browser back to the
+        operator's loopback listener, and the operator exchanges the result and
+        stores the tokens, replacing the account the integration had.
+        """
+        status = self._declared_integration(request.name)
+        try:
+            login = oauth.declared_login(
+                status.declaration,
+                client_id=request.client_id,
+                client_secret=request.client_secret,
+            )
+        except IntegrationConnectError as refused:
+            raise IntegrationLoginError(str(refused)) from None
+        return self._logins.start(request.name, login)
+
+    def integration_login(self, login_id: str, wait_seconds: float) -> IntegrationLogin:
+        """How far a browser login is, waiting up to ``wait_seconds`` for it to end."""
+        return self._logins.get(login_id, wait_seconds)
+
+    def _store_login(self, name: str, credential: OAuthCredential) -> None:
+        with self._state_store.transaction() as connection:
+            IntegrationAccountsTable.write(
+                connection, name, credential, connected_at=time.time()
+            )
+        self.publish_update(IntegrationAccountsChanged())
+
+    def _declared_integration(self, name: str) -> IntegrationStatus:
+        declared = {status.name: status for status in self.list_integrations()}
+        status = declared.get(name)
+        if status is None:
+            known = ", ".join(sorted(declared)) or "none"
+            raise UnknownIntegrationError(
+                f"No discovered workflow declares an integration named {name!r}. "
+                f"Declared integrations: {known}."
+            )
+        return status
+
+    def disconnect_integration(self, name: str) -> IntegrationStatus:
+        """Remove the stored account of a declared integration.
+
+        A step that declares it fails from its next start; a step already
+        running keeps the account it was given. Removing an account that does
+        not exist changes nothing.
+        """
+        status = self._declared_integration(name)
+        with self._state_store.transaction() as connection:
+            removed = IntegrationAccountsTable.delete(connection, name)
+        if removed:
+            self.publish_update(IntegrationAccountsChanged())
+        return status.model_copy(update={"connected": False, "connected_at": None})
+
+    def integration_icon(self, name: str) -> IntegrationIcon:
+        """The image file a declared integration names as its icon.
+
+        The path is read inside the scanned folder of the workflow whose
+        declaration describes the integration.
+        """
+        status = self._declared_integration(name)
+        icon = status.declaration.icon
+        if icon is None:
+            raise IntegrationIconError(f"Integration {name!r} declares no icon.")
+        descriptor = self._registry.view.by_id[status.used_by[0].workflow_id]
+        roots = {root.alias: root.path for root in self._registry.configured_roots}
+        return read_integration_icon(roots[descriptor.locator.root_alias], icon)
 
     def _prepare_requested_run(
         self,
@@ -2579,6 +2777,7 @@ class Operator:
             if hasattr(self, "_machine_host"):
                 self._machine_host.close()
             self._webhooks.close()
+            self._logins.close()
             if self._watcher_thread is not None:
                 self._watcher_thread.join(timeout=2.0)
             self._evaluation_workers.close()

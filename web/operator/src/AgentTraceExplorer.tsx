@@ -12,6 +12,7 @@ import { activityLabel } from "./agentTrace/viewers";
 import { compareSequence } from "./detailProjection";
 import type { AgentEventDescriptorMsg } from "./model";
 import { PythonSource } from "./PythonSource";
+import { ToolIntegrationTag } from "./Integrations";
 import { ValueView } from "./ValueView";
 
 export type AgentTraceTurnDetail =
@@ -127,6 +128,7 @@ function ToolCalls({ calls }: { calls: AgentTraceToolCall[] }) {
         >
           <summary className="cursor-pointer text-[10px] font-semibold text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid">
             {call.error ? "Failed tool" : "Tool"} · {call.name}
+            <ToolIntegrationTag toolName={call.name} />
             <span className="ml-1.5 font-mono text-[8px] font-normal text-muted">
               {formatDuration(call.durationMs)}
             </span>

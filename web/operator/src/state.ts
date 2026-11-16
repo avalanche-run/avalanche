@@ -42,6 +42,8 @@ export interface OperatorProjection {
   lastUpdate?: OperatorUpdate;
   connection: "connecting" | "live" | "reconnecting";
   workflowReloading: boolean;
+  /** Event of the last connected or removed integration account seen on the stream. */
+  integrationAccountsEventUlid?: string;
   catalogReloadDeploymentId?: string;
   catalogReloadNoticeEventUlid?: string;
   error?: string;
@@ -201,6 +203,10 @@ function applyEnvelope(
   const change = update.change;
   if (change.oneofKind === "workflowReloadStatus") {
     next.workflowReloading = change.workflowReloadStatus.reloading;
+    return next;
+  }
+  if (change.oneofKind === "integrationAccountsChanged") {
+    next.integrationAccountsEventUlid = update.eventUlid;
     return next;
   }
   if (change.oneofKind === "catalogReplaced") {

@@ -25,6 +25,7 @@ from croniter import croniter
 from avalanche.agent.declaration import AgentDeclaration
 from avalanche.classifier.models import ClassifierDeclaration
 from avalanche.dag import Workflow
+from avalanche.integrations.declaration import StepIntegrations
 from avalanche.machine import MachineDiscoveryWarning
 from avalanche.machine_host import MachineOpSpec
 from avalanche.mapping import MapSpec
@@ -42,6 +43,7 @@ from .windows_job import WindowsJob, assign_process, close_job, create_kill_on_c
 from .workflow_metadata import (
     agent_declarations_for_workflow,
     input_declaration_for_workflow,
+    integration_declarations_for_workflow,
     map_specs_for_workflow,
     node_docstring_lines_for_workflow,
     node_source_code_for_workflow,
@@ -628,6 +630,7 @@ def _descriptor_to_dict(
     standard_step_docstring_lines = node_docstring_lines_for_workflow(workflow, node_ids)
     node_source_code = node_source_code_for_workflow(workflow, node_ids)
     agent_declarations = agent_declarations_for_workflow(workflow, node_ids)
+    integration_declarations = integration_declarations_for_workflow(workflow, node_ids)
     classifier_metadata_json: list[list[str]] = []
     evaluation_metadata_json: list[list[str]] = []
     for node_id in node_ids:
@@ -683,6 +686,10 @@ def _descriptor_to_dict(
             [node_id, declaration.model_dump_json()]
             for node_id, declaration in agent_declarations.items()
         ],
+        "integration_declarations_json": [
+            [node_id, declaration.model_dump_json()]
+            for node_id, declaration in integration_declarations.items()
+        ],
         "classifier_metadata_json": classifier_metadata_json,
         "evaluation_metadata_json": evaluation_metadata_json,
         "step_interface_json": list(step_interface_for_workflow(workflow, node_ids).items()),
@@ -727,6 +734,10 @@ def _descriptor_from_dict(item: dict[str, Any]) -> WorkflowDescriptor:
         agent_declarations=tuple(
             (key, AgentDeclaration.model_validate_json(value))
             for key, value in item["agent_declarations_json"]
+        ),
+        integration_declarations=tuple(
+            (key, StepIntegrations.model_validate_json(value))
+            for key, value in item.get("integration_declarations_json", ())
         ),
         classifier_metadata_json=tuple(
             (key, value) for key, value in item.get("classifier_metadata_json", ())

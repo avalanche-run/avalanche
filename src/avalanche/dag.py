@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import inspect
 from collections import defaultdict
+from collections.abc import Sequence
 from concurrent.futures import CancelledError
 from contextvars import ContextVar, copy_context
 from copy import copy
@@ -63,6 +64,12 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 from ulid import ULID
 
 from .input_ref import InputRef
+from .integrations.core import (
+    Integration,
+    check_workflow_integrations,
+    step_integrations,
+    with_integrations,
+)
 from .local_waits import LocalPrincipal, LocalWaits
 from .mapping import DEFAULT_MAX_ITEMS, HARD_CAP, MapSpec
 from .policies import Event, NonRetryableError, StepPolicy, UncertaintyPolicy, event
@@ -156,6 +163,7 @@ class Node:
         step_interface: StepInterface | None = None,
         policy: StepPolicy | None = None,
         emits: tuple[str, ...] = (),
+        integrations: tuple[Integration, ...] = (),
     ):
         """
         Initialize a node.
@@ -174,6 +182,8 @@ class Node:
         self.num_returns = num_returns
         self.policy = policy if policy is not None else StepPolicy()
         self.emits = emits
+        # The outside services this step declares; their accounts are bound by ``fn``.
+        self.integrations = integrations
         annotation = inspect.signature(fn).return_annotation
         if (
             isinstance(annotation, type)
@@ -759,6 +769,7 @@ def step(
     retries: int = 7,
     on_uncertain: UncertaintyPolicy = "retry",
     emits: tuple[str, ...] = (),
+    integrations: Sequence[Integration] = (),
 ) -> Node | Callable[[F], Node]:
     """
     Decorator for step nodes.
@@ -767,6 +778,9 @@ def step(
 
     Args:
         num_returns: Number of values this node returns (for tuple unpacking)
+        integrations: ``ava.Connector`` instances whose tools the step calls as
+            methods. Each one's account is looked up when the step starts; a
+            missing account fails the step before its code runs.
 
     Example:
         @ava.step
@@ -774,11 +788,14 @@ def step(
             ...
     """
     localns = decoration_namespace() if fn is not None else None
+    declared = step_integrations("ava.step", integrations, agent=False)
 
     def decorator(f: F) -> Node:
         namespace = localns if fn is not None else decoration_namespace()
         f.__signature__ = resolve_step_signature(f, namespace)
         f = _event_step(f, emits)
+        if declared:
+            f = with_integrations(f, f.__name__, declared)
         return Node(
             f,
             NodeType.STEP,
@@ -787,6 +804,7 @@ def step(
             policy=StepPolicy(retries=retries, on_uncertain=on_uncertain),
             slug=slug,
             step_interface=step_interface_for_function(f, namespace),
+            integrations=declared,
         )
 
     if fn is None:
@@ -2194,6 +2212,9 @@ class Workflow:
             for node_id, ref in nodes.items()
             if isinstance(ref.node, WaitNode)
         }
+        check_workflow_integrations(
+            name, {node_id: ref.node.integrations for node_id, ref in nodes.items()}
+        )
         keys = [spec.key for spec in self.node_waits.values() if spec.kind == "event"]
         if len(keys) != len(set(keys)):
             raise ValueError("Duplicate event consumer key in workflow")

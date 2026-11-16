@@ -48,6 +48,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--no-web", action="store_true", help="serve gRPC without the HTTP listener"
     )
     parser.add_argument(
+        "--login-port",
+        type=int,
+        default=7436,
+        help="loopback port a browser login comes back to (default: 7436)",
+    )
+    parser.add_argument(
         "--schedules-enabled",
         action="store_true",
         help=(
@@ -104,6 +110,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             host=args.host,
             webhook_port=args.webhook_port,
             web_port=None if args.no_web else args.web_port,
+            login_port=args.login_port,
             discovery_timeout=args.discovery_timeout,
             schedules_enabled=args.schedules_enabled,
             state_db=args.state_db,

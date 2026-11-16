@@ -560,6 +560,7 @@ uv add "avalanche-ai[lance,claude,openai]"
 - [File references](docs/file-references.md)
 - [Agent steps](docs/agent-steps.md)
 - [Classifier steps](docs/classifier-steps.md)
+- [Integrations](docs/integrations.md)
 - [Data model and storage API](docs/data-model-api.md)
 - [Execution services](docs/execution-services.md)
 - [Architecture](ARCHITECTURE.md)

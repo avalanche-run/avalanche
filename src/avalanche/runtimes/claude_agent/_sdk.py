@@ -821,6 +821,8 @@ def _tool_server(tools: tuple[ToolSpec, ...]) -> Any:
 
 
 def _sdk_tool(spec: ToolSpec) -> Any:
+    if spec.input_schema is not None:
+        return _schema_tool(spec, spec.input_schema)
     arguments = _arguments_model(spec)
 
     async def handler(raw: dict[str, Any]) -> dict[str, Any]:
@@ -840,6 +842,28 @@ def _sdk_tool(spec: ToolSpec) -> Any:
         return {"content": [{"type": "text", "text": to_json(result).decode()}]}
 
     return tool(spec.name, spec.description or "", arguments.model_json_schema())(handler)
+
+
+def _schema_tool(spec: ToolSpec, schema: dict[str, JsonValue]) -> Any:
+    """A tool described by a JSON Schema; its function checks the arguments itself."""
+
+    async def handler(raw: dict[str, Any]) -> dict[str, Any]:
+        try:
+            result = spec.function(**raw)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            return {
+                "content": [{"type": "text", "text": f"{type(exc).__name__}: {exc}"}],
+                "is_error": True,
+            }
+        return {"content": [{"type": "text", "text": to_json(result).decode()}]}
+
+    # The SDK reads a dictionary as a JSON Schema only when it has both keys; a
+    # tool without arguments may leave ``properties`` out.
+    return tool(
+        spec.name, spec.description or "", {"type": "object", "properties": {}, **schema}
+    )(handler)
 
 
 def _arguments_model(spec: ToolSpec) -> type[BaseModel]:

@@ -38,6 +38,7 @@ from .execution_services import (
     ExecutionTaskSpec,
 )
 from .input_ref import INPUT as input  # noqa: N811
+from .integrations import MCP, ApiKey, Connector, OAuth2, tool
 from .machine import Machine, machine, state
 from .machine_host import MachineEventReceipt, MachineHost, MachineInstance
 from .mapping import DEFAULT_MAX_ITEMS, HARD_CAP, MapItemFailure, MapItemsFailed
@@ -91,6 +92,8 @@ _LAZY_EXPORTS: dict[str, str] = {
     "OutputField": "agent",
     "Signature": "agent",
     "agent_step": "agent",
+    # Integrations: the HTTP stack loads with the first client, not with avalanche.
+    "Client": "integrations",
     # Classifier
     "Classifier": "classifier",
     "ClassificationResult": "classifier",
@@ -170,6 +173,13 @@ __all__ = [
     "classifier_step",
     "input",
     "call",
+    # Integrations
+    "ApiKey",
+    "Client",
+    "Connector",
+    "MCP",
+    "OAuth2",
+    "tool",
     # Workflow
     "Workflow",
     "Pipeline",

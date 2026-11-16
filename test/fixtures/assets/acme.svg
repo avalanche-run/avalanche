@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" onload="window.top.acmeIconScript = 'onload'">
+  <!-- A browser that drew this file as markup would run this script. -->
+  <script>window.top.acmeIconScript = 'script';</script>
+  <rect width="24" height="24" rx="5" fill="#e4572e"/>
+  <path d="M6 18 12 5l6 13h-3l-3-7-3 7z" fill="#fff"/>
+</svg>

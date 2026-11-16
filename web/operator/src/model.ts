@@ -176,6 +176,11 @@ export interface FlowInfoMsg {
   evaluationMetadataJson: Record<string, string>;
   /** Python callable interfaces keyed by node ID. */
   stepInterfaceJson: Record<string, string>;
+  /**
+   * `StepIntegrations` documents keyed by node ID, parsed by `parseStepIntegrations`.
+   * A step that declares no integration is absent.
+   */
+  integrationDeclarationsJson: Record<string, string>;
   /** The declared run input as JSON; empty when the workflow declares none. */
   inputDeclarationJson: string;
   /**
@@ -223,6 +228,7 @@ export const FlowInfoMsg = {
       classifierMetadataJson: {},
       evaluationMetadataJson: {},
       stepInterfaceJson: {},
+      integrationDeclarationsJson: {},
       inputDeclarationJson: "",
       standardStepDocstringLines: {},
       webhookPath: "",
@@ -1338,6 +1344,10 @@ export interface OperatorUpdate {
          * @generated from protobuf field: avalanche.operator.WorkflowReloadStatus workflow_reload_status = 9
          */
         workflowReloadStatus: WorkflowReloadStatus;
+      }
+    | {
+        /** An account was connected or removed; list the integrations again. */
+        oneofKind: "integrationAccountsChanged";
       }
     | {
         oneofKind: undefined;

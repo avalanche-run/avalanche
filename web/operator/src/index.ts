@@ -17,6 +17,30 @@ export type { RunResultTarget } from "./stepIo";
 // The shared result codec, for hosts whose result route returns it (Delta's `/result`).
 export { decodeRunResultValue } from "./stepIo";
 export type { EvaluationRecord, EvaluationResult } from "./evaluations";
+// Integrations: the screen that lists and connects them, and the documents it reads.
+export { IntegrationsPanel } from "./Integrations";
+export type { IntegrationsPanelProps } from "./Integrations";
+export type { IntegrationsApi } from "./integrationsView";
+export {
+  integrationAccountState,
+  integrationForTool,
+  integrationsMissingAccount,
+  parseIntegrationLogin,
+  parseIntegrationStatus,
+  parseIntegrationStatusList,
+  parseStepIntegrations,
+} from "./integrations";
+export type {
+  ConnectorDeclaration,
+  IntegrationAccountState,
+  IntegrationCredential,
+  IntegrationDeclaration,
+  IntegrationLogin,
+  IntegrationLoginClient,
+  IntegrationStatus,
+  IntegrationToolDeclaration,
+  McpDeclaration,
+} from "./integrations";
 export { OperatorUi } from "./ui/OperatorUi";
 export type {
   OperatorUiHost,

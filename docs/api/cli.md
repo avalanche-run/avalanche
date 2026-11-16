@@ -31,6 +31,7 @@ default serve the browser UI and REST API.
 | `--webhook-port` | `7434` | Local webhook HTTP port. |
 | `--web-port` | `7435` | Loopback browser UI and REST API HTTP port. |
 | `--no-web` | Off | Disable the browser/REST listener, leaving gRPC and webhook operation. |
+| `--login-port` | `7436` | Loopback port a [browser login](../integrations.md#log-in-through-the-browser) comes back to. It is listened on only while a login is waiting. |
 | `--log-level` | `WARNING` | Terminal log threshold: `DEBUG`, `INFO`, `WARNING`, `ERROR`; input is case-normalized. |
 | `--discovery-timeout SECONDS` | `60.0` | Positive finite maximum duration of a discovery scan. |
 | `--schedules-enabled` | Off | Start with every discovered cron schedule enabled, for this start only. Otherwise each schedule starts as it was last turned on or off, kept in the state database; a schedule never turned on starts disabled. |
@@ -62,6 +63,7 @@ execution as `operator`.
 | --- | --- | --- |
 | `--port` | `7433` | Local gRPC listener port. |
 | `--web-port` | `7435` | Local browser/REST port. |
+| `--login-port` | `7436` | Loopback port a browser login comes back to. |
 | `--log-level` | `WARNING` | `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
 | `--discovery-timeout SECONDS` | `60.0` | Positive finite discovery deadline. |
 | `--schedules-enabled` | Off | Start with every cron schedule enabled, for this start only; not saved in the state database. |
@@ -79,8 +81,9 @@ folders next to it: `results/` (result bundles), `input-files/` (uploaded run in
 files; the ones a run used are kept with it) and `schedule-inputs/` (copies of files
 a schedule's input uses). After a restart, including a crash or `kill -9`, the run
 list, each run's step states, logs, agent and classifier events, traces and
-evaluations, `ava result RUN_ID`, and each schedule's on/off state, input and last
-trigger are as they were. Connected clients reload them on their own.
+evaluations, `ava result RUN_ID`, each schedule's on/off state, input and last
+trigger, and the accounts connected with [`ava connect`](#ava-connect-name-options)
+are as they were. Connected clients reload them on their own.
 
 A run that was unfinished when the operator stopped is **not resumed**: the next
 start stops any of its processes still running, then marks the run and its
@@ -157,6 +160,48 @@ not overwritten. Failed, cancelled, unavailable, or still-running results cannot
 be downloaded as successful results. Success returns `0`, handled retrieval or
 filesystem failures `1`, and invalid timeout `2`. The output parent must be a
 caller-owned local directory.
+
+## `ava connect [NAME] [options]`
+
+List the integrations that discovered workflows declare, or connect the account
+of one. It talks to a running operator; the default is `localhost:7433`.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `NAME` | none | Integration to connect. Without it, list every declared integration. |
+| `--connect HOST:PORT` | `localhost:7433` | Operator address. |
+| `--api-key` | off | Connect a remote MCP server with an API key instead of a browser login. |
+| `--header NAME` | none | Request header a remote MCP server expects its key in (implies `--api-key`); without it the key is sent as `Authorization: Bearer <key>`. A Connector declares its own header and refuses this option. An MCP server started with `command=` takes no account. |
+| `--client-secret` | off | Ask for the secret of the client an MCP server's declaration names with `client_id=`. |
+| `--no-browser` | off | Print the login address instead of opening a browser. |
+| `--json` | off | Emit JSON instead of text. |
+
+Without `NAME`, each row shows the integration's name, its kind (`connector` or
+`mcp`), its account (`connected`, `not connected`, or `no account` when none is
+required) and the steps that declare it. With `--json` each row also lists its
+`login` kinds (`browser`, `api_key`), the default first. No key is ever printed.
+
+With `NAME`, what happens depends on the integration's login:
+
+- A Connector with `ava.ApiKey`, or an MCP server with `--api-key`: the key is
+  read from a hidden prompt, or from one line of standard input when that is
+  not a terminal.
+- A Connector with `ava.OAuth2`: the client ID and client secret of the app
+  registered with the service are asked for (two lines of standard input when
+  it is not a terminal), then the service's consent page opens in the browser.
+- A remote MCP server: the consent page of the login the server describes
+  opens in the browser.
+
+For a browser login the command prints the consent page's address on standard
+error, waits until the login ends, and exits with status `1` when it fails. The
+browser comes back to the operator at `http://127.0.0.1:7436/callback` (the
+operator's `--login-port`). Keys and secrets are never command-line arguments,
+and no key, token or secret is printed.
+
+The operator stores the account of that integration, replacing the one it had,
+and keeps it across restarts. A name no discovered workflow declares, a
+Connector without `auth`, and an empty key are refused with status `1`. See
+[integrations](../integrations.md).
 
 ## `ava webhooks list [--connect HOST:PORT]`
 

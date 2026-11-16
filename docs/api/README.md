@@ -23,6 +23,7 @@ import avalanche as ava
 | [Lance](storage/lance.md) | `LanceNamespace`, `LanceNamespaceConfig`, `LanceTable`, configuration, schemas, and append/read/scan results. |
 | [Streams](storage/streams.md) | `Stream` declarations, modes, injected values, and consumption behavior. |
 | [Cursors](storage/cursors.md) | `Cursor`, checkpoint reads/writes, and transactional appends. |
+| [Integrations](../integrations.md) | `Connector`, `tool`, `ApiKey`, `OAuth2`, `Client`, `MCP`, `integrations=` on steps, accounts, browser login and `ava connect`. |
 | [CLI](cli.md) | `ava` commands, arguments, options, outputs, and exit behavior. |
 
 The workflow page lists every step primitive. Its agent and classifier entries

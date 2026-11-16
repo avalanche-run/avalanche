@@ -91,6 +91,36 @@ class OperatorServiceV2Stub(object):
                 request_serializer=operator__pb2.ControlMachineRequestV2.SerializeToString,
                 response_deserializer=operator__pb2.ControlMachineResponseV2.FromString,
                 _registered_method=True)
+        self.ListIntegrations = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/ListIntegrations',
+                request_serializer=operator__pb2.ListIntegrationsRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.IntegrationListV2.FromString,
+                _registered_method=True)
+        self.ConnectIntegration = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/ConnectIntegration',
+                request_serializer=operator__pb2.ConnectIntegrationRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.IntegrationStatusV2.FromString,
+                _registered_method=True)
+        self.StartIntegrationLogin = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/StartIntegrationLogin',
+                request_serializer=operator__pb2.StartIntegrationLoginRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.IntegrationLoginV2.FromString,
+                _registered_method=True)
+        self.GetIntegrationLogin = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/GetIntegrationLogin',
+                request_serializer=operator__pb2.GetIntegrationLoginRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.IntegrationLoginV2.FromString,
+                _registered_method=True)
+        self.DisconnectIntegration = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/DisconnectIntegration',
+                request_serializer=operator__pb2.DisconnectIntegrationRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.IntegrationStatusV2.FromString,
+                _registered_method=True)
+        self.GetIntegrationIcon = channel.unary_unary(
+                '/avalanche.operator.OperatorServiceV2/GetIntegrationIcon',
+                request_serializer=operator__pb2.GetIntegrationIconRequestV2.SerializeToString,
+                response_deserializer=operator__pb2.IntegrationIconV2.FromString,
+                _registered_method=True)
         self.SetScheduleEnabled = channel.unary_unary(
                 '/avalanche.operator.OperatorServiceV2/SetScheduleEnabled',
                 request_serializer=operator__pb2.SetScheduleEnabledRequestV2.SerializeToString,
@@ -224,6 +254,55 @@ class OperatorServiceV2Servicer(object):
 
     def ControlMachine(self, request, context):
         """Run-owned machine sections and controls; typed JSON at the external boundary.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListIntegrations(self, request, context):
+        """Integrations the discovered workflows declare, and whether each has an
+        account. Typed JSON at the external boundary. No credential is ever returned.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ConnectIntegration(self, request, context):
+        """Store the account of one declared integration, replacing the one it had.
+        The request carries the credential; the response and the logs never do.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def StartIntegrationLogin(self, request, context):
+        """Start a browser login for one declared integration. The response carries
+        the consent page to open on the operator's machine; the operator receives
+        the result on its loopback listener and stores the tokens. The request may
+        carry a client secret; the response and the logs never carry a secret.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetIntegrationLogin(self, request, context):
+        """How far a browser login is, after waiting up to wait_seconds for it to end.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DisconnectIntegration(self, request, context):
+        """Remove the stored account of one declared integration. Removing an account
+        that does not exist succeeds, so the call can be repeated.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetIntegrationIcon(self, request, context):
+        """The image file a declared integration names as its icon. Clients show it
+        as an image only, never as markup.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -363,6 +442,36 @@ def add_OperatorServiceV2Servicer_to_server(servicer, server):
                     servicer.ControlMachine,
                     request_deserializer=operator__pb2.ControlMachineRequestV2.FromString,
                     response_serializer=operator__pb2.ControlMachineResponseV2.SerializeToString,
+            ),
+            'ListIntegrations': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListIntegrations,
+                    request_deserializer=operator__pb2.ListIntegrationsRequestV2.FromString,
+                    response_serializer=operator__pb2.IntegrationListV2.SerializeToString,
+            ),
+            'ConnectIntegration': grpc.unary_unary_rpc_method_handler(
+                    servicer.ConnectIntegration,
+                    request_deserializer=operator__pb2.ConnectIntegrationRequestV2.FromString,
+                    response_serializer=operator__pb2.IntegrationStatusV2.SerializeToString,
+            ),
+            'StartIntegrationLogin': grpc.unary_unary_rpc_method_handler(
+                    servicer.StartIntegrationLogin,
+                    request_deserializer=operator__pb2.StartIntegrationLoginRequestV2.FromString,
+                    response_serializer=operator__pb2.IntegrationLoginV2.SerializeToString,
+            ),
+            'GetIntegrationLogin': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetIntegrationLogin,
+                    request_deserializer=operator__pb2.GetIntegrationLoginRequestV2.FromString,
+                    response_serializer=operator__pb2.IntegrationLoginV2.SerializeToString,
+            ),
+            'DisconnectIntegration': grpc.unary_unary_rpc_method_handler(
+                    servicer.DisconnectIntegration,
+                    request_deserializer=operator__pb2.DisconnectIntegrationRequestV2.FromString,
+                    response_serializer=operator__pb2.IntegrationStatusV2.SerializeToString,
+            ),
+            'GetIntegrationIcon': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetIntegrationIcon,
+                    request_deserializer=operator__pb2.GetIntegrationIconRequestV2.FromString,
+                    response_serializer=operator__pb2.IntegrationIconV2.SerializeToString,
             ),
             'SetScheduleEnabled': grpc.unary_unary_rpc_method_handler(
                     servicer.SetScheduleEnabled,
@@ -685,6 +794,168 @@ class OperatorServiceV2(object):
             '/avalanche.operator.OperatorServiceV2/ControlMachine',
             operator__pb2.ControlMachineRequestV2.SerializeToString,
             operator__pb2.ControlMachineResponseV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListIntegrations(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/ListIntegrations',
+            operator__pb2.ListIntegrationsRequestV2.SerializeToString,
+            operator__pb2.IntegrationListV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ConnectIntegration(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/ConnectIntegration',
+            operator__pb2.ConnectIntegrationRequestV2.SerializeToString,
+            operator__pb2.IntegrationStatusV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def StartIntegrationLogin(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/StartIntegrationLogin',
+            operator__pb2.StartIntegrationLoginRequestV2.SerializeToString,
+            operator__pb2.IntegrationLoginV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetIntegrationLogin(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/GetIntegrationLogin',
+            operator__pb2.GetIntegrationLoginRequestV2.SerializeToString,
+            operator__pb2.IntegrationLoginV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DisconnectIntegration(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/DisconnectIntegration',
+            operator__pb2.DisconnectIntegrationRequestV2.SerializeToString,
+            operator__pb2.IntegrationStatusV2.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetIntegrationIcon(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/avalanche.operator.OperatorServiceV2/GetIntegrationIcon',
+            operator__pb2.GetIntegrationIconRequestV2.SerializeToString,
+            operator__pb2.IntegrationIconV2.FromString,
             options,
             channel_credentials,
             insecure,

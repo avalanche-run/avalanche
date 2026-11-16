@@ -70,6 +70,68 @@ class ControlMachineResponseV2(_message.Message):
     result_json: str
     def __init__(self, result_json: _Optional[str] = ...) -> None: ...
 
+class ListIntegrationsRequestV2(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class IntegrationListV2(_message.Message):
+    __slots__ = ("integrations_json",)
+    INTEGRATIONS_JSON_FIELD_NUMBER: _ClassVar[int]
+    integrations_json: str
+    def __init__(self, integrations_json: _Optional[str] = ...) -> None: ...
+
+class ConnectIntegrationRequestV2(_message.Message):
+    __slots__ = ("request_json",)
+    REQUEST_JSON_FIELD_NUMBER: _ClassVar[int]
+    request_json: str
+    def __init__(self, request_json: _Optional[str] = ...) -> None: ...
+
+class IntegrationStatusV2(_message.Message):
+    __slots__ = ("status_json",)
+    STATUS_JSON_FIELD_NUMBER: _ClassVar[int]
+    status_json: str
+    def __init__(self, status_json: _Optional[str] = ...) -> None: ...
+
+class StartIntegrationLoginRequestV2(_message.Message):
+    __slots__ = ("request_json",)
+    REQUEST_JSON_FIELD_NUMBER: _ClassVar[int]
+    request_json: str
+    def __init__(self, request_json: _Optional[str] = ...) -> None: ...
+
+class GetIntegrationLoginRequestV2(_message.Message):
+    __slots__ = ("login_id", "wait_seconds")
+    LOGIN_ID_FIELD_NUMBER: _ClassVar[int]
+    WAIT_SECONDS_FIELD_NUMBER: _ClassVar[int]
+    login_id: str
+    wait_seconds: float
+    def __init__(self, login_id: _Optional[str] = ..., wait_seconds: _Optional[float] = ...) -> None: ...
+
+class IntegrationLoginV2(_message.Message):
+    __slots__ = ("login_json",)
+    LOGIN_JSON_FIELD_NUMBER: _ClassVar[int]
+    login_json: str
+    def __init__(self, login_json: _Optional[str] = ...) -> None: ...
+
+class DisconnectIntegrationRequestV2(_message.Message):
+    __slots__ = ("name",)
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    def __init__(self, name: _Optional[str] = ...) -> None: ...
+
+class GetIntegrationIconRequestV2(_message.Message):
+    __slots__ = ("name",)
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    name: str
+    def __init__(self, name: _Optional[str] = ...) -> None: ...
+
+class IntegrationIconV2(_message.Message):
+    __slots__ = ("media_type", "content")
+    MEDIA_TYPE_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    media_type: str
+    content: bytes
+    def __init__(self, media_type: _Optional[str] = ..., content: _Optional[bytes] = ...) -> None: ...
+
 class ControlWaitRequestV2(_message.Message):
     __slots__ = ("run_id", "kind", "address", "payload_json", "idempotency_key", "reason", "offset", "limit")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
@@ -217,7 +279,7 @@ class WorkflowNodeSourceV2(_message.Message):
     def __init__(self, source_code: _Optional[str] = ...) -> None: ...
 
 class FlowInfoV2(_message.Message):
-    __slots__ = ("workflow_selector", "display_name", "manifest_digest", "node_ids", "workflow_id", "file_path", "topology", "agent_node_ids", "agent_declarations_json", "cron", "next_run_at", "last_run_at", "webhook_path", "webhook_url", "webhook_active", "classifier_metadata_json", "evaluation_metadata_json", "input_schema_json", "version", "schedule_enabled", "schedule_input_json", "node_policies_json", "node_waits_json", "machine_spec_json", "node_runs_json", "key_fields")
+    __slots__ = ("workflow_selector", "display_name", "manifest_digest", "node_ids", "workflow_id", "file_path", "topology", "agent_node_ids", "agent_declarations_json", "cron", "next_run_at", "last_run_at", "webhook_path", "webhook_url", "webhook_active", "classifier_metadata_json", "evaluation_metadata_json", "input_schema_json", "version", "schedule_enabled", "schedule_input_json", "node_policies_json", "node_waits_json", "machine_spec_json", "node_runs_json", "key_fields", "integration_declarations_json")
     class AgentDeclarationsJsonEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -260,6 +322,13 @@ class FlowInfoV2(_message.Message):
         key: str
         value: str
         def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    class IntegrationDeclarationsJsonEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     WORKFLOW_SELECTOR_FIELD_NUMBER: _ClassVar[int]
     DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
     MANIFEST_DIGEST_FIELD_NUMBER: _ClassVar[int]
@@ -286,6 +355,7 @@ class FlowInfoV2(_message.Message):
     MACHINE_SPEC_JSON_FIELD_NUMBER: _ClassVar[int]
     NODE_RUNS_JSON_FIELD_NUMBER: _ClassVar[int]
     KEY_FIELDS_FIELD_NUMBER: _ClassVar[int]
+    INTEGRATION_DECLARATIONS_JSON_FIELD_NUMBER: _ClassVar[int]
     workflow_selector: str
     display_name: str
     manifest_digest: str
@@ -312,7 +382,8 @@ class FlowInfoV2(_message.Message):
     machine_spec_json: str
     node_runs_json: _containers.ScalarMap[str, str]
     key_fields: _containers.RepeatedScalarFieldContainer[str]
-    def __init__(self, workflow_selector: _Optional[str] = ..., display_name: _Optional[str] = ..., manifest_digest: _Optional[str] = ..., node_ids: _Optional[_Iterable[str]] = ..., workflow_id: _Optional[str] = ..., file_path: _Optional[str] = ..., topology: _Optional[_Union[WorkflowTopologyV2, _Mapping]] = ..., agent_node_ids: _Optional[_Iterable[str]] = ..., agent_declarations_json: _Optional[_Mapping[str, str]] = ..., cron: _Optional[str] = ..., next_run_at: _Optional[float] = ..., last_run_at: _Optional[float] = ..., webhook_path: _Optional[str] = ..., webhook_url: _Optional[str] = ..., webhook_active: bool = ..., classifier_metadata_json: _Optional[_Mapping[str, str]] = ..., evaluation_metadata_json: _Optional[_Mapping[str, str]] = ..., input_schema_json: _Optional[str] = ..., version: _Optional[str] = ..., schedule_enabled: bool = ..., schedule_input_json: _Optional[str] = ..., node_policies_json: _Optional[_Mapping[str, str]] = ..., node_waits_json: _Optional[_Mapping[str, str]] = ..., machine_spec_json: _Optional[str] = ..., node_runs_json: _Optional[_Mapping[str, str]] = ..., key_fields: _Optional[_Iterable[str]] = ...) -> None: ...
+    integration_declarations_json: _containers.ScalarMap[str, str]
+    def __init__(self, workflow_selector: _Optional[str] = ..., display_name: _Optional[str] = ..., manifest_digest: _Optional[str] = ..., node_ids: _Optional[_Iterable[str]] = ..., workflow_id: _Optional[str] = ..., file_path: _Optional[str] = ..., topology: _Optional[_Union[WorkflowTopologyV2, _Mapping]] = ..., agent_node_ids: _Optional[_Iterable[str]] = ..., agent_declarations_json: _Optional[_Mapping[str, str]] = ..., cron: _Optional[str] = ..., next_run_at: _Optional[float] = ..., last_run_at: _Optional[float] = ..., webhook_path: _Optional[str] = ..., webhook_url: _Optional[str] = ..., webhook_active: bool = ..., classifier_metadata_json: _Optional[_Mapping[str, str]] = ..., evaluation_metadata_json: _Optional[_Mapping[str, str]] = ..., input_schema_json: _Optional[str] = ..., version: _Optional[str] = ..., schedule_enabled: bool = ..., schedule_input_json: _Optional[str] = ..., node_policies_json: _Optional[_Mapping[str, str]] = ..., node_waits_json: _Optional[_Mapping[str, str]] = ..., machine_spec_json: _Optional[str] = ..., node_runs_json: _Optional[_Mapping[str, str]] = ..., key_fields: _Optional[_Iterable[str]] = ..., integration_declarations_json: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class DiscoveryDiagnosticV2(_message.Message):
     __slots__ = ("path", "kind", "message")
@@ -1229,6 +1300,10 @@ class FlowReloadStatusV2(_message.Message):
     reloading: bool
     def __init__(self, reloading: bool = ...) -> None: ...
 
+class IntegrationAccountsChangedV2(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
 class ResetRequiredV2(_message.Message):
     __slots__ = ("history_floor", "latest_cursor")
     HISTORY_FLOOR_FIELD_NUMBER: _ClassVar[int]
@@ -1238,7 +1313,7 @@ class ResetRequiredV2(_message.Message):
     def __init__(self, history_floor: _Optional[_Union[LifecycleCursorV2, _Mapping]] = ..., latest_cursor: _Optional[_Union[LifecycleCursorV2, _Mapping]] = ...) -> None: ...
 
 class RunStatusEnvelopeV2(_message.Message):
-    __slots__ = ("event_ulid", "run_created", "run_status_changed", "reset_required", "node_status_changed", "activity_appended", "flow_list_changed", "flow_reload_status", "catalog_reload_required", "nodes_expanded", "cursor", "scope_ref")
+    __slots__ = ("event_ulid", "run_created", "run_status_changed", "reset_required", "node_status_changed", "activity_appended", "flow_list_changed", "flow_reload_status", "catalog_reload_required", "nodes_expanded", "integration_accounts_changed", "cursor", "scope_ref")
     EVENT_ULID_FIELD_NUMBER: _ClassVar[int]
     RUN_CREATED_FIELD_NUMBER: _ClassVar[int]
     RUN_STATUS_CHANGED_FIELD_NUMBER: _ClassVar[int]
@@ -1249,6 +1324,7 @@ class RunStatusEnvelopeV2(_message.Message):
     FLOW_RELOAD_STATUS_FIELD_NUMBER: _ClassVar[int]
     CATALOG_RELOAD_REQUIRED_FIELD_NUMBER: _ClassVar[int]
     NODES_EXPANDED_FIELD_NUMBER: _ClassVar[int]
+    INTEGRATION_ACCOUNTS_CHANGED_FIELD_NUMBER: _ClassVar[int]
     CURSOR_FIELD_NUMBER: _ClassVar[int]
     SCOPE_REF_FIELD_NUMBER: _ClassVar[int]
     event_ulid: str
@@ -1261,6 +1337,7 @@ class RunStatusEnvelopeV2(_message.Message):
     flow_reload_status: FlowReloadStatusV2
     catalog_reload_required: CatalogReloadRequiredV2
     nodes_expanded: RunNodesExpandedV2
+    integration_accounts_changed: IntegrationAccountsChangedV2
     cursor: LifecycleCursorV2
     scope_ref: ScopeReferenceV2
-    def __init__(self, event_ulid: _Optional[str] = ..., run_created: _Optional[_Union[RunCreatedV2, _Mapping]] = ..., run_status_changed: _Optional[_Union[RunStatusChangedV2, _Mapping]] = ..., reset_required: _Optional[_Union[ResetRequiredV2, _Mapping]] = ..., node_status_changed: _Optional[_Union[NodeStatusChangedV2, _Mapping]] = ..., activity_appended: _Optional[_Union[ActivityAppendedV2, _Mapping]] = ..., flow_list_changed: _Optional[_Union[FlowListChangedV2, _Mapping]] = ..., flow_reload_status: _Optional[_Union[FlowReloadStatusV2, _Mapping]] = ..., catalog_reload_required: _Optional[_Union[CatalogReloadRequiredV2, _Mapping]] = ..., nodes_expanded: _Optional[_Union[RunNodesExpandedV2, _Mapping]] = ..., cursor: _Optional[_Union[LifecycleCursorV2, _Mapping]] = ..., scope_ref: _Optional[_Union[ScopeReferenceV2, _Mapping]] = ...) -> None: ...
+    def __init__(self, event_ulid: _Optional[str] = ..., run_created: _Optional[_Union[RunCreatedV2, _Mapping]] = ..., run_status_changed: _Optional[_Union[RunStatusChangedV2, _Mapping]] = ..., reset_required: _Optional[_Union[ResetRequiredV2, _Mapping]] = ..., node_status_changed: _Optional[_Union[NodeStatusChangedV2, _Mapping]] = ..., activity_appended: _Optional[_Union[ActivityAppendedV2, _Mapping]] = ..., flow_list_changed: _Optional[_Union[FlowListChangedV2, _Mapping]] = ..., flow_reload_status: _Optional[_Union[FlowReloadStatusV2, _Mapping]] = ..., catalog_reload_required: _Optional[_Union[CatalogReloadRequiredV2, _Mapping]] = ..., nodes_expanded: _Optional[_Union[RunNodesExpandedV2, _Mapping]] = ..., integration_accounts_changed: _Optional[_Union[IntegrationAccountsChangedV2, _Mapping]] = ..., cursor: _Optional[_Union[LifecycleCursorV2, _Mapping]] = ..., scope_ref: _Optional[_Union[ScopeReferenceV2, _Mapping]] = ...) -> None: ...

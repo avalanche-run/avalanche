@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from avalanche.agent.declaration import AgentDeclaration
 from avalanche.dag import MapFuture, NodeFuture, NodeType, Workflow, run_input_parameters
 from avalanche.input_ref import InputRef
+from avalanche.integrations import StepIntegrations, step_integration_declarations
 from avalanche.mapping import MapSpec
 from avalanche.runtime import BaseInput
 
@@ -69,6 +70,20 @@ def agent_declarations_for_workflow(
         if spec is not None:
             declarations[node_id] = spec.declaration(workflow.agent_defaults)
     return declarations
+
+
+def integration_declarations_for_workflow(
+    workflow: Workflow, node_ids: list[str]
+) -> dict[str, StepIntegrations]:
+    """The integrations each step declares; steps that declare none are left out.
+
+    Reads only what the step decorators recorded: no network, no account.
+    """
+    return {
+        node_id: step_integration_declarations(integrations)
+        for node_id in node_ids
+        if (integrations := workflow.nodes[node_id].node.integrations)
+    }
 
 
 def map_specs_for_workflow(workflow: Workflow, node_ids: list[str]) -> dict[str, MapSpec]:

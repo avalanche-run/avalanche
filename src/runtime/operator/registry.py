@@ -40,6 +40,7 @@ from .source import resolve_watch_roots
 from .workflow_metadata import (
     agent_declarations_for_workflow,
     input_declaration_for_workflow,
+    integration_declarations_for_workflow,
     map_specs_for_workflow,
     node_docstring_lines_for_workflow,
     node_source_code_for_workflow,
@@ -161,6 +162,14 @@ def workflow_revision(info: WorkflowInfo) -> str:
         node_id: declaration.model_dump(mode="json")
         for node_id, declaration in info.agent_declarations.items()
     }
+    # Left out when empty, so a workflow without integrations keeps the revision
+    # it had before integrations existed.
+    fields.pop("integration_declarations")
+    if info.integration_declarations:
+        fields["integration_declarations"] = {
+            node_id: declaration.model_dump(mode="json")
+            for node_id, declaration in info.integration_declarations.items()
+        }
     fields["node_policies"] = {
         node: policy.model_dump(mode="json") for node, policy in info.node_policies.items()
     }
@@ -215,6 +224,7 @@ def workflow_to_info(
         display_names=display_names,
         agent_node_ids=agent_node_ids,
         agent_declarations=agent_declarations,
+        integration_declarations=integration_declarations_for_workflow(workflow, node_ids),
         classifier_metadata_json=classifier_metadata_for_workflow(workflow, node_ids),
         evaluation_metadata_json=evaluation_metadata_for_workflow(workflow, node_ids),
         step_interface_json=step_interface_for_workflow(workflow, node_ids),
@@ -251,6 +261,7 @@ def descriptor_to_info(descriptor: WorkflowDescriptor) -> WorkflowInfo:
         display_names=dict(descriptor.display_names),
         agent_node_ids=list(descriptor.agent_node_ids),
         agent_declarations=dict(descriptor.agent_declarations),
+        integration_declarations=dict(descriptor.integration_declarations),
         classifier_metadata_json=dict(descriptor.classifier_metadata_json),
         evaluation_metadata_json=dict(descriptor.evaluation_metadata_json),
         step_interface_json=dict(descriptor.step_interface_json),

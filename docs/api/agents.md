@@ -12,6 +12,7 @@ import avalanche as ava
     runtime=ava.runtimes.PredictRLM(lm=..., sub_lm=..., max_iterations=..., skills=...),
     tools=...,
     skills=...,
+    integrations=...,
     evaluations=...,
 )
 async def analyze(document: str, *, agent: ava.Agent) -> str:
@@ -27,6 +28,7 @@ The example assumes a signature with input `document` and output `summary`. Elli
 | `runtime` | An agent runtime such as `ava.runtimes.PredictRLM(...)`; default `None` | The runtime that runs the agent and its settings. Omitted uses the workflow's `agent_defaults` runtime, else `ava.runtimes.PredictRLM()`. See [runtimes](#runtimes). Any other value raises `TypeError`. |
 | `tools` | Sequence of callables; default none | Additional tools; every member must be callable. |
 | `skills` | Sequence of `ava.agent.Skill`; default none | [Agent Skills](#skills) the agent may load when it needs them. Names must be distinct (`AgentStepError`); any other member raises `TypeError`. `ClaudeAgent` runs them; PredictRLM does not support them yet. |
+| `integrations` | Sequence of `ava.Connector` instances and `ava.MCP(...)`; default none | The [integrations](../integrations.md) the step uses. A Connector's tools and an MCP server's tools reach the agent as `<integration>__<tool>`. A tool name used twice raises `IntegrationError`, when the step is defined for Connector tools and when it starts for MCP tools; a missing account, or an MCP server that cannot be used, fails the step before its code runs. |
 | `evaluations` | `ava.Evaluations \| None`; default `None` | Observation-only quality judgments of the step's successful agent call, run by the operator. See [native evaluations](../agent-steps.md#native-evaluations). Any other value raises `TypeError`. |
 
 Model and other PredictRLM settings, PredictRLM's own skills included, belong to the runtime. Passing `lm=`, `sub_lm=`, `max_iterations=` or another PredictRLM keyword to the step, or a PredictRLM skill in its `skills=`, raises `TypeError` naming the `runtime=ava.runtimes.PredictRLM(...)` replacement.

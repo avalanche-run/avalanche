@@ -86,6 +86,8 @@ flat list rather than implying an unavailable per-target mapping. Source filenam
 references remain visible, and long names truncate within the sidebar. The target
 is a label, not a project view. The sidebar has no dashboard, profile card, or
 Navigator/Explorer heading; its pin/hover controls and reload diagnostics remain.
+When the workflows declare integrations, an **Integrations** entry sits above the
+pin control (see [Integrations](#integrations)).
 
 Both hosts share one workspace with an optional selected run. With no run selected,
 nodes expose their available definitions, without execution badges or logs. Selecting
@@ -299,6 +301,76 @@ through the host's `OperatorApi`.
 
 This package does not run an operator server, create an authentication boundary, or provide
 multi-tenant behavior. Those concerns stay with the embedding host.
+
+## Integrations
+
+A workflow step can declare the outside services it uses (`integrations=[...]`).
+The package shows them when the host implements these optional `OperatorApi`
+methods; a host without them is unchanged and shows no integration UI:
+
+- `listIntegrations(signal?)` returns `IntegrationStatus[]`: each declared
+  integration, its declaration, whether it has an account (`connected`,
+  `connected_at`), whether a step cannot start without one (`requires_account`),
+  the ways to connect it (`login`: `"browser"`, `"api_key"`, the default first)
+  and the steps that use it. It must start no process, call no outside service
+  and return no credential. The field names are the operator's JSON document;
+  `parseIntegrationStatusList` validates one.
+- `connectIntegration(name, credential)` stores an account
+  (`{ kind: "api_key", key, header? }`) and `disconnectIntegration(name)` removes
+  it. Both return the integration's new status. Without them the screen is
+  read-only.
+- `startIntegrationLogin(name, client?)` starts a browser login and returns an
+  `IntegrationLogin` with the consent page to open (`authorization_url`);
+  `client` carries the client ID and secret a person typed for a Connector's
+  app. `getIntegrationLogin(loginId, signal?)` returns how far it is
+  (`waiting`, `connected`, or `failed` with `error`) and may wait some seconds.
+  The host receives the browser's return itself and stores the tokens: no
+  token, code or secret is ever given to the page. Without both methods the
+  connect form offers a key only.
+- `getIntegrationIconUrl(name, signal?)` returns a URL of the declared icon. It
+  is used only as the `src` of an `<img>`, so an SVG icon cannot run script in
+  the page. Reject when there is no icon to serve; the UI shows a generic one.
+  `GrpcWebOperatorApi` returns a `data:` URL.
+
+Each step's `StepIntegrations` document is supplied per node in
+`FlowInfoMsg.integrationDeclarationsJson` (`FlowInfoMsg.create` defaults it to
+none). With it, step cards carry one badge per integration, the inspector lists
+a step's integrations with their kind and a Connector's tools, a failed step
+whose account was missing says so, and traced tool calls name their
+integration. Run views read the current definition's declarations.
+
+`OperatorUi` adds an **Integrations** entry to its sidebar when the workflows
+declare any, and shows the screen in place of the workspace. A host that
+composes its own page renders the exported `IntegrationsPanel`:
+
+```tsx
+<IntegrationsPanel api={operatorApi} focusName={name} revision={deploymentId} />
+```
+
+and passes `onOpenIntegrations={(name) => ...}` to `WorkflowWorkspace`, so a
+step that failed for a missing account links to that page. `focusName` brings
+one integration into view with its connect form open; change `revision` to
+list again. The lists refresh when the catalog changes, after the page's own
+connect or disconnect, and when the update stream carries
+`{ oneofKind: "integrationAccountsChanged" }`, which the local operator sends
+when an account is connected or removed from anywhere. The connect form sends
+the key once and never reads it back; a stored key is never displayed. For a
+browser login the form opens the consent page in a new tab, opened while the
+click is handled so the browser does not block it, and waits for the host to
+report the end of the login.
+
+The real-browser proof runs against a real local operator. From
+`pkgs/avalanche`, after `make web-build`:
+
+```bash
+uv run --frozen --package avalanche-ai --with playwright==1.55.0 python \
+  web/operator/scripts/integrations_browser_proof.py --evidence /path/to/evidence
+uv run --frozen --package avalanche-ai --with playwright==1.55.0 python \
+  web/operator/scripts/browser_login_browser_proof.py --evidence /path/to/evidence
+```
+
+The second one connects a Connector and two MCP servers through the browser
+login, against a local login service that speaks OAuth.
 
 ## Machine runs (phase A contract)
 

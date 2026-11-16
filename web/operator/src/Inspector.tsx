@@ -41,6 +41,9 @@ import { ClaudeLogo, isClaudeRuntime } from "./ClaudeLogo";
 import { Markdown } from "./Markdown";
 import { PythonSource } from "./PythonSource";
 import { InspectorFields, InspectorResources } from "./InspectorDefinition";
+import { StepIntegrationsSection } from "./Integrations";
+import type { IntegrationDeclaration } from "./integrations";
+import { stepIntegrations, StepIntegrationsProvider } from "./integrationsView";
 import { OpenDefinitionButton } from "./OpenDefinitionButton";
 import { InitialPromptDialog } from "./InitialPromptDialog";
 import { RetainedAgentValue } from "./RetainedAgentValue";
@@ -121,6 +124,7 @@ type NodeSourceState = {
 );
 
 const DETAIL_CACHE_MAX_ENTRIES = 8;
+const NO_INTEGRATIONS: IntegrationDeclaration[] = [];
 
 const EMPTY_EVENTS: AgentEventDescriptorMsg[] = [];
 const EMPTY_EVENT_PAGE: DescriptorPageState<AgentEventDescriptorMsg> = {
@@ -688,6 +692,10 @@ function AgentAndStepInspector({
     () => combinedEvents.filter((event) => event.agentEventKind !== "turn.finished"),
     [combinedEvents],
   );
+  const integrationDeclarations = useMemo(() => {
+    const declared = stepIntegrations(workflow, nodeId);
+    return declared && "declarations" in declared ? declared.declarations : NO_INTEGRATIONS;
+  }, [nodeId, workflow]);
 
   useEffect(() => {
     if (tab !== "trace" || !following || !turns.length || !traceScrollElement.current) return;
@@ -753,442 +761,451 @@ function AgentAndStepInspector({
   );
 
   return (
-    <aside
-      className={`inspector ${run ? "inspector-run" : "inspector-declaration"} z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-line bg-panel ${panelLayout}`}
-      aria-label={run ? "Run inspector" : "Node declaration"}
-    >
-      <header className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 pt-[19px] pb-3.5">
-        <div className="min-w-0 flex-1">
-          <span className="eyebrow block font-mono text-[9px] tracking-[.16em] text-acid uppercase">
-            {isAgentNode ? "Agent" : "Step"}
-            <span aria-hidden="true"> · </span>
-            {run ? (
-              <>
-                Run <span className="normal-case">{runId}</span>
-              </>
-            ) : (
-              "Current state"
+    <StepIntegrationsProvider value={integrationDeclarations}>
+      <aside
+        className={`inspector ${run ? "inspector-run" : "inspector-declaration"} z-30 flex min-h-0 min-w-0 flex-col overflow-hidden border-l border-line bg-panel ${panelLayout}`}
+        aria-label={run ? "Run inspector" : "Node declaration"}
+      >
+        <header className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 pt-[19px] pb-3.5">
+          <div className="min-w-0 flex-1">
+            <span className="eyebrow block font-mono text-[9px] tracking-[.16em] text-acid uppercase">
+              {isAgentNode ? "Agent" : "Step"}
+              <span aria-hidden="true"> · </span>
+              {run ? (
+                <>
+                  Run <span className="normal-case">{runId}</span>
+                </>
+              ) : (
+                "Current state"
+              )}
+            </span>
+            <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+              <h2 className="m-0 min-w-0 text-lg [overflow-wrap:anywhere]">{nodeName}</h2>
+              {node?.status && (
+                <span
+                  className={`node-status font-mono text-[8px] uppercase ${nodeStatusClass}`}
+                >
+                  {node.status}
+                </span>
+              )}
+              {headerSeconds !== undefined && (
+                <span
+                  className="font-mono text-[9px] text-muted"
+                  title={`${headerSeconds.toFixed(1)} seconds`}
+                >
+                  {formatElapsedSeconds(headerSeconds)}
+                </span>
+              )}
+            </div>
+            {(node?.generation !== undefined || node?.attempts !== undefined) && (
+              <p aria-label="Execution attempts" className="mt-1 text-xs text-secondary">
+                Generation: {node.generation ?? "Not reported"} · Attempts:{" "}
+                {node.attempts ?? "Not reported"}
+              </p>
             )}
-          </span>
-          <div className="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h2 className="m-0 min-w-0 text-lg [overflow-wrap:anywhere]">{nodeName}</h2>
-            {node?.status && (
-              <span className={`node-status font-mono text-[8px] uppercase ${nodeStatusClass}`}>
-                {node.status}
-              </span>
+            {runsOnClaude && (
+              <p className="inspector-runtime m-0 mt-1.5 inline-flex items-center gap-1.5 rounded border border-claude/30 bg-claude/10 px-1.5 py-0.5 font-mono text-[9px] text-claude">
+                <ClaudeLogo className="size-3" />
+                Claude Agent SDK
+              </p>
             )}
-            {headerSeconds !== undefined && (
-              <span
-                className="font-mono text-[9px] text-muted"
-                title={`${headerSeconds.toFixed(1)} seconds`}
+            {composites && (
+              <CompositeSummary
+                composites={composites}
+                className="mt-1 block min-w-0 text-left font-mono text-[10px] [overflow-wrap:anywhere]"
+              />
+            )}
+            {run && traceHeader && traceViewer && (
+              <div className="mt-2 grid min-w-0 gap-0.5 font-mono text-[8px] leading-[1.5]">
+                {traceViewer.headerLines(traceHeader).map((line, index) => (
+                  <p
+                    key={index}
+                    className={`m-0 whitespace-normal [overflow-wrap:anywhere] ${line.muted ? "text-muted" : "text-secondary"}`}
+                  >
+                    {line.label && (
+                      <span className="mr-1.5 text-muted uppercase">{line.label}</span>
+                    )}
+                    {line.text}
+                  </p>
+                ))}
+              </div>
+            )}
+            {node?.error && (
+              <p
+                className="mt-2 mb-0 line-clamp-3 text-[9px] text-danger [overflow-wrap:anywhere]"
+                title={node.error}
               >
-                {formatElapsedSeconds(headerSeconds)}
-              </span>
+                {node.error}
+              </p>
+            )}
+            {run && onOpenDefinition && (
+              <OpenDefinitionButton
+                definitionLabel={definitionLabel}
+                onOpenDefinition={onOpenDefinition}
+              />
             )}
           </div>
-          {(node?.generation !== undefined || node?.attempts !== undefined) && (
-            <p aria-label="Execution attempts" className="mt-1 text-xs text-secondary">
-              Generation: {node.generation ?? "Not reported"} · Attempts:{" "}
-              {node.attempts ?? "Not reported"}
-            </p>
-          )}
-          {runsOnClaude && (
-            <p className="inspector-runtime m-0 mt-1.5 inline-flex items-center gap-1.5 rounded border border-claude/30 bg-claude/10 px-1.5 py-0.5 font-mono text-[9px] text-claude">
-              <ClaudeLogo className="size-3" />
-              Claude Agent SDK
-            </p>
-          )}
-          {composites && (
-            <CompositeSummary
-              composites={composites}
-              className="mt-1 block min-w-0 text-left font-mono text-[10px] [overflow-wrap:anywhere]"
-            />
-          )}
-          {run && traceHeader && traceViewer && (
-            <div className="mt-2 grid min-w-0 gap-0.5 font-mono text-[8px] leading-[1.5]">
-              {traceViewer.headerLines(traceHeader).map((line, index) => (
-                <p
-                  key={index}
-                  className={`m-0 whitespace-normal [overflow-wrap:anywhere] ${line.muted ? "text-muted" : "text-secondary"}`}
-                >
-                  {line.label && (
-                    <span className="mr-1.5 text-muted uppercase">{line.label}</span>
-                  )}
-                  {line.text}
-                </p>
-              ))}
-            </div>
-          )}
-          {node?.error && (
-            <p
-              className="mt-2 mb-0 line-clamp-3 text-[9px] text-danger [overflow-wrap:anywhere]"
-              title={node.error}
-            >
-              {node.error}
-            </p>
-          )}
-          {run && onOpenDefinition && (
-            <OpenDefinitionButton
-              definitionLabel={definitionLabel}
-              onOpenDefinition={onOpenDefinition}
-            />
-          )}
-        </div>
-        {headerActions}
-      </header>
-      {isAgentNode ? (
-        run ? (
-          <>
-            <div
-              className="inspector-tabs flex shrink-0 overflow-x-auto border-b border-line px-2.5"
-              role="tablist"
-              aria-label="Run agent detail views"
-            >
-              {AGENT_TABS.map((item) => (
-                <button
-                  type="button"
-                  role="tab"
-                  id={`${tabsId}-${item}`}
-                  aria-controls={`${tabsId}-panel`}
-                  aria-selected={tab === item}
-                  tabIndex={tab === item ? 0 : -1}
-                  key={item}
-                  className={`flex-[1_0_auto] cursor-pointer border-0 border-b-2 bg-transparent px-[9px] pt-[11px] pb-[9px] font-mono text-[9px] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${tab === item ? "active border-acid text-acid" : "border-transparent text-muted"}`}
-                  onClick={() => setSelectedTab(item)}
-                  onKeyDown={(event) => {
-                    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                    event.preventDefault();
-                    const index = AGENT_TABS.indexOf(item);
-                    const next =
-                      AGENT_TABS[
-                        event.key === "Home"
-                          ? 0
-                          : event.key === "End"
-                            ? AGENT_TABS.length - 1
-                            : (index +
-                                (event.key === "ArrowRight" ? 1 : -1) +
-                                AGENT_TABS.length) %
-                              AGENT_TABS.length
-                      ];
-                    setSelectedTab(next);
-                    document.getElementById(`${tabsId}-${next}`)?.focus();
-                  }}
-                >
-                  {AGENT_TAB_LABELS[item]}
-                </button>
-              ))}
-            </div>
-            <div
-              className={`inspector-body inspector-body-full min-h-0 min-w-0 flex-1 ${tab === "trace" ? "overflow-hidden [&_h3]:text-[10px] [&_h3]:tracking-[.08em] [&_h3]:text-secondary [&_h3]:uppercase" : "overflow-auto px-5 pt-[18px] pb-[30px] [scrollbar-gutter:stable]"}`}
-              role="tabpanel"
-              id={`${tabsId}-panel`}
-              aria-labelledby={`${tabsId}-${tab}`}
-            >
-              {runId && nodeId && (
-                <div hidden={tab !== "evaluations"}>
-                  <EvaluationPanel
-                    key={selectionScope}
-                    record={evaluationRecord}
-                    declaration={evaluationDeclaration}
-                    loading={evaluationState.loading}
-                    error={evaluationState.error}
-                    onOpenTrace={() => {
-                      setSelectedTab("trace");
-                      document.getElementById(`${tabsId}-trace`)?.focus();
+          {headerActions}
+        </header>
+        <StepIntegrationsSection error={node?.status === "failed" ? node.error : undefined} />
+        {isAgentNode ? (
+          run ? (
+            <>
+              <div
+                className="inspector-tabs flex shrink-0 overflow-x-auto border-b border-line px-2.5"
+                role="tablist"
+                aria-label="Run agent detail views"
+              >
+                {AGENT_TABS.map((item) => (
+                  <button
+                    type="button"
+                    role="tab"
+                    id={`${tabsId}-${item}`}
+                    aria-controls={`${tabsId}-panel`}
+                    aria-selected={tab === item}
+                    tabIndex={tab === item ? 0 : -1}
+                    key={item}
+                    className={`flex-[1_0_auto] cursor-pointer border-0 border-b-2 bg-transparent px-[9px] pt-[11px] pb-[9px] font-mono text-[9px] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${tab === item ? "active border-acid text-acid" : "border-transparent text-muted"}`}
+                    onClick={() => setSelectedTab(item)}
+                    onKeyDown={(event) => {
+                      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+                        return;
+                      event.preventDefault();
+                      const index = AGENT_TABS.indexOf(item);
+                      const next =
+                        AGENT_TABS[
+                          event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? AGENT_TABS.length - 1
+                              : (index +
+                                  (event.key === "ArrowRight" ? 1 : -1) +
+                                  AGENT_TABS.length) %
+                                AGENT_TABS.length
+                        ];
+                      setSelectedTab(next);
+                      document.getElementById(`${tabsId}-${next}`)?.focus();
                     }}
-                  />
-                </div>
-              )}
-              {tab === "evaluations" ? null : tab === "interface" ? (
-                stepInterfacePanel
-              ) : tab === "io" ? (
-                <div className="grid min-w-0 gap-6">
-                  {(["inputs", "outputs"] as const).map((kind) => (
-                    <section
-                      key={kind}
-                      aria-label={kind === "inputs" ? "Inputs" : "Outputs"}
-                      className="min-w-0"
-                    >
-                      <h3 className="inspector-section-title">
-                        {kind === "inputs" ? "Inputs" : "Outputs"}
-                      </h3>
-                      {runId ? (
-                        <RetainedAgentValue
-                          key={`${descriptorScope}\0${kind}`}
+                  >
+                    {AGENT_TAB_LABELS[item]}
+                  </button>
+                ))}
+              </div>
+              <div
+                className={`inspector-body inspector-body-full min-h-0 min-w-0 flex-1 ${tab === "trace" ? "overflow-hidden [&_h3]:text-[10px] [&_h3]:tracking-[.08em] [&_h3]:text-secondary [&_h3]:uppercase" : "overflow-auto px-5 pt-[18px] pb-[30px] [scrollbar-gutter:stable]"}`}
+                role="tabpanel"
+                id={`${tabsId}-panel`}
+                aria-labelledby={`${tabsId}-${tab}`}
+              >
+                {runId && nodeId && (
+                  <div hidden={tab !== "evaluations"}>
+                    <EvaluationPanel
+                      key={selectionScope}
+                      record={evaluationRecord}
+                      declaration={evaluationDeclaration}
+                      loading={evaluationState.loading}
+                      error={evaluationState.error}
+                      onOpenTrace={() => {
+                        setSelectedTab("trace");
+                        document.getElementById(`${tabsId}-trace`)?.focus();
+                      }}
+                    />
+                  </div>
+                )}
+                {tab === "evaluations" ? null : tab === "interface" ? (
+                  stepInterfacePanel
+                ) : tab === "io" ? (
+                  <div className="grid min-w-0 gap-6">
+                    {(["inputs", "outputs"] as const).map((kind) => (
+                      <section
+                        key={kind}
+                        aria-label={kind === "inputs" ? "Inputs" : "Outputs"}
+                        className="min-w-0"
+                      >
+                        <h3 className="inspector-section-title">
+                          {kind === "inputs" ? "Inputs" : "Outputs"}
+                        </h3>
+                        {runId ? (
+                          <RetainedAgentValue
+                            key={`${descriptorScope}\0${kind}`}
+                            api={api}
+                            kind={kind}
+                            trace={node?.trace}
+                            fields={historicalFieldSchemas?.[kind]}
+                            schemaUnavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
+                            operatorInstanceId={operatorInstanceId}
+                            asOfEventUlid={asOfEventUlid}
+                            runId={runId}
+                            nodeId={nodeId}
+                            eventPageToken={eventPageToken}
+                            liveEvents={liveEvents}
+                            nodeStatus={node?.status}
+                          />
+                        ) : (
+                          <InspectorFields
+                            fields={historicalFieldSchemas?.[kind]}
+                            unavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
+                          />
+                        )}
+                      </section>
+                    ))}
+                  </div>
+                ) : node?.trace ? (
+                  <AgentTraceExplorer
+                    key={descriptorScope}
+                    scopeKey={descriptorScope}
+                    turns={traceTurnViews}
+                    lifecycleEvents={lifecycleEvents}
+                    running={node.status === "running"}
+                    loading={pageLoading}
+                    error={activePageError}
+                    hasMore={Boolean(activeEventPage.nextPageToken)}
+                    scrollRef={traceScrollElement}
+                    onLoadTurn={hydrateTraceTurn}
+                    onTurnDetailOpenChange={setTurnDetailOpen}
+                    onLoadMore={loadMoreEvents}
+                    actions={
+                      runId ? (
+                        <InitialPromptDialog
                           api={api}
-                          kind={kind}
-                          trace={node?.trace}
-                          fields={historicalFieldSchemas?.[kind]}
-                          schemaUnavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
                           operatorInstanceId={operatorInstanceId}
                           asOfEventUlid={asOfEventUlid}
                           runId={runId}
                           nodeId={nodeId}
                           eventPageToken={eventPageToken}
                           liveEvents={liveEvents}
-                          nodeStatus={node?.status}
                         />
-                      ) : (
-                        <InspectorFields
-                          fields={historicalFieldSchemas?.[kind]}
-                          unavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
-                        />
-                      )}
-                    </section>
-                  ))}
-                </div>
-              ) : node?.trace ? (
-                <AgentTraceExplorer
-                  key={descriptorScope}
-                  scopeKey={descriptorScope}
-                  turns={traceTurnViews}
-                  lifecycleEvents={lifecycleEvents}
-                  running={node.status === "running"}
-                  loading={pageLoading}
-                  error={activePageError}
-                  hasMore={Boolean(activeEventPage.nextPageToken)}
-                  scrollRef={traceScrollElement}
-                  onLoadTurn={hydrateTraceTurn}
-                  onTurnDetailOpenChange={setTurnDetailOpen}
-                  onLoadMore={loadMoreEvents}
-                  actions={
-                    runId ? (
-                      <InitialPromptDialog
-                        api={api}
-                        operatorInstanceId={operatorInstanceId}
-                        asOfEventUlid={asOfEventUlid}
-                        runId={runId}
-                        nodeId={nodeId}
-                        eventPageToken={eventPageToken}
-                        liveEvents={liveEvents}
+                      ) : undefined
+                    }
+                    onScroll={(element) => {
+                      const distanceFromBottom =
+                        element.scrollHeight - element.scrollTop - element.clientHeight;
+                      if (distanceFromBottom > SCROLL_LOAD_THRESHOLD_PX) setFollowing(false);
+                      if (
+                        distanceFromBottom <= SCROLL_LOAD_THRESHOLD_PX &&
+                        activeEventPage.nextPageToken
+                      )
+                        loadMoreEvents();
+                    }}
+                  />
+                ) : (
+                  <section
+                    aria-label="Agent trace"
+                    className="inspector-panel h-full min-w-0 overflow-auto px-5 pt-[18px] pb-[30px]"
+                  >
+                    <p className="text-[11px] text-muted">
+                      {node
+                        ? "No structured agent trace is available for this node."
+                        : "This node has no execution data yet."}
+                    </p>
+                  </section>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <div
+                className="inspector-tabs flex shrink-0 overflow-x-auto border-b border-line px-2.5"
+                role="tablist"
+                aria-label="Agent definition views"
+              >
+                {AGENT_DEFINITION_TABS.map((item) => (
+                  <button
+                    key={item}
+                    type="button"
+                    role="tab"
+                    id={`${tabsId}-definition-${item}`}
+                    aria-controls={`${tabsId}-definition-panel`}
+                    aria-selected={definitionTab === item}
+                    tabIndex={definitionTab === item ? 0 : -1}
+                    className={`flex-[1_0_auto] cursor-pointer border-0 border-b-2 bg-transparent px-[9px] pt-[11px] pb-[9px] font-mono text-[9px] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${definitionTab === item ? "active border-acid text-acid" : "border-transparent text-muted"}`}
+                    onClick={() => setSelectedDefinitionTab({ scope: stepTabScope, tab: item })}
+                    onKeyDown={(event) => {
+                      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+                        return;
+                      event.preventDefault();
+                      const index = AGENT_DEFINITION_TABS.indexOf(item);
+                      const next =
+                        AGENT_DEFINITION_TABS[
+                          event.key === "Home"
+                            ? 0
+                            : event.key === "End"
+                              ? AGENT_DEFINITION_TABS.length - 1
+                              : (index +
+                                  (event.key === "ArrowRight" ? 1 : -1) +
+                                  AGENT_DEFINITION_TABS.length) %
+                                AGENT_DEFINITION_TABS.length
+                        ];
+                      setSelectedDefinitionTab({ scope: stepTabScope, tab: next });
+                      document.getElementById(`${tabsId}-definition-${next}`)?.focus();
+                    }}
+                  >
+                    {AGENT_DEFINITION_TAB_LABELS[item]}
+                  </button>
+                ))}
+              </div>
+              <div
+                key={`${stepTabScope}\0${definitionTab}`}
+                className="inspector-definition inspector-body inspector-body-full min-h-0 min-w-0 flex-1 overflow-auto px-5 pt-[18px] pb-[30px] [scrollbar-gutter:stable]"
+                role="tabpanel"
+                id={`${tabsId}-definition-panel`}
+                aria-labelledby={`${tabsId}-definition-${definitionTab}`}
+              >
+                <div className="grid min-w-0 gap-6">
+                  {definitionTab === "interface" ? (
+                    stepInterfacePanel
+                  ) : definitionUnavailable ? (
+                    <p className="text-[11px] text-muted">{definitionUnavailable}</p>
+                  ) : definitionTab === "evals" ? (
+                    workflow?.evaluationMetadataJson[nodeId] === undefined ? (
+                      <p role="status" className="text-[11px] text-muted">
+                        No evaluations are configured for this agent.
+                      </p>
+                    ) : (
+                      <EvaluationDefinition
+                        key={selectionScope}
+                        raw={workflow.evaluationMetadataJson[nodeId]}
                       />
-                    ) : undefined
-                  }
-                  onScroll={(element) => {
-                    const distanceFromBottom =
-                      element.scrollHeight - element.scrollTop - element.clientHeight;
-                    if (distanceFromBottom > SCROLL_LOAD_THRESHOLD_PX) setFollowing(false);
-                    if (
-                      distanceFromBottom <= SCROLL_LOAD_THRESHOLD_PX &&
-                      activeEventPage.nextPageToken
                     )
-                      loadMoreEvents();
-                  }}
-                />
-              ) : (
-                <section
-                  aria-label="Agent trace"
-                  className="inspector-panel h-full min-w-0 overflow-auto px-5 pt-[18px] pb-[30px]"
-                >
-                  <p className="text-[11px] text-muted">
-                    {node
-                      ? "No structured agent trace is available for this node."
-                      : "This node has no execution data yet."}
-                  </p>
-                </section>
-              )}
-            </div>
-          </>
+                  ) : workflowDeclaration ? (
+                    <>
+                      <section>
+                        <h3 className="inspector-section-title">Instructions</h3>
+                        <Markdown className="instructions text-xs leading-[1.65] whitespace-normal text-secondary [&>:first-child]:mt-0 [&>:last-child]:mb-0">
+                          {instructions}
+                        </Markdown>
+                      </section>
+                      <section aria-label="Inputs and outputs" className="min-w-0">
+                        <h3 className="inspector-section-title">Inputs & outputs</h3>
+                        <div className="grid min-w-0 gap-5">
+                          {(["inputs", "outputs"] as const).map((kind) => (
+                            <section
+                              key={kind}
+                              aria-label={kind === "inputs" ? "Inputs" : "Outputs"}
+                              className="min-w-0"
+                            >
+                              <h4 className="m-0 mb-2 font-mono text-[9px] tracking-[.08em] text-muted uppercase">
+                                {kind === "inputs" ? "Inputs" : "Outputs"}
+                              </h4>
+                              <InspectorFields fields={workflowDeclaration[kind]} />
+                            </section>
+                          ))}
+                        </div>
+                      </section>
+                      {(declaredMainModel || declaredSubModel) && (
+                        <section aria-label="Models">
+                          <h3 className="inspector-section-title">Models</h3>
+                          <div className="grid min-w-0 gap-3">
+                            {(
+                              [
+                                ["Main", declaredMainModel],
+                                ["Sub", declaredSubModel],
+                              ] as const
+                            ).flatMap(([label, model]) =>
+                              model
+                                ? [
+                                    <div className="min-w-0" key={label}>
+                                      <span className="block font-mono text-[8px] text-muted uppercase">
+                                        {label}
+                                      </span>
+                                      <strong className="mt-0.5 block text-[10px] text-ink [overflow-wrap:anywhere]">
+                                        {model}
+                                      </strong>
+                                    </div>,
+                                  ]
+                                : [],
+                            )}
+                          </div>
+                        </section>
+                      )}
+                      <InspectorResources
+                        key={`${selectionScope}\0${workflow?.workflowId}`}
+                        declaration={workflowDeclaration}
+                      />
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-muted">
+                      This node has no agent declaration metadata.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </>
+          )
         ) : (
           <>
             <div
-              className="inspector-tabs flex shrink-0 overflow-x-auto border-b border-line px-2.5"
+              className="inspector-tabs flex shrink-0 border-b border-line px-2.5"
               role="tablist"
-              aria-label="Agent definition views"
+              aria-label={run ? "Run step views" : "Workflow step views"}
             >
-              {AGENT_DEFINITION_TABS.map((item) => (
+              {stepTabs.map((item) => (
                 <button
                   key={item}
                   type="button"
                   role="tab"
-                  id={`${tabsId}-definition-${item}`}
-                  aria-controls={`${tabsId}-definition-panel`}
-                  aria-selected={definitionTab === item}
-                  tabIndex={definitionTab === item ? 0 : -1}
-                  className={`flex-[1_0_auto] cursor-pointer border-0 border-b-2 bg-transparent px-[9px] pt-[11px] pb-[9px] font-mono text-[9px] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${definitionTab === item ? "active border-acid text-acid" : "border-transparent text-muted"}`}
-                  onClick={() => setSelectedDefinitionTab({ scope: stepTabScope, tab: item })}
+                  id={`${tabsId}-${item}`}
+                  aria-controls={`${tabsId}-step-panel`}
+                  aria-selected={stepTab === item}
+                  tabIndex={stepTab === item ? 0 : -1}
+                  className={`flex-1 cursor-pointer border-0 border-b-2 bg-transparent px-[9px] pt-[11px] pb-[9px] font-mono text-[9px] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${stepTab === item ? "border-acid text-acid" : "border-transparent text-muted"}`}
+                  onClick={() => setSelectedStepTab({ scope: stepTabScope, tab: item })}
                   onKeyDown={(event) => {
                     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
                     event.preventDefault();
-                    const index = AGENT_DEFINITION_TABS.indexOf(item);
+                    const index = stepTabs.indexOf(item);
                     const next =
-                      AGENT_DEFINITION_TABS[
+                      stepTabs[
                         event.key === "Home"
                           ? 0
                           : event.key === "End"
-                            ? AGENT_DEFINITION_TABS.length - 1
+                            ? stepTabs.length - 1
                             : (index +
                                 (event.key === "ArrowRight" ? 1 : -1) +
-                                AGENT_DEFINITION_TABS.length) %
-                              AGENT_DEFINITION_TABS.length
+                                stepTabs.length) %
+                              stepTabs.length
                       ];
-                    setSelectedDefinitionTab({ scope: stepTabScope, tab: next });
-                    document.getElementById(`${tabsId}-definition-${next}`)?.focus();
+                    setSelectedStepTab({ scope: stepTabScope, tab: next });
+                    document.getElementById(`${tabsId}-${next}`)?.focus();
                   }}
                 >
-                  {AGENT_DEFINITION_TAB_LABELS[item]}
+                  {STEP_TAB_LABELS[item]}
                 </button>
               ))}
             </div>
             <div
-              key={`${stepTabScope}\0${definitionTab}`}
-              className="inspector-definition inspector-body inspector-body-full min-h-0 min-w-0 flex-1 overflow-auto px-5 pt-[18px] pb-[30px] [scrollbar-gutter:stable]"
+              className={`inspector-body inspector-body-full min-h-0 min-w-0 flex-1 ${stepTab === "code" ? "overflow-hidden bg-canvas" : "overflow-auto p-5 [scrollbar-gutter:stable]"}`}
               role="tabpanel"
-              id={`${tabsId}-definition-panel`}
-              aria-labelledby={`${tabsId}-definition-${definitionTab}`}
+              id={`${tabsId}-step-panel`}
+              aria-labelledby={`${tabsId}-${stepTab}`}
             >
-              <div className="grid min-w-0 gap-6">
-                {definitionTab === "interface" ? (
-                  stepInterfacePanel
-                ) : definitionUnavailable ? (
-                  <p className="text-[11px] text-muted">{definitionUnavailable}</p>
-                ) : definitionTab === "evals" ? (
-                  workflow?.evaluationMetadataJson[nodeId] === undefined ? (
-                    <p role="status" className="text-[11px] text-muted">
-                      No evaluations are configured for this agent.
-                    </p>
-                  ) : (
-                    <EvaluationDefinition
-                      key={selectionScope}
-                      raw={workflow.evaluationMetadataJson[nodeId]}
-                    />
-                  )
-                ) : workflowDeclaration ? (
-                  <>
-                    <section>
-                      <h3 className="inspector-section-title">Instructions</h3>
-                      <Markdown className="instructions text-xs leading-[1.65] whitespace-normal text-secondary [&>:first-child]:mt-0 [&>:last-child]:mb-0">
-                        {instructions}
-                      </Markdown>
-                    </section>
-                    <section aria-label="Inputs and outputs" className="min-w-0">
-                      <h3 className="inspector-section-title">Inputs & outputs</h3>
-                      <div className="grid min-w-0 gap-5">
-                        {(["inputs", "outputs"] as const).map((kind) => (
-                          <section
-                            key={kind}
-                            aria-label={kind === "inputs" ? "Inputs" : "Outputs"}
-                            className="min-w-0"
-                          >
-                            <h4 className="m-0 mb-2 font-mono text-[9px] tracking-[.08em] text-muted uppercase">
-                              {kind === "inputs" ? "Inputs" : "Outputs"}
-                            </h4>
-                            <InspectorFields fields={workflowDeclaration[kind]} />
-                          </section>
-                        ))}
-                      </div>
-                    </section>
-                    {(declaredMainModel || declaredSubModel) && (
-                      <section aria-label="Models">
-                        <h3 className="inspector-section-title">Models</h3>
-                        <div className="grid min-w-0 gap-3">
-                          {(
-                            [
-                              ["Main", declaredMainModel],
-                              ["Sub", declaredSubModel],
-                            ] as const
-                          ).flatMap(([label, model]) =>
-                            model
-                              ? [
-                                  <div className="min-w-0" key={label}>
-                                    <span className="block font-mono text-[8px] text-muted uppercase">
-                                      {label}
-                                    </span>
-                                    <strong className="mt-0.5 block text-[10px] text-ink [overflow-wrap:anywhere]">
-                                      {model}
-                                    </strong>
-                                  </div>,
-                                ]
-                              : [],
-                          )}
-                        </div>
-                      </section>
-                    )}
-                    <InspectorResources
-                      key={`${selectionScope}\0${workflow?.workflowId}`}
-                      declaration={workflowDeclaration}
-                    />
-                  </>
+              {stepTab === "interface" ? (
+                stepInterfacePanel
+              ) : stepTab === "io" ? (
+                <StepRunValues node={node} result={stepResult} />
+              ) : definitionUnavailable ? (
+                <p className="px-5 text-[11px] text-muted">{definitionUnavailable}</p>
+              ) : activeNodeSource?.status === "ready" ? (
+                activeNodeSource.sourceCode !== undefined ? (
+                  <PythonSource source={activeNodeSource.sourceCode} />
                 ) : (
-                  <p className="text-[11px] text-muted">
-                    This node has no agent declaration metadata.
+                  <p className="px-5 text-[11px] text-muted">
+                    Source code is unavailable for this node.
                   </p>
-                )}
-              </div>
+                )
+              ) : activeNodeSource?.status === "error" ? (
+                <p className="px-5 text-[11px] text-muted" role="alert">
+                  Source code is unavailable: {activeNodeSource.error}
+                </p>
+              ) : (
+                <p className="px-5 text-[11px] text-muted" role="status">
+                  Loading source code…
+                </p>
+              )}
             </div>
           </>
-        )
-      ) : (
-        <>
-          <div
-            className="inspector-tabs flex shrink-0 border-b border-line px-2.5"
-            role="tablist"
-            aria-label={run ? "Run step views" : "Workflow step views"}
-          >
-            {stepTabs.map((item) => (
-              <button
-                key={item}
-                type="button"
-                role="tab"
-                id={`${tabsId}-${item}`}
-                aria-controls={`${tabsId}-step-panel`}
-                aria-selected={stepTab === item}
-                tabIndex={stepTab === item ? 0 : -1}
-                className={`flex-1 cursor-pointer border-0 border-b-2 bg-transparent px-[9px] pt-[11px] pb-[9px] font-mono text-[9px] uppercase focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${stepTab === item ? "border-acid text-acid" : "border-transparent text-muted"}`}
-                onClick={() => setSelectedStepTab({ scope: stepTabScope, tab: item })}
-                onKeyDown={(event) => {
-                  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-                  event.preventDefault();
-                  const index = stepTabs.indexOf(item);
-                  const next =
-                    stepTabs[
-                      event.key === "Home"
-                        ? 0
-                        : event.key === "End"
-                          ? stepTabs.length - 1
-                          : (index + (event.key === "ArrowRight" ? 1 : -1) + stepTabs.length) %
-                            stepTabs.length
-                    ];
-                  setSelectedStepTab({ scope: stepTabScope, tab: next });
-                  document.getElementById(`${tabsId}-${next}`)?.focus();
-                }}
-              >
-                {STEP_TAB_LABELS[item]}
-              </button>
-            ))}
-          </div>
-          <div
-            className={`inspector-body inspector-body-full min-h-0 min-w-0 flex-1 ${stepTab === "code" ? "overflow-hidden bg-canvas" : "overflow-auto p-5 [scrollbar-gutter:stable]"}`}
-            role="tabpanel"
-            id={`${tabsId}-step-panel`}
-            aria-labelledby={`${tabsId}-${stepTab}`}
-          >
-            {stepTab === "interface" ? (
-              stepInterfacePanel
-            ) : stepTab === "io" ? (
-              <StepRunValues node={node} result={stepResult} />
-            ) : definitionUnavailable ? (
-              <p className="px-5 text-[11px] text-muted">{definitionUnavailable}</p>
-            ) : activeNodeSource?.status === "ready" ? (
-              activeNodeSource.sourceCode !== undefined ? (
-                <PythonSource source={activeNodeSource.sourceCode} />
-              ) : (
-                <p className="px-5 text-[11px] text-muted">
-                  Source code is unavailable for this node.
-                </p>
-              )
-            ) : activeNodeSource?.status === "error" ? (
-              <p className="px-5 text-[11px] text-muted" role="alert">
-                Source code is unavailable: {activeNodeSource.error}
-              </p>
-            ) : (
-              <p className="px-5 text-[11px] text-muted" role="status">
-                Loading source code…
-              </p>
-            )}
-          </div>
-        </>
-      )}
-    </aside>
+        )}
+      </aside>
+    </StepIntegrationsProvider>
   );
 }

@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from avalanche import __version__ as avalanche_version
 from avalanche.agent.declaration import AgentDeclaration
+from avalanche.integrations.declaration import StepIntegrations
 from avalanche.machine_host import MachineOpSpec
 from avalanche.mapping import MapSpec
 from avalanche.policies import StepPolicy, WaitSpec
@@ -26,7 +27,7 @@ from .source import iter_source_paths
 
 logger = logging.getLogger(__name__)
 
-_CACHE_SCHEMA_VERSION = 21
+_CACHE_SCHEMA_VERSION = 22
 
 
 class _CacheModel(BaseModel):
@@ -84,6 +85,7 @@ class _CachedDescriptor(_CacheModel):
     display_names: tuple[tuple[str, str], ...]
     agent_node_ids: tuple[str, ...]
     agent_declarations: tuple[tuple[str, AgentDeclaration], ...]
+    integration_declarations: tuple[tuple[str, StepIntegrations], ...]
     classifier_metadata_json: tuple[tuple[str, str], ...]
     evaluation_metadata_json: tuple[tuple[str, str], ...]
     step_interface_json: tuple[tuple[str, str], ...]
@@ -114,6 +116,7 @@ class _CachedDescriptor(_CacheModel):
             display_names=descriptor.display_names,
             agent_node_ids=descriptor.agent_node_ids,
             agent_declarations=descriptor.agent_declarations,
+            integration_declarations=descriptor.integration_declarations,
             classifier_metadata_json=descriptor.classifier_metadata_json,
             evaluation_metadata_json=descriptor.evaluation_metadata_json,
             step_interface_json=descriptor.step_interface_json,
@@ -144,6 +147,7 @@ class _CachedDescriptor(_CacheModel):
             display_names=self.display_names,
             agent_node_ids=self.agent_node_ids,
             agent_declarations=self.agent_declarations,
+            integration_declarations=self.integration_declarations,
             classifier_metadata_json=self.classifier_metadata_json,
             evaluation_metadata_json=self.evaluation_metadata_json,
             step_interface_json=self.step_interface_json,
@@ -216,7 +220,7 @@ class _SourceStamp(_CacheModel):
 
 
 class _CacheDocument(_CacheModel):
-    schema_version: Literal[21]
+    schema_version: Literal[22]
     environment: str
     roots: tuple[_CachedRoot, ...]
     watch_roots: tuple[str, ...]

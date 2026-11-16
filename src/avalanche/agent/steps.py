@@ -8,6 +8,7 @@ import threading
 import time
 import types
 import uuid
+from contextlib import AbstractAsyncContextManager
 from contextvars import ContextVar
 from functools import update_wrapper
 from typing import (
@@ -32,6 +33,14 @@ from .._agent_evidence import emit_agent_evidence
 from ..dag import MapFuture, Node, NodeFuture, NodeType, _workflow_context
 from ..evaluations import Evaluations
 from ..input_ref import InputRef
+from ..integrations.core import (
+    Integration,
+    IntegrationTool,
+    StepAccounts,
+    agent_integration_tools,
+    bound_integrations,
+    step_integrations,
+)
 from ..policies import StepPolicy, UncertaintyPolicy
 from ..step_interface import (
     decoration_namespace,
@@ -195,12 +204,15 @@ class Agent:
         runtime: AgentRuntime | None = None,
         tools: tuple[Callable[..., Any], ...] = (),
         skills: Sequence[Skill] = (),
+        integration_tools: tuple[IntegrationTool, ...] = (),
     ) -> None:
         self._signature_declaration = signature
         self._step_name = step_name
         # PredictRLM when no runtime is given; built lazily, so nothing loads here.
         self._runtime = runtime
         self._declared_tools = tools
+        # Its integrations' tools, each named ``<integration>__<tool>``.
+        self._integration_tools = integration_tools
         self._skills = _step_skills("ava.Agent", skills)
         self._signature: SignatureSpec | None = None
         self._tools: tuple[ToolSpec, ...] = ()
@@ -292,6 +304,14 @@ class Agent:
                     function=tool,
                 )
                 for tool in self._declared_tools
+            ) + tuple(
+                ToolSpec(
+                    name=tool.name,
+                    description=tool.description,
+                    function=tool.function,
+                    input_schema=None if tool.input_schema is None else dict(tool.input_schema),
+                )
+                for tool in self._integration_tools
             )
             self._signature, self._tools = signature, tools
         return self._signature
@@ -327,22 +347,43 @@ class _AgentStepSpec(Generic[InputT, OutputT]):
         skills: tuple[Skill, ...],
         public_signature: inspect.Signature,
         evaluations: Evaluations[InputT, OutputT] | None,
+        integrations: tuple[Integration, ...] = (),
     ) -> None:
         self.step_name = step_name
         self.signature = signature
         self.runtime = runtime
         self.tools = tools
         self.skills = skills
+        self.integrations = integrations
         self.public_signature = public_signature
         self.evaluations = evaluations
 
-    def make_agent(self) -> Agent:
+    def integration_tools(
+        self, accounts: StepAccounts
+    ) -> AbstractAsyncContextManager[tuple[IntegrationTool, ...]]:
+        """The step's integration tools while it runs; its MCP servers stay connected."""
+        return agent_integration_tools(
+            self.integrations,
+            accounts,
+            own_tools=tuple(_callable_name(tool) for tool in self.tools),
+        )
+
+    def make_agent(self, integration_tools: tuple[IntegrationTool, ...] | None = None) -> Agent:
+        """Build the step's agent; ``integration_tools`` are its integrations' tools."""
+        if integration_tools is None:
+            if self.integrations:
+                raise AgentStepError(
+                    f"agent step {self.step_name!r} declares integrations; its agent is "
+                    "built inside the running step, where their accounts are bound"
+                )
+            integration_tools = ()
         return Agent(
             signature=self.signature,
             step_name=self.step_name,
             runtime=effective_runtime(self.runtime, _WORKFLOW_AGENT_DEFAULTS.get()),
             tools=self.tools,
             skills=self.skills,
+            integration_tools=integration_tools,
         )
 
     def field_schema_metadata(self) -> dict[str, list[dict[str, str]]]:
@@ -533,6 +574,7 @@ def agent_step(
     runtime: AgentRuntime | None = None,
     tools: Sequence[Callable[..., Any]] = (),
     skills: Sequence[Skill] = (),
+    integrations: Sequence[Integration] = (),
     evaluations: Evaluations[InputT, OutputT] | None = None,
     retries: int = 7,
     on_uncertain: UncertaintyPolicy = "retry",
@@ -544,6 +586,8 @@ def agent_step(
     ``ava.agent.Signature(...)``, or another DSPy Signature class. ``runtime``
     defaults to the workflow's ``agent_defaults`` runtime, else PredictRLM.
     ``skills`` are ``ava.agent.Skill`` objects the agent may load when needed.
+    ``integrations`` are ``ava.Connector`` instances and ``ava.MCP`` servers; a
+    Connector's tools reach the agent as ``<integration>__<tool>``.
     """
     _reject_nested_agent_decorator()
     if signature is None:
@@ -553,6 +597,7 @@ def agent_step(
     step_runtime, step_tools, step_skills = _step_configuration(
         owner="ava.agent_step", runtime=runtime, tools=tools, skills=skills, removed=removed
     )
+    declared = step_integrations("ava.agent_step", integrations, agent=True, tools=step_tools)
 
     def decorator(user_fn: Callable[..., Any]) -> Node:
         _reject_nested_agent_decorator()
@@ -566,16 +611,21 @@ def agent_step(
             skills=step_skills,
             public_signature=public_signature,
             evaluations=evaluations,
+            integrations=declared,
         )
 
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             # Resolve process-local capture state only after reaching the worker.
             from avalanche.evaluation_capture import capture_step_evaluations
 
-            with capture_step_evaluations(spec.evaluations, step_name=spec.step_name):
-                agent = spec.make_agent()
-                result = user_fn(*args, **kwargs, agent=agent)
-                value = await result if inspect.isawaitable(result) else result
+            with (
+                capture_step_evaluations(spec.evaluations, step_name=spec.step_name),
+                bound_integrations(spec.step_name, spec.integrations) as accounts,
+            ):
+                async with spec.integration_tools(accounts) as integration_tools:
+                    agent = spec.make_agent(integration_tools)
+                    result = user_fn(*args, **kwargs, agent=agent)
+                    value = await result if inspect.isawaitable(result) else result
             if not agent.called:
                 _logger.warning(
                     "agent step %r finished without calling its agent: no model ran, so "
@@ -594,6 +644,7 @@ def agent_step(
             num_returns=1,
             policy=StepPolicy(retries=retries, on_uncertain=on_uncertain),
             step_interface=step_interface,
+            integrations=declared,
         )
 
     return decorator
@@ -638,6 +689,7 @@ def _step(
     runtime: AgentRuntime | None = None,
     tools: Sequence[Callable[..., Any]] = (),
     skills: Sequence[Skill] = (),
+    integrations: Sequence[Integration] = (),
     evaluations: Evaluations[InputT, OutputT] | None = None,
     retries: int = 7,
     on_uncertain: UncertaintyPolicy = "retry",
@@ -652,6 +704,7 @@ def _step(
             runtime=runtime,
             tools=tools,
             skills=skills,
+            integrations=integrations,
             evaluations=evaluations,
             retries=retries,
             on_uncertain=on_uncertain,
@@ -670,6 +723,7 @@ def _step(
     node = _inline_agent_node(
         signature, slug, runtime, tools, skills, evaluations, removed,
         StepPolicy(retries=retries, on_uncertain=on_uncertain),
+        integrations,
     )
     return node(**inputs) if inputs is not None else node()
 
@@ -683,10 +737,12 @@ def _inline_agent_node(
     evaluations: Evaluations[InputT, OutputT] | None,
     removed: Mapping[str, object],
     policy: StepPolicy,
+    integrations: Sequence[Integration] = (),
 ) -> _InlineAgentNode:
     step_runtime, step_tools, step_skills = _step_configuration(
         owner="ava.agent.step", runtime=runtime, tools=tools, skills=skills, removed=removed
     )
+    declared = step_integrations("ava.agent.step", integrations, agent=True, tools=step_tools)
     output_fields = signature.output_fields
     output_names = tuple(output_fields)
     output_annotations = tuple(field.rebuild_annotation() for field in output_fields.values())
@@ -711,14 +767,19 @@ def _inline_agent_node(
         skills=step_skills,
         public_signature=public_signature,
         evaluations=evaluations,
+        integrations=declared,
     )
 
     async def invoke(*args: Any, **kwargs: Any) -> Any:
         from avalanche.evaluation_capture import capture_step_evaluations
 
-        with capture_step_evaluations(spec.evaluations, step_name=spec.step_name):
+        with (
+            capture_step_evaluations(spec.evaluations, step_name=spec.step_name),
+            bound_integrations(spec.step_name, spec.integrations) as accounts,
+        ):
             bound = public_signature.bind(*args, **kwargs)
-            result = await spec.make_agent()(**bound.arguments)
+            async with spec.integration_tools(accounts) as integration_tools:
+                result = await spec.make_agent(integration_tools)(**bound.arguments)
             values = tuple(getattr(result.outputs, name) for name in output_names)
             return values[0] if len(values) == 1 else values
 
@@ -734,6 +795,7 @@ def _inline_agent_node(
         policy=policy,
         slug=slug,
         step_interface=step_interface_from_signature(public_signature),
+        integrations=declared,
     )
     return node
 
@@ -751,6 +813,7 @@ class _StepFactory:
         runtime: AgentRuntime | None = None,
         tools: Sequence[Callable[..., B]] = (),
         skills: Sequence[Skill] = (),
+        integrations: Sequence[Integration] = (),
         evaluations: Evaluations[I, O] | None = None,
         retries: int = 7,
         on_uncertain: UncertaintyPolicy = "retry",
@@ -761,6 +824,7 @@ class _StepFactory:
         node = _inline_agent_node(
             signature, slug, runtime, tools, skills, evaluations, {},
             StepPolicy(retries=retries, on_uncertain=on_uncertain),
+            integrations,
         )
         return node.map(*mapped, max_items=max_items, fail_fast=fail_fast, **broadcast)
 

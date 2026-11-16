@@ -14,6 +14,7 @@ from pydantic import JsonValue, TypeAdapter
 from avalanche.agent.declaration import AgentDeclaration
 from avalanche.agent.native import TraceHeaderNative
 from avalanche.agent.trace import AgentTraceStatus, TokenUsage
+from avalanche.integrations.declaration import StepIntegrations
 from avalanche.mapping import MapSpec
 from avalanche.policies import StepPolicy, WaitSpec
 from avalanche.run_status import WAITING_ON_SLOTS
@@ -32,6 +33,7 @@ from .models import (
     ClassifierEventDescriptor,
     ClassifierNoulSummary,
     ClassifierScoreSummary,
+    IntegrationAccountsChanged,
     LogAppended,
     LogLevel,
     LogRecordDescriptor,
@@ -155,6 +157,10 @@ def workflow_info_to_v2(info: WorkflowInfo) -> pb.FlowInfoV2:
         agent_declarations_json={
             node_id: declaration.model_dump_json()
             for node_id, declaration in info.agent_declarations.items()
+        },
+        integration_declarations_json={
+            node_id: declaration.model_dump_json()
+            for node_id, declaration in info.integration_declarations.items()
         },
         classifier_metadata_json=info.classifier_metadata_json,
         evaluation_metadata_json=info.evaluation_metadata_json,
@@ -849,6 +855,8 @@ def update_envelope_to_v2(
         )
     elif isinstance(change, WorkflowReloadStatus):
         message.flow_reload_status.CopyFrom(pb.FlowReloadStatusV2(reloading=change.reloading))
+    elif isinstance(change, IntegrationAccountsChanged):
+        message.integration_accounts_changed.CopyFrom(pb.IntegrationAccountsChangedV2())
     else:
         raise TypeError(f"Unsupported operator update change: {type(change).__name__}")
     return message
@@ -947,6 +955,10 @@ def workflow_info_from_v2(msg: pb.FlowInfoV2) -> WorkflowInfo:
         agent_declarations={
             node_id: AgentDeclaration.model_validate_json(value)
             for node_id, value in msg.agent_declarations_json.items()
+        },
+        integration_declarations={
+            node_id: StepIntegrations.model_validate_json(value)
+            for node_id, value in msg.integration_declarations_json.items()
         },
         classifier_metadata_json=dict(msg.classifier_metadata_json),
         evaluation_metadata_json=dict(msg.evaluation_metadata_json),
@@ -1358,6 +1370,8 @@ def operator_update_envelope_from_v2(
         change = CatalogReloadRequired(deployment_id=deployment_id)
     elif payload == "flow_reload_status":
         change = WorkflowReloadStatus(reloading=msg.flow_reload_status.reloading)
+    elif payload == "integration_accounts_changed":
+        change = IntegrationAccountsChanged()
     elif payload is None:
         raise ValueError("run status envelope requires a payload")
     else:

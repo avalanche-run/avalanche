@@ -24,6 +24,7 @@ from avalanche.agent.declaration import AgentDeclaration
 from avalanche.agent.live import AgentTraceFinished, AgentTraceUnavailable
 from avalanche.agent.native import TraceHeaderNative
 from avalanche.agent.trace import AgentTraceStatus, TokenUsage
+from avalanche.integrations.declaration import StepIntegrations
 from avalanche.machine_host import MachineOpSpec
 from avalanche.mapping import MapSpec
 from avalanche.policies import StepPolicy, WaitSpec
@@ -730,6 +731,14 @@ class WorkflowReloadStatus:
 
 
 @dataclass(frozen=True)
+class IntegrationAccountsChanged:
+    """An integration account was connected or removed.
+
+    It carries no account data: a client lists the integrations again.
+    """
+
+
+@dataclass(frozen=True)
 class RunCreated:
     summary: RunSummary
     nodes: tuple[NodeSnapshot, ...] = ()
@@ -819,7 +828,11 @@ RunUpdateChange = (
     | TerminalSealAppended
 )
 OperatorUpdateChange = (
-    RunUpdateChange | CatalogReplaced | CatalogReloadRequired | WorkflowReloadStatus
+    RunUpdateChange
+    | CatalogReplaced
+    | CatalogReloadRequired
+    | WorkflowReloadStatus
+    | IntegrationAccountsChanged
 )
 
 
@@ -869,6 +882,8 @@ class WorkflowInfo:
     display_names: dict[str, str] = field(default_factory=dict)  # node_id -> display name
     agent_node_ids: list[str] = field(default_factory=list)
     agent_declarations: dict[str, AgentDeclaration] = field(default_factory=dict)
+    # node_id -> the integrations that step declares; steps with none are absent.
+    integration_declarations: dict[str, StepIntegrations] = field(default_factory=dict)
     classifier_metadata_json: dict[str, str] = field(default_factory=dict)
     evaluation_metadata_json: dict[str, str] = field(default_factory=dict)
     step_interface_json: dict[str, str] = field(default_factory=dict)
@@ -986,6 +1001,7 @@ class WorkflowDescriptor:
     key_fields: tuple[str, ...] = ()
     agent_node_ids: tuple[str, ...] = ()
     agent_declarations: tuple[tuple[str, AgentDeclaration], ...] = ()
+    integration_declarations: tuple[tuple[str, StepIntegrations], ...] = ()
     classifier_metadata_json: tuple[tuple[str, str], ...] = ()
     evaluation_metadata_json: tuple[tuple[str, str], ...] = ()
     step_interface_json: tuple[tuple[str, str], ...] = ()

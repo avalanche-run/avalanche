@@ -95,6 +95,8 @@ import {
   runTriggerLabel,
   scheduledInputNote,
 } from "./workflowInput";
+import { NodeIntegrationBadges } from "./Integrations";
+import { stepIntegrations, type StepIntegrationsResult } from "./integrationsView";
 
 interface FieldMetadata {
   name: string;
@@ -158,6 +160,8 @@ interface CardData extends Record<string, unknown> {
   current?: boolean;
   /** The run this start/call node started; opens that run's page. */
   childRun?: GraphChildRun;
+  /** The integrations the step declares; absent when it declares none. */
+  integrations?: StepIntegrationsResult;
   descriptionsExpanded: boolean;
   onOpen: () => void;
   inspectionDisabled?: boolean;
@@ -531,6 +535,17 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
           <span className="basis-full text-xs">{data.mapSummary}</span>
         </div>
       )}
+      {data.integrations &&
+        ("error" in data.integrations ? (
+          <span className="node-card-meta font-mono text-[9px] text-secondary">
+            {data.integrations.error}
+          </span>
+        ) : (
+          <NodeIntegrationBadges
+            declarations={data.integrations.declarations}
+            compact={isCompact}
+          />
+        ))}
       {hasEvaluationRow && (
         <div
           className={`node-evaluation-row flex min-w-0 items-center gap-2 ${isCompact ? "absolute inset-x-4 bottom-3" : "self-stretch"}`}
@@ -1112,6 +1127,11 @@ interface GraphCanvasProps {
   /** How the displayed run started, such as "manual" or "scheduled". */
   runTriggeredBy?: TriggerKind;
   evaluations?: Record<string, EvaluationRecord>;
+  /**
+   * The current definition's integrations, for the badges on step cards. A run's
+   * own topology does not record them, so a run shows what its steps declare now.
+   */
+  integrationsWorkflow?: FlowInfoMsg;
   bottomRightPanel?: ReactNode;
   /** A panel floating along the canvas's left edge; the fit keeps clear of it. */
   reserve?: CanvasReserve;
@@ -1137,6 +1157,7 @@ function GraphCanvasView({
   expansions = {},
   runTriggeredBy,
   evaluations,
+  integrationsWorkflow,
   bottomRightPanel,
   reserve,
   selectedNodeId,
@@ -1398,6 +1419,16 @@ function GraphCanvasView({
     runTriggeredBy,
     scheduleNote,
   ]);
+  const integrationCards = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.keys(integrationsWorkflow?.integrationDeclarationsJson ?? {}).map((nodeId) => [
+          nodeId,
+          stepIntegrations(integrationsWorkflow, nodeId),
+        ]),
+      ),
+    [integrationsWorkflow],
+  );
   const nodes = useMemo(() => {
     if (!topology) return [];
     const runtimeNodes = Object.fromEntries(runNodes.map((node) => [node.nodeId, node]));
@@ -1491,6 +1522,7 @@ function GraphCanvasView({
           runningElapsedSeconds: runtimeNode?.runningElapsedSeconds ?? 0,
           declaration,
           instructionLine,
+          integrations: integrationCards[nodeId],
           descriptionsExpanded,
           onOpen: openCallbacks[nodeId],
           childRun: runTopology ? childRuns?.[nodeId] : undefined,
@@ -1516,6 +1548,7 @@ function GraphCanvasView({
     descriptionsExpanded,
     evaluationCards,
     evaluations,
+    integrationCards,
     standardFields,
     inspectionDisabled,
     nodeMeasurements,
@@ -1872,6 +1905,7 @@ export const GraphCanvas = memo(
     left.expansions === right.expansions &&
     left.runTriggeredBy === right.runTriggeredBy &&
     left.evaluations === right.evaluations &&
+    left.integrationsWorkflow === right.integrationsWorkflow &&
     left.bottomRightPanel === right.bottomRightPanel &&
     left.reserve?.width === right.reserve?.width &&
     left.reserve?.height === right.reserve?.height &&

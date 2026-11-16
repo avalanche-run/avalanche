@@ -944,6 +944,7 @@ def _outputs(
 
 
 ToolErrors = dict[str, str]
+_SCHEMA_ARGUMENTS = TypeAdapter(dict[str, JsonValue])
 
 
 def _error_recorder(errors: ToolErrors) -> Callable[[RunContextWrapper[None], Exception], str]:
@@ -963,6 +964,8 @@ def _error_recorder(errors: ToolErrors) -> Callable[[RunContextWrapper[None], Ex
 
 def _step_tool(spec: ToolSpec, errors: ToolErrors) -> FunctionTool:
     """A step tool whose result reaches the model as JSON."""
+    if spec.input_schema is not None:
+        return _schema_tool(spec, spec.input_schema, errors)
     function = spec.function
 
     # A tool may return an awaitable without being a coroutine function, such as a
@@ -983,6 +986,32 @@ def _step_tool(spec: ToolSpec, errors: ToolErrors) -> FunctionTool:
         name_override=spec.name,
         description_override=spec.description,
         failure_error_function=_error_recorder(errors),
+    )
+
+
+def _schema_tool(
+    spec: ToolSpec, schema: dict[str, JsonValue], errors: ToolErrors
+) -> FunctionTool:
+    """A tool described by a JSON Schema; its function checks the arguments itself."""
+    record = _error_recorder(errors)
+
+    async def invoke(context: ToolContext[None], arguments: str) -> str:
+        # A failing tool is reported to the model, which can recover; the trace keeps it.
+        try:
+            result = spec.function(**_SCHEMA_ARGUMENTS.validate_json(arguments or "{}"))
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            return record(context, exc)
+        return to_json(result).decode()
+
+    return FunctionTool(
+        name=spec.name,
+        description=spec.description or "",
+        params_json_schema=schema,
+        on_invoke_tool=invoke,
+        # The server's schema is offered as it is; strict mode would rewrite it.
+        strict_json_schema=False,
     )
 
 

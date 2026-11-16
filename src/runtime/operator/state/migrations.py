@@ -358,7 +358,6 @@ MIGRATIONS += (
 )
 
 MIGRATIONS += (Migration(version=9, name="canonical UTF-8 run keys", statements=()),)
-
 MIGRATIONS += (
     Migration(
         version=10,
@@ -453,6 +452,24 @@ MIGRATIONS += (
             "ALTER TABLE runs ADD COLUMN error_code TEXT",
             "ALTER TABLE runs ADD COLUMN error_step TEXT",
             "ALTER TABLE runs ADD COLUMN error_message TEXT",
+        ),
+    ),
+)
+
+MIGRATIONS += (
+    Migration(
+        version=14,
+        name="integration accounts",
+        statements=(
+            # One account per integration name. credential_json holds the secret:
+            # no other table, log or exported record may copy it.
+            """
+            CREATE TABLE integration_accounts (
+                name TEXT PRIMARY KEY,
+                credential_json TEXT NOT NULL,
+                connected_at REAL NOT NULL
+            ) STRICT
+            """,
         ),
     ),
 )

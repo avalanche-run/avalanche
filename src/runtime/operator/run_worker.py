@@ -30,6 +30,7 @@ from avalanche.classifier import capture_classifier_evidence
 from avalanche.classifier.models import ClassifierInvocation
 from avalanche.dag import Workflow
 from avalanche.evaluation_capture import capture_evaluations
+from avalanche.integrations.accounts import install_account_source
 from avalanche.machine import Machine
 from avalanche.policies import Event
 from avalanche.run_handle import RunHandle
@@ -38,6 +39,7 @@ from avalanche.runtime import BaseInput
 from ..executor import LocalExecutor
 from .evaluation_worker import EvaluationRequest, snapshot_evaluation
 from .hooks import RunHooks
+from .integration_accounts import OperatorAccounts
 from .machine_state_entry import qualify_state_entry
 from .models import display_name_from_id
 from .registry import (
@@ -87,6 +89,7 @@ def run_worker(
     machine_state_entry: InstanceRecord | None = None,
     machine_reader: Connection | None = None,
     resume_results: dict[str, str] | None = None,
+    accounts_connection: Connection | None = None,
 ) -> None:
     """Detach exactly one inode-bound bundle capability and close it on exit."""
     bundle_descriptor: int | None = None
@@ -113,6 +116,7 @@ def run_worker(
             machine_state_entry,
             machine_reader,
             resume_results,
+            accounts_connection,
         )
     finally:
         if bundle_descriptor is not None:
@@ -137,6 +141,7 @@ def _run_worker(
     machine_state_entry: InstanceRecord | None = None,
     machine_reader: Connection | None = None,
     resume_results: dict[str, str] | None = None,
+    accounts_connection: Connection | None = None,
 ) -> None:
     """Import/build exactly once, prepare, wait for the parent, and execute."""
     event_queue = _SealableEventQueue(event_queue)
@@ -216,6 +221,10 @@ def _run_worker(
 
     try:
         executor = LocalExecutor()
+        if accounts_connection is not None:
+            # Steps that declare integrations ask the operator for their accounts
+            # when they start; the run started below inherits this source.
+            install_account_source(OperatorAccounts(accounts_connection))
 
         # The operator graph displays a decision map as one declared node.
         # Keep worker/journal identities per item, but scope operator previews

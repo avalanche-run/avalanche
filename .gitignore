@@ -119,3 +119,4 @@ __marimo__
 .vite
 # .claude is a symlink to .agents; keep personal Claude Code settings untracked.
 .agents/settings.local.json
+.predict_rlm_runner_env/

@@ -32,6 +32,114 @@ export interface ControlMachineResponseV2 {
     resultJson: string;
 }
 /**
+ * @generated from protobuf message avalanche.operator.ListIntegrationsRequestV2
+ */
+export interface ListIntegrationsRequestV2 {
+}
+/**
+ * integrations_json is an IntegrationStatusList document.
+ *
+ * @generated from protobuf message avalanche.operator.IntegrationListV2
+ */
+export interface IntegrationListV2 {
+    /**
+     * @generated from protobuf field: string integrations_json = 1
+     */
+    integrationsJson: string;
+}
+/**
+ * request_json is a ConnectIntegrationRequest document: {"name", "credential"}.
+ *
+ * @generated from protobuf message avalanche.operator.ConnectIntegrationRequestV2
+ */
+export interface ConnectIntegrationRequestV2 {
+    /**
+     * @generated from protobuf field: string request_json = 1
+     */
+    requestJson: string;
+}
+/**
+ * status_json is one IntegrationStatus document.
+ *
+ * @generated from protobuf message avalanche.operator.IntegrationStatusV2
+ */
+export interface IntegrationStatusV2 {
+    /**
+     * @generated from protobuf field: string status_json = 1
+     */
+    statusJson: string;
+}
+/**
+ * request_json is one StartIntegrationLoginRequest document.
+ *
+ * @generated from protobuf message avalanche.operator.StartIntegrationLoginRequestV2
+ */
+export interface StartIntegrationLoginRequestV2 {
+    /**
+     * @generated from protobuf field: string request_json = 1
+     */
+    requestJson: string;
+}
+/**
+ * @generated from protobuf message avalanche.operator.GetIntegrationLoginRequestV2
+ */
+export interface GetIntegrationLoginRequestV2 {
+    /**
+     * @generated from protobuf field: string login_id = 1
+     */
+    loginId: string;
+    /**
+     * At most 30; the call returns earlier when the login ends.
+     *
+     * @generated from protobuf field: double wait_seconds = 2
+     */
+    waitSeconds: number;
+}
+/**
+ * login_json is one IntegrationLogin document.
+ *
+ * @generated from protobuf message avalanche.operator.IntegrationLoginV2
+ */
+export interface IntegrationLoginV2 {
+    /**
+     * @generated from protobuf field: string login_json = 1
+     */
+    loginJson: string;
+}
+/**
+ * @generated from protobuf message avalanche.operator.DisconnectIntegrationRequestV2
+ */
+export interface DisconnectIntegrationRequestV2 {
+    /**
+     * @generated from protobuf field: string name = 1
+     */
+    name: string;
+}
+/**
+ * @generated from protobuf message avalanche.operator.GetIntegrationIconRequestV2
+ */
+export interface GetIntegrationIconRequestV2 {
+    /**
+     * @generated from protobuf field: string name = 1
+     */
+    name: string;
+}
+/**
+ * media_type is one of the image types the operator serves, such as image/png.
+ *
+ * @generated from protobuf message avalanche.operator.IntegrationIconV2
+ */
+export interface IntegrationIconV2 {
+    /**
+     * @generated from protobuf field: string media_type = 1
+     */
+    mediaType: string;
+    /**
+     * @generated from protobuf field: bytes content = 2
+     */
+    content: Uint8Array;
+}
+/**
  * @generated from protobuf message avalanche.operator.ControlWaitRequestV2
  */
 export interface ControlWaitRequestV2 {
@@ -444,6 +552,15 @@ export interface FlowInfoV2 {
      * @generated from protobuf field: repeated string key_fields = 34
      */
     keyFields: string[];
+    /**
+     * Node id to the StepIntegrations document of the integrations that step
+     * declares. Steps that declare none are absent.
+     *
+     * @generated from protobuf field: map<string, string> integration_declarations_json = 35
+     */
+    integrationDeclarationsJson: {
+        [key: string]: string;
+    };
 }
 /**
  * @generated from protobuf message avalanche.operator.DiscoveryDiagnosticV2
@@ -2112,6 +2229,14 @@ export interface FlowReloadStatusV2 {
     reloading: boolean;
 }
 /**
+ * An integration account was connected or removed. It carries no account data:
+ * clients list the integrations again.
+ *
+ * @generated from protobuf message avalanche.operator.IntegrationAccountsChangedV2
+ */
+export interface IntegrationAccountsChangedV2 {
+}
+/**
  * Clients must relist and rebaseline from latest_cursor. A server emits this
  * instead of returning stale or silently partial status history.
  *
@@ -2196,6 +2321,12 @@ export interface RunStatusEnvelopeV2 {
          * @generated from protobuf field: avalanche.operator.RunNodesExpandedV2 nodes_expanded = 12
          */
         nodesExpanded: RunNodesExpandedV2;
+    } | {
+        oneofKind: "integrationAccountsChanged";
+        /**
+         * @generated from protobuf field: avalanche.operator.IntegrationAccountsChangedV2 integration_accounts_changed = 13
+         */
+        integrationAccountsChanged: IntegrationAccountsChangedV2;
     } | {
         oneofKind: undefined;
     };
@@ -2412,6 +2543,483 @@ class ControlMachineResponseV2$Type extends MessageType<ControlMachineResponseV2
  * @generated MessageType for protobuf message avalanche.operator.ControlMachineResponseV2
  */
 export const ControlMachineResponseV2 = new ControlMachineResponseV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ListIntegrationsRequestV2$Type extends MessageType<ListIntegrationsRequestV2> {
+    constructor() {
+        super("avalanche.operator.ListIntegrationsRequestV2", []);
+    }
+    create(value?: PartialMessage<ListIntegrationsRequestV2>): ListIntegrationsRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<ListIntegrationsRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ListIntegrationsRequestV2): ListIntegrationsRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ListIntegrationsRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.ListIntegrationsRequestV2
+ */
+export const ListIntegrationsRequestV2 = new ListIntegrationsRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class IntegrationListV2$Type extends MessageType<IntegrationListV2> {
+    constructor() {
+        super("avalanche.operator.IntegrationListV2", [
+            { no: 1, name: "integrations_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<IntegrationListV2>): IntegrationListV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.integrationsJson = "";
+        if (value !== undefined)
+            reflectionMergePartial<IntegrationListV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: IntegrationListV2): IntegrationListV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string integrations_json */ 1:
+                    message.integrationsJson = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: IntegrationListV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string integrations_json = 1; */
+        if (message.integrationsJson !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.integrationsJson);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.IntegrationListV2
+ */
+export const IntegrationListV2 = new IntegrationListV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class ConnectIntegrationRequestV2$Type extends MessageType<ConnectIntegrationRequestV2> {
+    constructor() {
+        super("avalanche.operator.ConnectIntegrationRequestV2", [
+            { no: 1, name: "request_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<ConnectIntegrationRequestV2>): ConnectIntegrationRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.requestJson = "";
+        if (value !== undefined)
+            reflectionMergePartial<ConnectIntegrationRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: ConnectIntegrationRequestV2): ConnectIntegrationRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string request_json */ 1:
+                    message.requestJson = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: ConnectIntegrationRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string request_json = 1; */
+        if (message.requestJson !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.requestJson);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.ConnectIntegrationRequestV2
+ */
+export const ConnectIntegrationRequestV2 = new ConnectIntegrationRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class IntegrationStatusV2$Type extends MessageType<IntegrationStatusV2> {
+    constructor() {
+        super("avalanche.operator.IntegrationStatusV2", [
+            { no: 1, name: "status_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<IntegrationStatusV2>): IntegrationStatusV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.statusJson = "";
+        if (value !== undefined)
+            reflectionMergePartial<IntegrationStatusV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: IntegrationStatusV2): IntegrationStatusV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string status_json */ 1:
+                    message.statusJson = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: IntegrationStatusV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string status_json = 1; */
+        if (message.statusJson !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.statusJson);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.IntegrationStatusV2
+ */
+export const IntegrationStatusV2 = new IntegrationStatusV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class StartIntegrationLoginRequestV2$Type extends MessageType<StartIntegrationLoginRequestV2> {
+    constructor() {
+        super("avalanche.operator.StartIntegrationLoginRequestV2", [
+            { no: 1, name: "request_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<StartIntegrationLoginRequestV2>): StartIntegrationLoginRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.requestJson = "";
+        if (value !== undefined)
+            reflectionMergePartial<StartIntegrationLoginRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: StartIntegrationLoginRequestV2): StartIntegrationLoginRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string request_json */ 1:
+                    message.requestJson = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: StartIntegrationLoginRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string request_json = 1; */
+        if (message.requestJson !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.requestJson);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.StartIntegrationLoginRequestV2
+ */
+export const StartIntegrationLoginRequestV2 = new StartIntegrationLoginRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetIntegrationLoginRequestV2$Type extends MessageType<GetIntegrationLoginRequestV2> {
+    constructor() {
+        super("avalanche.operator.GetIntegrationLoginRequestV2", [
+            { no: 1, name: "login_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "wait_seconds", kind: "scalar", T: 1 /*ScalarType.DOUBLE*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetIntegrationLoginRequestV2>): GetIntegrationLoginRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.loginId = "";
+        message.waitSeconds = 0;
+        if (value !== undefined)
+            reflectionMergePartial<GetIntegrationLoginRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetIntegrationLoginRequestV2): GetIntegrationLoginRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string login_id */ 1:
+                    message.loginId = reader.string();
+                    break;
+                case /* double wait_seconds */ 2:
+                    message.waitSeconds = reader.double();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetIntegrationLoginRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string login_id = 1; */
+        if (message.loginId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.loginId);
+        /* double wait_seconds = 2; */
+        if (message.waitSeconds !== 0)
+            writer.tag(2, WireType.Bit64).double(message.waitSeconds);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.GetIntegrationLoginRequestV2
+ */
+export const GetIntegrationLoginRequestV2 = new GetIntegrationLoginRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class IntegrationLoginV2$Type extends MessageType<IntegrationLoginV2> {
+    constructor() {
+        super("avalanche.operator.IntegrationLoginV2", [
+            { no: 1, name: "login_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<IntegrationLoginV2>): IntegrationLoginV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.loginJson = "";
+        if (value !== undefined)
+            reflectionMergePartial<IntegrationLoginV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: IntegrationLoginV2): IntegrationLoginV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string login_json */ 1:
+                    message.loginJson = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: IntegrationLoginV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string login_json = 1; */
+        if (message.loginJson !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.loginJson);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.IntegrationLoginV2
+ */
+export const IntegrationLoginV2 = new IntegrationLoginV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class DisconnectIntegrationRequestV2$Type extends MessageType<DisconnectIntegrationRequestV2> {
+    constructor() {
+        super("avalanche.operator.DisconnectIntegrationRequestV2", [
+            { no: 1, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<DisconnectIntegrationRequestV2>): DisconnectIntegrationRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.name = "";
+        if (value !== undefined)
+            reflectionMergePartial<DisconnectIntegrationRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: DisconnectIntegrationRequestV2): DisconnectIntegrationRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string name */ 1:
+                    message.name = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: DisconnectIntegrationRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string name = 1; */
+        if (message.name !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.name);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.DisconnectIntegrationRequestV2
+ */
+export const DisconnectIntegrationRequestV2 = new DisconnectIntegrationRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class GetIntegrationIconRequestV2$Type extends MessageType<GetIntegrationIconRequestV2> {
+    constructor() {
+        super("avalanche.operator.GetIntegrationIconRequestV2", [
+            { no: 1, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<GetIntegrationIconRequestV2>): GetIntegrationIconRequestV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.name = "";
+        if (value !== undefined)
+            reflectionMergePartial<GetIntegrationIconRequestV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: GetIntegrationIconRequestV2): GetIntegrationIconRequestV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string name */ 1:
+                    message.name = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: GetIntegrationIconRequestV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string name = 1; */
+        if (message.name !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.name);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.GetIntegrationIconRequestV2
+ */
+export const GetIntegrationIconRequestV2 = new GetIntegrationIconRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class IntegrationIconV2$Type extends MessageType<IntegrationIconV2> {
+    constructor() {
+        super("avalanche.operator.IntegrationIconV2", [
+            { no: 1, name: "media_type", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "content", kind: "scalar", T: 12 /*ScalarType.BYTES*/ }
+        ]);
+    }
+    create(value?: PartialMessage<IntegrationIconV2>): IntegrationIconV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.mediaType = "";
+        message.content = new Uint8Array(0);
+        if (value !== undefined)
+            reflectionMergePartial<IntegrationIconV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: IntegrationIconV2): IntegrationIconV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string media_type */ 1:
+                    message.mediaType = reader.string();
+                    break;
+                case /* bytes content */ 2:
+                    message.content = reader.bytes();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: IntegrationIconV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string media_type = 1; */
+        if (message.mediaType !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.mediaType);
+        /* bytes content = 2; */
+        if (message.content.length)
+            writer.tag(2, WireType.LengthDelimited).bytes(message.content);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.IntegrationIconV2
+ */
+export const IntegrationIconV2 = new IntegrationIconV2$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class ControlWaitRequestV2$Type extends MessageType<ControlWaitRequestV2> {
     constructor() {
@@ -3294,7 +3902,8 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
             { no: 31, name: "node_waits_json", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } },
             { no: 32, name: "machine_spec_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 33, name: "node_runs_json", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } },
-            { no: 34, name: "key_fields", kind: "scalar", repeat: 2 /*RepeatType.UNPACKED*/, T: 9 /*ScalarType.STRING*/ }
+            { no: 34, name: "key_fields", kind: "scalar", repeat: 2 /*RepeatType.UNPACKED*/, T: 9 /*ScalarType.STRING*/ },
+            { no: 35, name: "integration_declarations_json", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } }
         ]);
     }
     create(value?: PartialMessage<FlowInfoV2>): FlowInfoV2 {
@@ -3323,6 +3932,7 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
         message.machineSpecJson = "";
         message.nodeRunsJson = {};
         message.keyFields = [];
+        message.integrationDeclarationsJson = {};
         if (value !== undefined)
             reflectionMergePartial<FlowInfoV2>(this, message, value);
         return message;
@@ -3409,6 +4019,9 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
                     break;
                 case /* repeated string key_fields */ 34:
                     message.keyFields.push(reader.string());
+                    break;
+                case /* map<string, string> integration_declarations_json */ 35:
+                    this.binaryReadMap35(message.integrationDeclarationsJson, reader, options);
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -3517,6 +4130,22 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
         }
         map[key ?? ""] = val ?? "";
     }
+    private binaryReadMap35(map: FlowInfoV2["integrationDeclarationsJson"], reader: IBinaryReader, options: BinaryReadOptions): void {
+        let len = reader.uint32(), end = reader.pos + len, key: keyof FlowInfoV2["integrationDeclarationsJson"] | undefined, val: FlowInfoV2["integrationDeclarationsJson"][any] | undefined;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case 1:
+                    key = reader.string();
+                    break;
+                case 2:
+                    val = reader.string();
+                    break;
+                default: throw new globalThis.Error("unknown map entry field for avalanche.operator.FlowInfoV2.integration_declarations_json");
+            }
+        }
+        map[key ?? ""] = val ?? "";
+    }
     internalBinaryWrite(message: FlowInfoV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
         /* string workflow_selector = 1; */
         if (message.workflowSelector !== "")
@@ -3596,6 +4225,9 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
         /* repeated string key_fields = 34; */
         for (let i = 0; i < message.keyFields.length; i++)
             writer.tag(34, WireType.LengthDelimited).string(message.keyFields[i]);
+        /* map<string, string> integration_declarations_json = 35; */
+        for (let k of globalThis.Object.keys(message.integrationDeclarationsJson))
+            writer.tag(35, WireType.LengthDelimited).fork().tag(1, WireType.LengthDelimited).string(k).tag(2, WireType.LengthDelimited).string(message.integrationDeclarationsJson[k]).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -8490,6 +9122,44 @@ class FlowReloadStatusV2$Type extends MessageType<FlowReloadStatusV2> {
  */
 export const FlowReloadStatusV2 = new FlowReloadStatusV2$Type();
 // @generated message type with reflection information, may provide speed optimized methods
+class IntegrationAccountsChangedV2$Type extends MessageType<IntegrationAccountsChangedV2> {
+    constructor() {
+        super("avalanche.operator.IntegrationAccountsChangedV2", []);
+    }
+    create(value?: PartialMessage<IntegrationAccountsChangedV2>): IntegrationAccountsChangedV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        if (value !== undefined)
+            reflectionMergePartial<IntegrationAccountsChangedV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: IntegrationAccountsChangedV2): IntegrationAccountsChangedV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: IntegrationAccountsChangedV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.IntegrationAccountsChangedV2
+ */
+export const IntegrationAccountsChangedV2 = new IntegrationAccountsChangedV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
 class ResetRequiredV2$Type extends MessageType<ResetRequiredV2> {
     constructor() {
         super("avalanche.operator.ResetRequiredV2", [
@@ -8556,6 +9226,7 @@ class RunStatusEnvelopeV2$Type extends MessageType<RunStatusEnvelopeV2> {
             { no: 9, name: "flow_reload_status", kind: "message", oneof: "payload", T: () => FlowReloadStatusV2 },
             { no: 11, name: "catalog_reload_required", kind: "message", oneof: "payload", T: () => CatalogReloadRequiredV2 },
             { no: 12, name: "nodes_expanded", kind: "message", oneof: "payload", T: () => RunNodesExpandedV2 },
+            { no: 13, name: "integration_accounts_changed", kind: "message", oneof: "payload", T: () => IntegrationAccountsChangedV2 },
             { no: 5, name: "cursor", kind: "message", T: () => LifecycleCursorV2 },
             { no: 10, name: "scope_ref", kind: "message", T: () => ScopeReferenceV2 }
         ]);
@@ -8630,6 +9301,12 @@ class RunStatusEnvelopeV2$Type extends MessageType<RunStatusEnvelopeV2> {
                         nodesExpanded: RunNodesExpandedV2.internalBinaryRead(reader, reader.uint32(), options, (message.payload as any).nodesExpanded)
                     };
                     break;
+                case /* avalanche.operator.IntegrationAccountsChangedV2 integration_accounts_changed */ 13:
+                    message.payload = {
+                        oneofKind: "integrationAccountsChanged",
+                        integrationAccountsChanged: IntegrationAccountsChangedV2.internalBinaryRead(reader, reader.uint32(), options, (message.payload as any).integrationAccountsChanged)
+                    };
+                    break;
                 case /* avalanche.operator.LifecycleCursorV2 cursor */ 5:
                     message.cursor = LifecycleCursorV2.internalBinaryRead(reader, reader.uint32(), options, message.cursor);
                     break;
@@ -8684,6 +9361,9 @@ class RunStatusEnvelopeV2$Type extends MessageType<RunStatusEnvelopeV2> {
         /* avalanche.operator.RunNodesExpandedV2 nodes_expanded = 12; */
         if (message.payload.oneofKind === "nodesExpanded")
             RunNodesExpandedV2.internalBinaryWrite(message.payload.nodesExpanded, writer.tag(12, WireType.LengthDelimited).fork(), options).join();
+        /* avalanche.operator.IntegrationAccountsChangedV2 integration_accounts_changed = 13; */
+        if (message.payload.oneofKind === "integrationAccountsChanged")
+            IntegrationAccountsChangedV2.internalBinaryWrite(message.payload.integrationAccountsChanged, writer.tag(13, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -8707,6 +9387,12 @@ export const OperatorServiceV2 = new ServiceType("avalanche.operator.OperatorSer
     { name: "CancelRun", options: {}, I: CancelRunRequestV2, O: CancelRunResponseV2 },
     { name: "ControlWait", options: {}, I: ControlWaitRequestV2, O: ControlWaitResponseV2 },
     { name: "ControlMachine", options: {}, I: ControlMachineRequestV2, O: ControlMachineResponseV2 },
+    { name: "ListIntegrations", options: {}, I: ListIntegrationsRequestV2, O: IntegrationListV2 },
+    { name: "ConnectIntegration", options: {}, I: ConnectIntegrationRequestV2, O: IntegrationStatusV2 },
+    { name: "StartIntegrationLogin", options: {}, I: StartIntegrationLoginRequestV2, O: IntegrationLoginV2 },
+    { name: "GetIntegrationLogin", options: {}, I: GetIntegrationLoginRequestV2, O: IntegrationLoginV2 },
+    { name: "DisconnectIntegration", options: {}, I: DisconnectIntegrationRequestV2, O: IntegrationStatusV2 },
+    { name: "GetIntegrationIcon", options: {}, I: GetIntegrationIconRequestV2, O: IntegrationIconV2 },
     { name: "SetScheduleEnabled", options: {}, I: SetScheduleEnabledRequestV2, O: FlowInfoV2 },
     { name: "StageInputFile", options: {}, I: StageInputFileRequestV2, O: FileAttachmentV2 },
     { name: "StageInputWorkspace", clientStreaming: true, options: {}, I: StageInputWorkspaceRequestV2, O: StagedInputWorkspaceV2 },

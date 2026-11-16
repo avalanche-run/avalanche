@@ -178,13 +178,21 @@ AgentOutputs = Annotated[PythonOutputs | JsonOutputs, Field(discriminator="kind"
 
 
 class ToolSpec(BaseModel):
-    """A Python function offered to the agent as a tool."""
+    """A function offered to the agent as a tool.
+
+    A Python tool is described by its function's signature and docstring.
+    A tool that has no Python signature, such as an MCP server's, carries
+    ``input_schema``: the JSON Schema of its arguments. Its ``function`` takes
+    those arguments by keyword and checks them itself, so a runtime offers the
+    schema to its model as it is and passes the model's arguments through.
+    """
 
     model_config = _LIVE
 
     name: str
     description: str | None
     function: Callable[..., object]
+    input_schema: dict[str, JsonValue] | None = None
 
 
 class AgentRequest(BaseModel):

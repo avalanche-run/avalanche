@@ -44,6 +44,8 @@ Load only what the task needs:
   [agent-steps.md](references/agent-steps.md). It loads the vendored original
   PredictRLM skill for the single-step design process, then covers the Avalanche
   integration surface.
+- Outside services a step uses (Connectors, MCP declarations, accounts and
+  `ava connect`): [integrations.md](references/integrations.md).
 - Native observation-only agent quality metrics and composites:
   [agent-steps.md](references/agent-steps.md#native-evaluations). Use the first
   successful agent call to return: its keyword arguments, validated

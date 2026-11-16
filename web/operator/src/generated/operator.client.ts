@@ -30,6 +30,16 @@ import type { FileAttachmentV2 } from "./operator";
 import type { StageInputFileRequestV2 } from "./operator";
 import type { FlowInfoV2 } from "./operator";
 import type { SetScheduleEnabledRequestV2 } from "./operator";
+import type { IntegrationIconV2 } from "./operator";
+import type { GetIntegrationIconRequestV2 } from "./operator";
+import type { DisconnectIntegrationRequestV2 } from "./operator";
+import type { GetIntegrationLoginRequestV2 } from "./operator";
+import type { IntegrationLoginV2 } from "./operator";
+import type { StartIntegrationLoginRequestV2 } from "./operator";
+import type { IntegrationStatusV2 } from "./operator";
+import type { ConnectIntegrationRequestV2 } from "./operator";
+import type { IntegrationListV2 } from "./operator";
+import type { ListIntegrationsRequestV2 } from "./operator";
 import type { ControlMachineResponseV2 } from "./operator";
 import type { ControlMachineRequestV2 } from "./operator";
 import type { ControlWaitResponseV2 } from "./operator";
@@ -108,6 +118,49 @@ export interface IOperatorServiceV2Client {
      * @generated from protobuf rpc: ControlMachine
      */
     controlMachine(input: ControlMachineRequestV2, options?: RpcOptions): UnaryCall<ControlMachineRequestV2, ControlMachineResponseV2>;
+    /**
+     * Integrations the discovered workflows declare, and whether each has an
+     * account. Typed JSON at the external boundary. No credential is ever returned.
+     *
+     * @generated from protobuf rpc: ListIntegrations
+     */
+    listIntegrations(input: ListIntegrationsRequestV2, options?: RpcOptions): UnaryCall<ListIntegrationsRequestV2, IntegrationListV2>;
+    /**
+     * Store the account of one declared integration, replacing the one it had.
+     * The request carries the credential; the response and the logs never do.
+     *
+     * @generated from protobuf rpc: ConnectIntegration
+     */
+    connectIntegration(input: ConnectIntegrationRequestV2, options?: RpcOptions): UnaryCall<ConnectIntegrationRequestV2, IntegrationStatusV2>;
+    /**
+     * Start a browser login for one declared integration. The response carries
+     * the consent page to open on the operator's machine; the operator receives
+     * the result on its loopback listener and stores the tokens. The request may
+     * carry a client secret; the response and the logs never carry a secret.
+     *
+     * @generated from protobuf rpc: StartIntegrationLogin
+     */
+    startIntegrationLogin(input: StartIntegrationLoginRequestV2, options?: RpcOptions): UnaryCall<StartIntegrationLoginRequestV2, IntegrationLoginV2>;
+    /**
+     * How far a browser login is, after waiting up to wait_seconds for it to end.
+     *
+     * @generated from protobuf rpc: GetIntegrationLogin
+     */
+    getIntegrationLogin(input: GetIntegrationLoginRequestV2, options?: RpcOptions): UnaryCall<GetIntegrationLoginRequestV2, IntegrationLoginV2>;
+    /**
+     * Remove the stored account of one declared integration. Removing an account
+     * that does not exist succeeds, so the call can be repeated.
+     *
+     * @generated from protobuf rpc: DisconnectIntegration
+     */
+    disconnectIntegration(input: DisconnectIntegrationRequestV2, options?: RpcOptions): UnaryCall<DisconnectIntegrationRequestV2, IntegrationStatusV2>;
+    /**
+     * The image file a declared integration names as its icon. Clients show it
+     * as an image only, never as markup.
+     *
+     * @generated from protobuf rpc: GetIntegrationIcon
+     */
+    getIntegrationIcon(input: GetIntegrationIconRequestV2, options?: RpcOptions): UnaryCall<GetIntegrationIconRequestV2, IntegrationIconV2>;
     /**
      * Enable or disable one workflow's cron schedule, optionally setting the input
      * its runs start with. The state is kept in operator memory only and resets to
@@ -263,6 +316,67 @@ export class OperatorServiceV2Client implements IOperatorServiceV2Client, Servic
         return stackIntercept<ControlMachineRequestV2, ControlMachineResponseV2>("unary", this._transport, method, opt, input);
     }
     /**
+     * Integrations the discovered workflows declare, and whether each has an
+     * account. Typed JSON at the external boundary. No credential is ever returned.
+     *
+     * @generated from protobuf rpc: ListIntegrations
+     */
+    listIntegrations(input: ListIntegrationsRequestV2, options?: RpcOptions): UnaryCall<ListIntegrationsRequestV2, IntegrationListV2> {
+        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ListIntegrationsRequestV2, IntegrationListV2>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * Store the account of one declared integration, replacing the one it had.
+     * The request carries the credential; the response and the logs never do.
+     *
+     * @generated from protobuf rpc: ConnectIntegration
+     */
+    connectIntegration(input: ConnectIntegrationRequestV2, options?: RpcOptions): UnaryCall<ConnectIntegrationRequestV2, IntegrationStatusV2> {
+        const method = this.methods[10], opt = this._transport.mergeOptions(options);
+        return stackIntercept<ConnectIntegrationRequestV2, IntegrationStatusV2>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * Start a browser login for one declared integration. The response carries
+     * the consent page to open on the operator's machine; the operator receives
+     * the result on its loopback listener and stores the tokens. The request may
+     * carry a client secret; the response and the logs never carry a secret.
+     *
+     * @generated from protobuf rpc: StartIntegrationLogin
+     */
+    startIntegrationLogin(input: StartIntegrationLoginRequestV2, options?: RpcOptions): UnaryCall<StartIntegrationLoginRequestV2, IntegrationLoginV2> {
+        const method = this.methods[11], opt = this._transport.mergeOptions(options);
+        return stackIntercept<StartIntegrationLoginRequestV2, IntegrationLoginV2>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * How far a browser login is, after waiting up to wait_seconds for it to end.
+     *
+     * @generated from protobuf rpc: GetIntegrationLogin
+     */
+    getIntegrationLogin(input: GetIntegrationLoginRequestV2, options?: RpcOptions): UnaryCall<GetIntegrationLoginRequestV2, IntegrationLoginV2> {
+        const method = this.methods[12], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetIntegrationLoginRequestV2, IntegrationLoginV2>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * Remove the stored account of one declared integration. Removing an account
+     * that does not exist succeeds, so the call can be repeated.
+     *
+     * @generated from protobuf rpc: DisconnectIntegration
+     */
+    disconnectIntegration(input: DisconnectIntegrationRequestV2, options?: RpcOptions): UnaryCall<DisconnectIntegrationRequestV2, IntegrationStatusV2> {
+        const method = this.methods[13], opt = this._transport.mergeOptions(options);
+        return stackIntercept<DisconnectIntegrationRequestV2, IntegrationStatusV2>("unary", this._transport, method, opt, input);
+    }
+    /**
+     * The image file a declared integration names as its icon. Clients show it
+     * as an image only, never as markup.
+     *
+     * @generated from protobuf rpc: GetIntegrationIcon
+     */
+    getIntegrationIcon(input: GetIntegrationIconRequestV2, options?: RpcOptions): UnaryCall<GetIntegrationIconRequestV2, IntegrationIconV2> {
+        const method = this.methods[14], opt = this._transport.mergeOptions(options);
+        return stackIntercept<GetIntegrationIconRequestV2, IntegrationIconV2>("unary", this._transport, method, opt, input);
+    }
+    /**
      * Enable or disable one workflow's cron schedule, optionally setting the input
      * its runs start with. The state is kept in operator memory only and resets to
      * the startup default (disabled, default input) on restart.
@@ -270,7 +384,7 @@ export class OperatorServiceV2Client implements IOperatorServiceV2Client, Servic
      * @generated from protobuf rpc: SetScheduleEnabled
      */
     setScheduleEnabled(input: SetScheduleEnabledRequestV2, options?: RpcOptions): UnaryCall<SetScheduleEnabledRequestV2, FlowInfoV2> {
-        const method = this.methods[9], opt = this._transport.mergeOptions(options);
+        const method = this.methods[15], opt = this._transport.mergeOptions(options);
         return stackIntercept<SetScheduleEnabledRequestV2, FlowInfoV2>("unary", this._transport, method, opt, input);
     }
     /**
@@ -281,7 +395,7 @@ export class OperatorServiceV2Client implements IOperatorServiceV2Client, Servic
      * @generated from protobuf rpc: StageInputFile
      */
     stageInputFile(input: StageInputFileRequestV2, options?: RpcOptions): UnaryCall<StageInputFileRequestV2, FileAttachmentV2> {
-        const method = this.methods[10], opt = this._transport.mergeOptions(options);
+        const method = this.methods[16], opt = this._transport.mergeOptions(options);
         return stackIntercept<StageInputFileRequestV2, FileAttachmentV2>("unary", this._transport, method, opt, input);
     }
     /**
@@ -292,77 +406,77 @@ export class OperatorServiceV2Client implements IOperatorServiceV2Client, Servic
      * @generated from protobuf rpc: StageInputWorkspace
      */
     stageInputWorkspace(options?: RpcOptions): ClientStreamingCall<StageInputWorkspaceRequestV2, StagedInputWorkspaceV2> {
-        const method = this.methods[11], opt = this._transport.mergeOptions(options);
+        const method = this.methods[17], opt = this._transport.mergeOptions(options);
         return stackIntercept<StageInputWorkspaceRequestV2, StagedInputWorkspaceV2>("clientStreaming", this._transport, method, opt);
     }
     /**
      * @generated from protobuf rpc: ListRunSummaries
      */
     listRunSummaries(input: ListRunSummariesRequestV2, options?: RpcOptions): UnaryCall<ListRunSummariesRequestV2, RunSummaryPageV2> {
-        const method = this.methods[12], opt = this._transport.mergeOptions(options);
+        const method = this.methods[18], opt = this._transport.mergeOptions(options);
         return stackIntercept<ListRunSummariesRequestV2, RunSummaryPageV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetRunSummary
      */
     getRunSummary(input: GetRunSummaryRequestV2, options?: RpcOptions): UnaryCall<GetRunSummaryRequestV2, GetRunSummaryResponseV2> {
-        const method = this.methods[13], opt = this._transport.mergeOptions(options);
+        const method = this.methods[19], opt = this._transport.mergeOptions(options);
         return stackIntercept<GetRunSummaryRequestV2, GetRunSummaryResponseV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetRunSnapshot
      */
     getRunSnapshot(input: GetRunSnapshotRequestV2, options?: RpcOptions): UnaryCall<GetRunSnapshotRequestV2, RunSnapshotV2> {
-        const method = this.methods[14], opt = this._transport.mergeOptions(options);
+        const method = this.methods[20], opt = this._transport.mergeOptions(options);
         return stackIntercept<GetRunSnapshotRequestV2, RunSnapshotV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: ListRunActivity
      */
     listRunActivity(input: ListRunActivityRequestV2, options?: RpcOptions): UnaryCall<ListRunActivityRequestV2, RunActivityPageV2> {
-        const method = this.methods[15], opt = this._transport.mergeOptions(options);
+        const method = this.methods[21], opt = this._transport.mergeOptions(options);
         return stackIntercept<ListRunActivityRequestV2, RunActivityPageV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: ListEvaluations
      */
     listEvaluations(input: ListEvaluationsRequestV2, options?: RpcOptions): UnaryCall<ListEvaluationsRequestV2, EvaluationListV2> {
-        const method = this.methods[16], opt = this._transport.mergeOptions(options);
+        const method = this.methods[22], opt = this._transport.mergeOptions(options);
         return stackIntercept<ListEvaluationsRequestV2, EvaluationListV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: ReadActivityDetail
      */
     readActivityDetail(input: ReadActivityDetailRequestV2, options?: RpcOptions): ServerStreamingCall<ReadActivityDetailRequestV2, ActivityDetailChunkV2> {
-        const method = this.methods[17], opt = this._transport.mergeOptions(options);
+        const method = this.methods[23], opt = this._transport.mergeOptions(options);
         return stackIntercept<ReadActivityDetailRequestV2, ActivityDetailChunkV2>("serverStreaming", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: GetRunResult
      */
     getRunResult(input: GetRunResultRequestV2, options?: RpcOptions): UnaryCall<GetRunResultRequestV2, RunResultV2> {
-        const method = this.methods[18], opt = this._transport.mergeOptions(options);
+        const method = this.methods[24], opt = this._transport.mergeOptions(options);
         return stackIntercept<GetRunResultRequestV2, RunResultV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: ListRunOutputArtifacts
      */
     listRunOutputArtifacts(input: ListRunOutputArtifactsRequestV2, options?: RpcOptions): UnaryCall<ListRunOutputArtifactsRequestV2, RunOutputArtifactPageV2> {
-        const method = this.methods[19], opt = this._transport.mergeOptions(options);
+        const method = this.methods[25], opt = this._transport.mergeOptions(options);
         return stackIntercept<ListRunOutputArtifactsRequestV2, RunOutputArtifactPageV2>("unary", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: ReadRunOutputArtifact
      */
     readRunOutputArtifact(input: ReadRunOutputArtifactRequestV2, options?: RpcOptions): ServerStreamingCall<ReadRunOutputArtifactRequestV2, RunOutputArtifactChunkV2> {
-        const method = this.methods[20], opt = this._transport.mergeOptions(options);
+        const method = this.methods[26], opt = this._transport.mergeOptions(options);
         return stackIntercept<ReadRunOutputArtifactRequestV2, RunOutputArtifactChunkV2>("serverStreaming", this._transport, method, opt, input);
     }
     /**
      * @generated from protobuf rpc: WatchRunStatus
      */
     watchRunStatus(input: WatchRunStatusRequestV2, options?: RpcOptions): ServerStreamingCall<WatchRunStatusRequestV2, RunStatusEnvelopeV2> {
-        const method = this.methods[21], opt = this._transport.mergeOptions(options);
+        const method = this.methods[27], opt = this._transport.mergeOptions(options);
         return stackIntercept<WatchRunStatusRequestV2, RunStatusEnvelopeV2>("serverStreaming", this._transport, method, opt, input);
     }
 }

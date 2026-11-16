@@ -1089,6 +1089,85 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
         except ValueError as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
 
+    # ── Integrations ──────────────────────────────────────
+
+    def ListIntegrations(self, request, context):  # noqa: N802
+        from .integration_accounts import IntegrationStatusList
+
+        statuses = IntegrationStatusList(integrations=self._op.list_integrations())
+        return pb.IntegrationListV2(integrations_json=statuses.model_dump_json())
+
+    def ConnectIntegration(self, request, context):  # noqa: N802
+        from pydantic import ValidationError
+
+        from .integration_accounts import (
+            ConnectIntegrationRequest,
+            IntegrationConnectError,
+            UnknownIntegrationError,
+        )
+
+        try:
+            command = ConnectIntegrationRequest.model_validate_json(request.request_json)
+        except ValidationError as exc:
+            # The model hides its input, so the message names fields, not values.
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        try:
+            status = self._op.connect_integration(command.name, command.credential)
+        except UnknownIntegrationError as exc:
+            context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        except IntegrationConnectError as exc:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        return pb.IntegrationStatusV2(status_json=status.model_dump_json())
+
+    def StartIntegrationLogin(self, request, context):  # noqa: N802
+        from pydantic import ValidationError
+
+        from .integration_accounts import UnknownIntegrationError
+        from .integration_logins import IntegrationLoginError, StartIntegrationLoginRequest
+
+        try:
+            command = StartIntegrationLoginRequest.model_validate_json(request.request_json)
+        except ValidationError as exc:
+            # The model hides its input, so the message cannot echo a secret.
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        try:
+            login = self._op.start_integration_login(command)
+        except UnknownIntegrationError as exc:
+            context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        except IntegrationLoginError as exc:
+            context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+        return pb.IntegrationLoginV2(login_json=login.model_dump_json())
+
+    def GetIntegrationLogin(self, request, context):  # noqa: N802
+        from .integration_logins import UnknownLoginError
+
+        try:
+            login = self._op.integration_login(
+                request.login_id, min(max(request.wait_seconds, 0.0), 30.0)
+            )
+        except UnknownLoginError as exc:
+            context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        return pb.IntegrationLoginV2(login_json=login.model_dump_json())
+
+    def DisconnectIntegration(self, request, context):  # noqa: N802
+        from .integration_accounts import UnknownIntegrationError
+
+        try:
+            status = self._op.disconnect_integration(request.name)
+        except UnknownIntegrationError as exc:
+            context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        return pb.IntegrationStatusV2(status_json=status.model_dump_json())
+
+    def GetIntegrationIcon(self, request, context):  # noqa: N802
+        from .integration_accounts import UnknownIntegrationError
+        from .integration_icons import IntegrationIconError
+
+        try:
+            icon = self._op.integration_icon(request.name)
+        except (UnknownIntegrationError, IntegrationIconError) as exc:
+            context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
+        return pb.IntegrationIconV2(media_type=icon.media_type, content=icon.content)
+
     def _start_response(self, run_id: str) -> pb.StartRunResponseV2:
         with self._op._state_store.transaction() as connection:
             row = connection.execute(

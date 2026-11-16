@@ -135,8 +135,10 @@ def _build_parser() -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command", metavar="COMMAND")
 
     from .definition_commands import add_definition_command
+    from .integration_commands import add_connect_command
 
     add_definition_command(subcommands)
+    add_connect_command(subcommands)
     events = subcommands.add_parser("event", help="send a declared run event")
     events.add_subparsers(dest="event_command").add_parser(
         "send", help="send a typed JSON event"
@@ -181,6 +183,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     operator.add_argument(
         "--no-web", action="store_true", help="serve gRPC without the HTTP listener"
+    )
+    operator.add_argument(
+        "--login-port",
+        type=int,
+        default=7436,
+        help="loopback port a browser login comes back to (default: 7436)",
     )
     operator.add_argument(
         "--log-level",
@@ -389,6 +397,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--web-port", type=int, default=7435, help="browser UI and REST API HTTP port"
     )
     dev.add_argument(
+        "--login-port",
+        type=int,
+        default=7436,
+        help="loopback port a browser login comes back to (default: 7436)",
+    )
+    dev.add_argument(
         "--log-level",
         type=str.upper,
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
@@ -442,6 +456,8 @@ def _run_operator(args: argparse.Namespace) -> int:
         str(args.webhook_port),
         "--web-port",
         str(args.web_port),
+        "--login-port",
+        str(args.login_port),
         "--log-level",
         args.log_level,
         "--discovery-timeout",
@@ -1652,6 +1668,7 @@ def _run_dev(args: argparse.Namespace) -> int:
             discovery_timeout=args.discovery_timeout,
             schedules_enabled=args.schedules_enabled,
             state_db=args.state_db,
+            login_port=args.login_port,
         )
         workflow_count = len(operator.get_catalog().workflows)
         print(

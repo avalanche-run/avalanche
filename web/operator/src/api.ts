@@ -13,6 +13,15 @@ import { mapEvaluationRecord, type EvaluationRecord } from "./evaluations";
 import { parseTraceHeaderNative } from "./agentTrace/common";
 import { mapStepIo, parseRunResultDocument, type RunResultTarget } from "./stepIo";
 import { isUnknownRecord } from "./guards";
+import {
+  parseIntegrationLogin,
+  parseIntegrationStatus,
+  parseIntegrationStatusList,
+  type IntegrationCredential,
+  type IntegrationLogin,
+  type IntegrationLoginClient,
+  type IntegrationStatus,
+} from "./integrations";
 import { parseJsonValue, parseNullableSchema } from "./stepInterface";
 import type { WaitCard } from "./RunWaitPanel";
 
@@ -331,6 +340,36 @@ export interface OperatorApi {
    * it. Optional: a host without it shows file fields as not editable.
    */
   stageInputFile?(file: File, target: InputFileTarget): Promise<StagedInputFile>;
+  /**
+   * Every integration the host's workflows declare and whether each has an
+   * account. Optional: a host without it shows no integration badges or screen.
+   * It must start no process, call no outside service and return no credential.
+   */
+  listIntegrations?(signal?: AbortSignal): Promise<IntegrationStatus[]>;
+  /** Store the account of a declared integration, replacing the one it had. */
+  connectIntegration?(
+    name: string,
+    credential: IntegrationCredential,
+  ): Promise<IntegrationStatus>;
+  /**
+   * Start a browser login for a declared integration. The result carries the
+   * consent page to open; the host receives the result itself and stores the
+   * tokens. Optional: a host without it offers no browser login.
+   */
+  startIntegrationLogin?(
+    name: string,
+    client?: IntegrationLoginClient,
+  ): Promise<IntegrationLogin>;
+  /** How far a browser login is. It may wait some seconds for the login to end. */
+  getIntegrationLogin?(loginId: string, signal?: AbortSignal): Promise<IntegrationLogin>;
+  /** Remove the stored account of a declared integration. */
+  disconnectIntegration?(name: string): Promise<IntegrationStatus>;
+  /**
+   * A URL of the integration's declared icon. It is used only as the source of
+   * an `<img>` element, where an SVG file cannot run script. Rejects when the
+   * integration has no icon the host can serve; the UI then shows its own.
+   */
+  getIntegrationIconUrl?(name: string, signal?: AbortSignal): Promise<string>;
 }
 
 interface RegisteredContinuation {
@@ -859,6 +898,74 @@ export class GrpcWebOperatorApi implements OperatorApi {
 
   async cancelRun(runId: string): Promise<void> {
     await this.client.cancelRun({ runId }).response;
+  }
+
+  async listIntegrations(signal?: AbortSignal): Promise<IntegrationStatus[]> {
+    const response = await this.client.listIntegrations(
+      {},
+      signal ? { abort: signal } : undefined,
+    ).response;
+    return parseIntegrationStatusList(response.integrationsJson);
+  }
+
+  async connectIntegration(
+    name: string,
+    credential: IntegrationCredential,
+  ): Promise<IntegrationStatus> {
+    const response = await this.client.connectIntegration({
+      requestJson: JSON.stringify({
+        name,
+        credential: {
+          kind: credential.kind,
+          key: credential.key,
+          header: credential.header ?? null,
+        },
+      }),
+    }).response;
+    return parseIntegrationStatus(response.statusJson);
+  }
+
+  async startIntegrationLogin(
+    name: string,
+    client?: IntegrationLoginClient,
+  ): Promise<IntegrationLogin> {
+    const response = await this.client.startIntegrationLogin({
+      requestJson: JSON.stringify({
+        name,
+        client_id: client?.clientId ?? null,
+        client_secret: client?.clientSecret ?? null,
+      }),
+    }).response;
+    return parseIntegrationLogin(response.loginJson);
+  }
+
+  async getIntegrationLogin(loginId: string, signal?: AbortSignal): Promise<IntegrationLogin> {
+    const response = await this.client.getIntegrationLogin(
+      { loginId, waitSeconds: 20 },
+      signal ? { abort: signal } : undefined,
+    ).response;
+    return parseIntegrationLogin(response.loginJson);
+  }
+
+  async disconnectIntegration(name: string): Promise<IntegrationStatus> {
+    const response = await this.client.disconnectIntegration({ name }).response;
+    return parseIntegrationStatus(response.statusJson);
+  }
+
+  /**
+   * The icon as a `data:` URL. A browser does not open a `data:` URL as a page
+   * of this origin, so the image stays an image wherever its address ends up.
+   */
+  async getIntegrationIconUrl(name: string, signal?: AbortSignal): Promise<string> {
+    const icon = await this.client.getIntegrationIcon(
+      { name },
+      signal ? { abort: signal } : undefined,
+    ).response;
+    let binary = "";
+    for (let offset = 0; offset < icon.content.length; offset += 0x8000) {
+      binary += String.fromCharCode(...icon.content.subarray(offset, offset + 0x8000));
+    }
+    return `data:${icon.mediaType};base64,${btoa(binary)}`;
   }
 
   // Machine sections and controls: one ControlMachine RPC carrying typed JSON.
@@ -1587,6 +1694,9 @@ export class GrpcWebOperatorApi implements OperatorApi {
           workflowReloadStatus: { reloading: payload.flowReloadStatus.reloading },
         });
       }
+      case "integrationAccountsChanged": {
+        return update({ oneofKind: "integrationAccountsChanged" });
+      }
       case "resetRequired": {
         const reset = payload.resetRequired;
         if (
@@ -1747,6 +1857,7 @@ function mapFlowInfo(flow: FlowInfoV2): FlowInfoMsg {
     classifierMetadataJson: flow.classifierMetadataJson,
     evaluationMetadataJson: flow.evaluationMetadataJson,
     stepInterfaceJson: flow.topology?.stepInterfaceJson ?? {},
+    integrationDeclarationsJson: flow.integrationDeclarationsJson,
     mapSpecs: flow.topology?.mapSpecs ?? {},
     inputDeclarationJson: flow.topology?.inputDeclarationJson ?? "",
     webhookPath: flow.webhookPath,

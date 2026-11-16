@@ -45,6 +45,7 @@ import {
 import { useInputDraft } from "./useInputDraft";
 import { compareNewestRun, RunListPanel } from "./RunListPanel";
 import type { OperatorProjection } from "./state";
+import { IntegrationsProvider } from "./integrationsView";
 import { useOperatorProjection } from "./state";
 import { WorkspaceDivider } from "./WorkspaceDivider";
 import { useRunEvaluations } from "./useRunEvaluations";
@@ -135,6 +136,11 @@ export interface WorkflowWorkspaceProps {
    * Omitted: only runs of this workflow open.
    */
   onOpenRun?: (runId: string, workflowId: string) => void;
+  /**
+   * Shows the host's integrations screen, on one integration when named. With
+   * it, a step that failed for a missing account links to that screen.
+   */
+  onOpenIntegrations?: (name?: string) => void;
 }
 
 interface WorkflowWorkspaceSurfaceProps extends Pick<
@@ -1265,6 +1271,7 @@ export function WorkflowWorkspaceSurface({
                     runTriggeredBy={previewWorkflow ? undefined : run?.summary?.triggeredBy}
                     inspectionDisabled={requestingRun}
                     evaluations={evaluationState.records}
+                    integrationsWorkflow={machineView ? undefined : workflow}
                     selectedNodeId={inspectedNode}
                     onClearNode={clearGraphSelection}
                     onOpenNode={openNode}
@@ -1475,6 +1482,7 @@ export function WorkflowWorkspace({
   onTimelineViewChange,
   layoutStorageKey,
   onOpenRun,
+  onOpenIntegrations,
 }: WorkflowWorkspaceProps) {
   const { state, startRun, cancelRun, selectRun, setScheduleEnabled } =
     useOperatorProjection(api);
@@ -1522,32 +1530,39 @@ export function WorkflowWorkspace({
     );
   }
   return (
-    <WorkflowWorkspaceSurface
-      key={layoutStorageKey}
-      layoutStorageKey={layoutStorageKey}
+    <IntegrationsProvider
       api={api}
-      state={state}
-      workflowId={workflowId}
-      workflow={workflow}
-      selectedRunId={selectedRunId}
-      onSelectRun={navigation ? navigation.onSelectRun : onSelectRun}
-      selectRun={selectRun}
-      startRun={startRun}
-      cancelRun={cancelRun}
-      setScheduleEnabled={setScheduleEnabled}
-      className={className}
-      runActionsEnabled={runActionsEnabled}
-      definitionLabel={definitionLabel}
-      bottomRightPanel={bottomRightPanel}
-      loadingFallback={loadingFallback}
-      emptyRunPanel={emptyRunPanel}
-      currentLabel={currentLabel}
-      currentRowAction={currentRowAction}
-      showCurrentRow={showCurrentRow}
-      deployments={deployments}
-      timelineView={timelineView}
-      onTimelineViewChange={onTimelineViewChange}
-      onOpenRun={onOpenRun}
-    />
+      catalog={state.catalog}
+      accountsEventUlid={state.integrationAccountsEventUlid}
+      openIntegrations={onOpenIntegrations}
+    >
+      <WorkflowWorkspaceSurface
+        key={layoutStorageKey}
+        layoutStorageKey={layoutStorageKey}
+        api={api}
+        state={state}
+        workflowId={workflowId}
+        workflow={workflow}
+        selectedRunId={selectedRunId}
+        onSelectRun={navigation ? navigation.onSelectRun : onSelectRun}
+        selectRun={selectRun}
+        startRun={startRun}
+        cancelRun={cancelRun}
+        setScheduleEnabled={setScheduleEnabled}
+        className={className}
+        runActionsEnabled={runActionsEnabled}
+        definitionLabel={definitionLabel}
+        bottomRightPanel={bottomRightPanel}
+        loadingFallback={loadingFallback}
+        emptyRunPanel={emptyRunPanel}
+        currentLabel={currentLabel}
+        currentRowAction={currentRowAction}
+        showCurrentRow={showCurrentRow}
+        deployments={deployments}
+        timelineView={timelineView}
+        onTimelineViewChange={onTimelineViewChange}
+        onOpenRun={onOpenRun}
+      />
+    </IntegrationsProvider>
   );
 }

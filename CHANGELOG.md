@@ -1,5 +1,72 @@
 # Changelog
 
+## Unreleased
+
+- For hosts: `avalanche.integrations.oauth.declared_login` picks the browser
+  login a declaration asks for (the rule the local operator used inline);
+  `fresh` and `needs_refresh` take a `margin`; `connector_login`, `mcp_login`
+  and `fresh` take an optional `AddressPolicy`, for a host that must limit
+  which addresses a login or a refresh connects to. Local behavior is unchanged.
+- Browser login (OAuth 2) for integrations, locally. A Connector declares
+  `auth = ava.OAuth2(authorize_url=..., token_url=..., scopes=[...])`;
+  `ava connect NAME` asks for the client ID and secret of the app registered
+  with the service, opens the consent page, receives the result on
+  `http://127.0.0.1:7436/callback` (operator option `--login-port`) and stores
+  the tokens. For a remote `ava.MCP`, `ava connect NAME` discovers the login
+  from the server and registers a client by itself; `ava.MCP(...,
+  client_id=...)` names a client for a server that does not allow that. An
+  expired access token is refreshed before a step uses it. A login that was
+  revoked or cannot be refreshed fails the step, without retries, with a
+  message that says to connect again. The operator UI's connect form offers the
+  browser login too. Authlib (`authlib`) is now a dependency.
+- Changed: `ava connect NAME` for a remote MCP server now starts the browser
+  login. Store an API key for it with `ava connect NAME --api-key`, or with
+  `--header NAME` as before.
+- Integrations: a step declares the outside services it uses with
+  `integrations=[...]` on `@ava.step` and `@ava.agent_step`. Write an HTTP
+  service as an `ava.Connector` subclass with `auth = ava.ApiKey(...)`, a
+  `base_url` and `@ava.tool` methods that use `self.client`. Agent steps on all
+  three runtimes get the tools as `<integration>__<tool>`; plain steps call
+  them as methods.
+- Hosts that store integration accounts share the connect rules: which
+  credential fits a declaration, and whether a declaration requires an
+  account, are in `avalanche.integrations.connect`. The local operator uses
+  them as before; `ava connect` behaves the same.
+- MCP tools in agent steps: an agent step that declares `ava.MCP(...)` gets the
+  server's tools as `<integration>__<tool>` on PredictRLM, ClaudeAgent and
+  OpenAIAgent. Avalanche connects when the step starts, over HTTP for `url=` or
+  by starting the process for `command=`, applies `allow`, checks the model's
+  arguments against each tool's schema, and closes the connection and stops
+  the process when the step ends. A remote server gets the key stored with
+  `ava connect NAME [--header H]`; one that asks for a login with no account
+  fails the step before it starts and names the command. A server that cannot
+  be reached or started, or an `allow` name it does not offer, fails the step
+  with the reason. The MCP Python library (`mcp`) is now a dependency.
+- CLI: `ava connect` lists declared integrations; `ava connect NAME` stores an
+  API key as that integration's account in the local operator, where it
+  survives restarts. A step whose integration has no account fails before it
+  starts and names the command to run. Keys stay out of code, prompts, tool
+  arguments, traces, logs and previews, and a Connector's client refuses any
+  request outside its `base_url` origin. See `docs/integrations.md`.
+- Operator UI: step cards show a badge per declared integration, with its
+  icon and name, and the step's details list its integrations, their kind and
+  a Connector's tools. A new Integrations screen lists every declared
+  integration as connected or not, connects one with an API key and
+  disconnects one; it follows `ava connect` live. A step that failed for a
+  missing account links to that screen, and tool calls in the trace name
+  their integration. A stored key is never shown.
+- `@trampoline-ai/operator-ui`: new optional `OperatorApi` methods
+  `listIntegrations`, `connectIntegration`, `disconnectIntegration` and
+  `getIntegrationIconUrl`, `FlowInfoMsg.integrationDeclarationsJson`, the
+  exported `IntegrationsPanel`, and `onOpenIntegrations` on
+  `WorkflowWorkspace`. Hosts without the methods are unchanged.
+- Operator UI: `IntegrationsPanel` takes only the integration calls
+  (`IntegrationsApi`, the four optional integration methods of `OperatorApi`),
+  so a host page can show the integrations screen without a workflow. The
+  integration views keep their list and icons when a host replaces its API
+  object, instead of blinking until the new list arrives. The screen's texts
+  no longer assume the local operator.
+
 ## 0.20.14
 
 - **Breaking:** run summary `status` now uses the same human vocabulary on every

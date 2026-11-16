@@ -1,5 +1,8 @@
 import { memo, useEffect, useState } from "react";
-import { Clock, Folder, PanelLeft, X } from "lucide-react";
+import { Clock, Folder, PanelLeft, Plug, X } from "lucide-react";
+
+import { integrationAccountState } from "./integrations";
+import { useIntegrationsView } from "./integrationsView";
 
 import type { CatalogSnapshotMsg, FlowInfoMsg } from "./model";
 import type { OperatorUiSelection } from "./ui/types";
@@ -14,6 +17,65 @@ interface ExplorerProps {
   open?: boolean;
   pinned?: boolean;
   expanded?: boolean;
+  /** The integrations screen is showing. */
+  integrationsSelected?: boolean;
+  /** Adds the Integrations entry when the workflows declare any. */
+  onOpenIntegrations?: () => void;
+}
+
+/** The sidebar's entry to the integrations screen, with what still needs an account. */
+function IntegrationsEntry({
+  compact,
+  selected,
+  onOpen,
+}: {
+  compact: boolean;
+  selected: boolean;
+  onOpen: () => void;
+}) {
+  const view = useIntegrationsView();
+  if (view.statuses.length === 0) return null;
+  const missing = view.statuses.filter(
+    (status) => status.requires_account && integrationAccountState(status) === "missing",
+  ).length;
+  const summary = `${view.statuses.length} declared${missing ? `, ${missing} not connected` : ""}`;
+  return (
+    <section className="shrink-0 border-t border-line p-2" aria-label="Integrations">
+      <button
+        type="button"
+        className={`tree-select flex h-12 w-full min-w-0 cursor-pointer items-center gap-2 rounded-none border-0 p-0 text-left text-sm transition-colors hover:bg-canvas focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-sidebar-primary ${
+          selected
+            ? "active font-medium text-sidebar-primary"
+            : "bg-transparent text-muted hover:text-ink"
+        }`}
+        aria-label={compact ? `Integrations, ${summary}` : undefined}
+        aria-current={selected ? "page" : undefined}
+        title={`Integrations\n${summary}`}
+        data-missing-accounts={missing}
+        onClick={onOpen}
+      >
+        <span
+          aria-hidden="true"
+          className="relative grid size-8 shrink-0 place-items-center rounded border border-icon-line"
+        >
+          <Plug className="size-4" />
+          {compact && missing > 0 && (
+            <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber" />
+          )}
+        </span>
+        {!compact && (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate leading-5">Integrations</span>
+            <small
+              className={`block truncate text-[10px] leading-3 font-normal ${missing ? "text-amber" : "text-secondary"}`}
+            >
+              {summary}
+            </small>
+          </span>
+        )}
+      </button>
+    </section>
+  );
 }
 
 interface WorkflowRowProps {
@@ -118,6 +180,8 @@ function ExplorerView({
   open = false,
   pinned = true,
   expanded = true,
+  integrationsSelected = false,
+  onOpenIntegrations,
 }: ExplorerProps) {
   const [dismissedDiagnosticKey, setDismissedDiagnosticKey] = useState<string>();
   const visibleDiagnostics =
@@ -210,7 +274,9 @@ function ExplorerView({
                   <WorkflowRow
                     workflow={workflow}
                     compact={!contentVisible}
-                    selected={selection?.workflowId === workflow.workflowId}
+                    selected={
+                      !integrationsSelected && selection?.workflowId === workflow.workflowId
+                    }
                     onSelect={onSelect}
                   />
                 </li>
@@ -230,8 +296,15 @@ function ExplorerView({
           <div />
         </div>
       ) : null}
+      {catalog && onOpenIntegrations && (
+        <IntegrationsEntry
+          compact={!contentVisible}
+          selected={integrationsSelected}
+          onOpen={onOpenIntegrations}
+        />
+      )}
       {onTogglePin && (
-        <footer className="mt-auto flex h-12 shrink-0 items-center justify-start bg-panel px-2 max-[700px]:hidden">
+        <footer className="flex h-12 shrink-0 items-center justify-start bg-panel px-2 max-[700px]:hidden">
           <button
             type="button"
             className={`flex h-8 cursor-pointer items-center rounded border-0 bg-transparent text-muted transition-colors hover:bg-canvas hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid ${

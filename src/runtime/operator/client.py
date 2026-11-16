@@ -50,6 +50,7 @@ from .models import (
     ClassifierEventAppended,
     ClassifierEventDetailAppended,
     DetailUpdate,
+    IntegrationAccountsChanged,
     LogAppended,
     LogDetailAppended,
     LogEntry,
@@ -91,7 +92,10 @@ from .results import (
 
 if TYPE_CHECKING:
     from avalanche.agent.live import AgentLiveEvent, AgentTraceTerminal
+    from avalanche.integrations.accounts import ApiKeyCredential
 
+    from .integration_accounts import IntegrationStatus
+    from .integration_logins import IntegrationLogin
     from .wait_control import WaitControlRequest, WaitControlResponse
 
 DEFAULT_UNARY_TIMEOUT_SECONDS = 10.0
@@ -1412,6 +1416,7 @@ class GrpcStateProvider:
             "node_status_changed",
             "flow_list_changed",
             "flow_reload_status",
+            "integration_accounts_changed",
         }:
             raise _RunUpdateResetError("run status envelope has an unknown payload")
 
@@ -2071,6 +2076,76 @@ class GrpcStateProvider:
             ),
         )
         return workflow_info_from_v2(response)
+
+    def list_integrations(self) -> tuple[IntegrationStatus, ...]:
+        """Every declared integration and whether it has an account."""
+        from .integration_accounts import IntegrationStatusList
+
+        response = self._call(self._stub.ListIntegrations, pb.ListIntegrationsRequestV2())
+        return IntegrationStatusList.model_validate_json(
+            response.integrations_json
+        ).integrations
+
+    def connect_integration(self, name: str, credential: ApiKeyCredential) -> IntegrationStatus:
+        """Store an API key as the account of the declared integration ``name``."""
+        if self._read_only:
+            from tui.state import TuiExtensionError
+
+            raise TuiExtensionError("read_only", "Provider is read-only")
+        from .integration_accounts import ConnectIntegrationRequest, IntegrationStatus
+
+        request = ConnectIntegrationRequest(name=name, credential=credential)
+        response = self._call(
+            self._stub.ConnectIntegration,
+            pb.ConnectIntegrationRequestV2(request_json=request.model_dump_json()),
+        )
+        return IntegrationStatus.model_validate_json(response.status_json)
+
+    def start_integration_login(
+        self, name: str, *, client_id: str | None = None, client_secret: str | None = None
+    ) -> IntegrationLogin:
+        """Start a browser login for the declared integration ``name``."""
+        if self._read_only:
+            from tui.state import TuiExtensionError
+
+            raise TuiExtensionError("read_only", "Provider is read-only")
+        from .integration_logins import IntegrationLogin, StartIntegrationLoginRequest
+
+        request = StartIntegrationLoginRequest(
+            name=name, client_id=client_id, client_secret=client_secret
+        )
+        response = self._call(
+            self._stub.StartIntegrationLogin,
+            pb.StartIntegrationLoginRequestV2(request_json=request.model_dump_json()),
+            timeout=90.0,
+        )
+        return IntegrationLogin.model_validate_json(response.login_json)
+
+    def integration_login(
+        self, login_id: str, *, wait_seconds: float = 20.0
+    ) -> IntegrationLogin:
+        """How far a browser login is, after waiting up to ``wait_seconds``."""
+        from .integration_logins import IntegrationLogin
+
+        response = self._call(
+            self._stub.GetIntegrationLogin,
+            pb.GetIntegrationLoginRequestV2(login_id=login_id, wait_seconds=wait_seconds),
+            timeout=wait_seconds + 15.0,
+        )
+        return IntegrationLogin.model_validate_json(response.login_json)
+
+    def disconnect_integration(self, name: str) -> IntegrationStatus:
+        """Remove the stored account of the declared integration ``name``."""
+        if self._read_only:
+            from tui.state import TuiExtensionError
+
+            raise TuiExtensionError("read_only", "Provider is read-only")
+        from .integration_accounts import IntegrationStatus
+
+        response = self._call(
+            self._stub.DisconnectIntegration, pb.DisconnectIntegrationRequestV2(name=name)
+        )
+        return IntegrationStatus.model_validate_json(response.status_json)
 
     def wait_control(self, run_id: str, command: WaitControlRequest) -> WaitControlResponse:
         if self._read_only and command.kind != "list":
@@ -2891,7 +2966,7 @@ class GrpcStateProvider:
                 )
                 self._catalog_reload_deployment_id = change.deployment_id
             run = None
-        elif isinstance(change, WorkflowReloadStatus):
+        elif isinstance(change, WorkflowReloadStatus | IntegrationAccountsChanged):
             run = None
         elif isinstance(change, RunCreated):
             run = _run_from_created(envelope.operator_instance_id, change)
