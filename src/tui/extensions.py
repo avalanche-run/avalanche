@@ -54,6 +54,8 @@ class ExtensionSession:
         self._describe_pending = True
         self.awaiting_baseline = False
         self.changed_resources: frozenset[str] = frozenset()
+        self.permissions_changed = False
+        self._permission_generation = 0
         self._unsubscribe = extension.subscribe(self._enqueue)
 
     def _enqueue(self, notice: Invalidation) -> None:
@@ -90,6 +92,7 @@ class ExtensionSession:
         if self._closed or len(self._futures) >= 2:
             return False
         context = self.context
+        permission_generation = self._permission_generation
 
         def run() -> None:
             try:
@@ -101,14 +104,22 @@ class ExtensionSession:
             except TuiExtensionError as error:
 
                 def failed(error=error) -> None:
-                    if not self._closed and self.context == context:
+                    if (
+                        not self._closed
+                        and self.context == context
+                        and self._permission_generation == permission_generation
+                    ):
                         fail(error)
 
                 self._post(failed)
                 return
 
             def completed() -> None:
-                if not self._closed and self.context == context:
+                if (
+                    not self._closed
+                    and self.context == context
+                    and self._permission_generation == permission_generation
+                ):
                     accept(result)
 
             self._post(completed)
@@ -125,6 +136,10 @@ class ExtensionSession:
         relevant = [notice for notice in notices if notice.context == self.context]
         changed = bool(relevant) or overflow
         self.changed_resources = frozenset(n.resource for n in relevant)
+        self.permissions_changed = any(n.kind == "permissions" for n in relevant)
+        if self.permissions_changed:
+            self._permission_generation += 1
+            self.loading = False
         if changed:
             self._describe_pending = True
             if overflow or any(n.kind == "reset" for n in relevant):
@@ -132,7 +147,7 @@ class ExtensionSession:
                 self.description = None
                 self.awaiting_baseline = True
                 self.error = "Stale: awaiting provider baseline/reset reconciliation"
-            elif any(n.kind == "permissions" for n in relevant):
+            elif self.permissions_changed:
                 self.description = None
                 self.error = "Permissions changed; reloading capabilities"
         if self._describe_pending and not self.loading and not self.awaiting_baseline:

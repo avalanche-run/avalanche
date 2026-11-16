@@ -84,6 +84,9 @@
   integration views keep their list and icons when a host replaces its API
   object, instead of blinking until the new list arrives. The screen's texts
   no longer assume the local operator.
+- The TUI Runs resource continues by position when page contents change. Other
+  resources still enforce their revision barrier, and scope/permission changes
+  still invalidate continuation handles.
 
 ## 0.20.14
 

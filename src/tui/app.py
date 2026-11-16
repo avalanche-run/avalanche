@@ -530,6 +530,12 @@ class AvalancheApp(App):
         session = self.extension_session
         session.select(self.extension_context)
         changed = session.tick()
+        if (
+            session.permissions_changed
+            and isinstance(self.screen, ResourceScreen)
+            and self.screen.is_mounted
+        ):
+            self.screen.clear_resource()
         if session.awaiting_baseline:
             if (
                 self.store._latest_reset_generation > self._extension_baseline_generation
@@ -542,12 +548,17 @@ class AvalancheApp(App):
             # push_screen exposes the new screen before Compose/Mount completes.
             # Its on_mount reads the initial page, including changes received now.
             if isinstance(self.screen, ResourceScreen) and self.screen.is_mounted:
-                if (
-                    self.screen.panel.resource in session.changed_resources
-                    or "*" in session.changed_resources
+                if session.permissions_changed:
+                    self.screen._load(None)
+                elif "*" in session.changed_resources or (
+                    self.screen.panel.resource != "runs"
+                    and self.screen.panel.resource in session.changed_resources
                 ):
                     self.screen._revision = None
                     self.screen._load(None)
+                # Ordinary Runs notices refresh the surrounding history, not the
+                # open resource's older cursor. Context/reset/permission fences
+                # still apply; the reader can explicitly reload when desired.
         if not session.awaiting_baseline:
             self._extension_baseline_generation = self.store._latest_reset_generation
         if self._scope_reload_pending and session.description is not None:
@@ -1345,7 +1356,9 @@ class AvalancheApp(App):
             return
         item = run.nodes[child_id]
         self.store.selected_node = DagNode(
-            name=child_id, display_name=item.name, node_type=item.node_type,
+            name=child_id,
+            display_name=item.name,
+            node_type=item.node_type,
             is_agent=item.map_parent in workflow.agent_node_ids,
         )
         if not self.store.open_trace_inspector():

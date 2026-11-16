@@ -160,7 +160,7 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
 
     from tui.app import AvalancheApp
     from tui.screens.input_form import InputForm
-    from tui.state import TuiContext, TuiExtensionError
+    from tui.state import ExtensionPage, TuiContext, TuiExtensionError
     from tui.widgets.log_panel import LogWidget
 
     evidence = Path(os.environ.get("AVALANCHE_TUI_EVIDENCE", str(tmp_path / "evidence")))
@@ -304,8 +304,10 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
         async with app.run_test(size=(160, 50)) as pilot:
             await wait_for(
                 pilot,
-                lambda: app.extension_session.description is not None
-                and app.extension_session.context == app.extension_context,
+                lambda: (
+                    app.extension_session.description is not None
+                    and app.extension_session.context == app.extension_context
+                ),
             )
             assert app.extension_context.version == flow.version
             await pilot.press("r")
@@ -319,8 +321,10 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
             await pilot.click("#form-submit")
             await wait_for(
                 pilot,
-                lambda: {log.channel for log in app.store.logs if "live-" in log.message}
-                >= {"stdout", "stderr", "log"},
+                lambda: (
+                    {log.channel for log in app.store.logs if "live-" in log.message}
+                    >= {"stdout", "stderr", "log"}
+                ),
             )
             run = app.store.current_run
             assert run is not None and run.status == RunStatus.RUNNING
@@ -420,10 +424,12 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
             assert hashlib.sha256(destination.read_bytes()).hexdigest() == expected
             await wait_for(
                 pilot,
-                lambda: app.extension_session.description is not None
-                and any(
-                    action.id == "artifact.download"
-                    for action in app.extension_session.description.actions
+                lambda: (
+                    app.extension_session.description is not None
+                    and any(
+                        action.id == "artifact.download"
+                        for action in app.extension_session.description.actions
+                    )
                 ),
             )
             download = next(
@@ -580,19 +586,116 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
                 assert time.monotonic() < deadline
                 await pilot.pause(0.05)
             assertions.append("cancel_long_step_accepted_then_terminal")
+            # Keep this real-provider scenario small by narrowing the request
+            # budget, not by replacing any page or transport response.
+            second_typed = await asyncio.to_thread(
+                observer.start_run, flow.selector, input={"count": 43}
+            )
+            await wait_for(pilot, lambda: any(item[1] == second_typed for item in callbacks))
+            await wait_for(
+                pilot,
+                lambda: (
+                    app.extension_session.description is not None
+                    and app.extension_session.context == app.extension_context
+                ),
+            )
+            real_read = extension.read
+            run_reads = []
+            run_notices = []
+            unsubscribe_runs = extension.subscribe(run_notices.append)
+
+            def read_small_runs(
+                resource: str,
+                context: TuiContext,
+                *,
+                cursor: str | None = None,
+                limit: int = 100,
+                byte_limit: int = 262144,
+            ) -> ExtensionPage:
+                page = real_read(
+                    resource,
+                    context,
+                    cursor=cursor,
+                    limit=1 if resource == "runs" else limit,
+                    byte_limit=byte_limit,
+                )
+                if resource == "runs":
+                    run_reads.append((cursor, tuple(row["id"] for row in page.items)))
+                return page
+
+            extension.read = read_small_runs
+            try:
+                description = app.extension_session.description
+                assert description is not None
+                panel = next(panel for panel in description.panels if panel.resource == "runs")
+                app.open_extension_panel(panel)
+                await wait_for(
+                    pilot, lambda: app.screen.is_mounted and app.screen._next_cursor is not None
+                )
+                held_cursor = app.screen._next_cursor
+                first_ids = run_reads[0][1]
+                notice_start = len(run_notices)
+                third_typed = await asyncio.to_thread(
+                    observer.start_run, flow.selector, input={"count": 44}
+                )
+                await wait_for(
+                    pilot, lambda: any(n.resource == "runs" for n in run_notices[notice_start:])
+                )
+                app._tick()
+                await pilot.pause()
+                assert app.screen._next_cursor == held_cursor
+                assert len(run_reads) == 1, run_reads  # no notice-driven first-page reload
+                next_button = app.screen.query_one("#resource-next")
+                assert not next_button.disabled
+                next_button.press()
+                await wait_for(
+                    pilot,
+                    lambda: (
+                        len(run_reads) == 2
+                        or "expired" in str(app.screen.query_one("#resource-status").render())
+                    ),
+                )
+                assert len(run_reads) == 2, str(
+                    app.screen.query_one("#resource-status").render()
+                )
+                assert run_reads[1][0] == held_cursor, run_reads
+                assert set(first_ids + run_reads[1][1]) == {run_id, second_typed}
+                assert third_typed not in first_ids + run_reads[1][1]
+                status = app.screen.query_one("#resource-status").render().plain
+                assert "reload from first page" not in status and "cursor_expired" not in status
+                app.save_screenshot(str(evidence / "runs-continuation-after-change.svg"))
+                (evidence / "runs-continuation-after-change.json").write_text(
+                    json.dumps(
+                        {
+                            "requests": run_reads,
+                            "created_during_paging": third_typed,
+                            "status": status,
+                        }
+                    )
+                    + "\n"
+                )
+                await pilot.press("escape")
+            finally:
+                extension.read = real_read
+                unsubscribe_runs()
+            assertions.append("runs_resource_keeps_cursor_across_real_create_and_changed_page")
             agent_flow = next(flow for flow in flows if flow.name == "scripted_agent")
             app.store.switch_workflow(agent_flow)
             await wait_for(
                 pilot,
-                lambda: app.extension_session.description is not None
-                and app.extension_session.context == app.extension_context,
+                lambda: (
+                    app.extension_session.description is not None
+                    and app.extension_session.context == app.extension_context
+                ),
             )
             agent_run_id = await asyncio.to_thread(observer.start_run, agent_flow.selector)
             await wait_for(
                 pilot,
-                lambda: app.store.current_run is not None
-                and app.store.current_run.run_id == agent_run_id
-                and app.store.current_run.status == RunStatus.SUCCESS,
+                lambda: (
+                    app.store.current_run is not None
+                    and app.store.current_run.run_id == agent_run_id
+                    and app.store.current_run.status == RunStatus.SUCCESS
+                ),
                 seconds=60,
             )
             app.store.select_node(
@@ -649,16 +752,21 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
             process = launch()
             await wait_for(
                 pilot,
-                lambda: provider.operator_instance_id != old_epoch
-                and provider.stream_state.value == "live",
+                lambda: (
+                    provider.operator_instance_id != old_epoch
+                    and provider.stream_state.value == "live"
+                ),
                 seconds=45,
             )
             assert notices
             # The run is stored, so the TUI shows it again from the new operator.
             await wait_for(
                 pilot,
-                lambda: app.store.current_run is not None
-                and app.store.current_run.operator_instance_id == provider.operator_instance_id,
+                lambda: (
+                    app.store.current_run is not None
+                    and app.store.current_run.operator_instance_id
+                    == provider.operator_instance_id
+                ),
             )
             assert app.store.current_run.run_id == agent_run_id
             assert app.store.current_run.status == RunStatus.SUCCESS

@@ -201,6 +201,17 @@ class ResourceScreen(ModalScreen):
         self.context = current
         return True
 
+    def clear_resource(self) -> None:
+        """Purge displayed data and continuation on a permission change."""
+        self._revision = self._next_cursor = None
+        self.query_one("#resource-next", Button).disabled = True
+        if self.panel.renderer == "table":
+            self.query_one("#resource-body", DataTable).clear(columns=True)
+        elif self.panel.renderer == "tree":
+            self.query_one("#resource-body", Tree).clear()
+        else:
+            self.query_one("#resource-body", TextArea).text = ""
+
     def _load(self, cursor: str | None) -> None:
         if not self._context_is_current():
             self.query_one("#resource-status", Static).update(
@@ -222,7 +233,14 @@ class ResourceScreen(ModalScreen):
     def _accept(self, page: ExtensionPage) -> None:
         if not self.is_mounted or not self._context_is_current():
             return
-        if self._requested_cursor is not None and self._revision != page.revision:
+        # Runs are a position traversal, not a collection-content snapshot.
+        # Providers still validate cursor scope and permissions; session/context
+        # fences above apply to every resource, including runs.
+        if (
+            self.panel.resource != "runs"
+            and self._requested_cursor is not None
+            and self._revision != page.revision
+        ):
             self._fail(
                 TuiExtensionError("cursor_expired", "Resource changed · reload from first page")
             )

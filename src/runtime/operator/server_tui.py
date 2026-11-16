@@ -79,13 +79,19 @@ class TuiResourceReader:
             )
             if snapshot is None or snapshot.summary.workflow_id != request.workflow_selector:
                 context.abort(grpc.StatusCode.NOT_FOUND, "Run does not belong to this workflow")
+        # The run list depends only on its workflow; the selected run, node and
+        # attempt move as runs arrive and must not expire a runs traversal.
         target = (
-            request.resource,
-            request.workflow_selector,
-            request.version,
-            request.run_id,
-            request.node_id,
-            request.attempt,
+            (request.resource, request.workflow_selector, "", "", "", 0)
+            if request.resource == "runs"
+            else (
+                request.resource,
+                request.workflow_selector,
+                request.version,
+                request.run_id,
+                request.node_id,
+                request.attempt,
+            )
         )
         position = None
         if request.cursor:
@@ -162,9 +168,10 @@ class TuiResourceReader:
                 page_size=1,
                 page_token=position.run_token if position is not None else "",
             )
-            revision = f"{op.operator_instance_id}:runs:{page.as_of_sequence}"
-            if position is not None and position.revision != revision:
-                context.abort(grpc.StatusCode.OUT_OF_RANGE, "cursor_expired")
+            # Runs continue by (created_sequence, run_id) position: a new run is
+            # not a reason to expire a reader. The page token fences the
+            # operator instance and the retained baseline (AVA-240).
+            revision = f"{op.operator_instance_id}:runs"
             if not page.runs:
                 return None, None, revision
             run = page.runs[0]
