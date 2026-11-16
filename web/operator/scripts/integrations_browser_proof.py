@@ -649,6 +649,17 @@ def catalog_scenario(
     row = panel.locator('.integration-row[data-integration="asana"]')
     expect(row).to_have_attribute("data-account", "missing")
     assert not service.sessions
+    grid = panel.get_by_role("region", name="Vendor catalog")
+    expect(grid.locator('[data-vendor="asana"]')).to_have_count(1)
+    search = grid.get_by_role("searchbox", name="Search vendors")
+    search.fill("not-a-vendor")
+    expect(grid.locator("[data-vendor]")).to_have_count(0)
+    search.fill("Asana")
+    expect(grid.locator('[data-vendor="asana"]')).to_have_count(1)
+    search.fill("")
+    grid.get_by_label("Filter vendors", exact=True).select_option("connected")
+    expect(grid.locator("[data-vendor]")).to_have_count(0)
+    grid.get_by_label("Filter vendors", exact=True).select_option("all")
     shoot(page, shown, evidence, "10-catalog-missing")
 
     # Provider login failure is returned verbatim, without a credential form.
@@ -666,6 +677,9 @@ def catalog_scenario(
     service.mode = "ready"
     catalog_login(page, row, shown, evidence, "12-catalog-connect")
     assert stored_accounts(grpc_port) == {"asana": True}
+    vendors = panel.get_by_role("region", name="Vendor catalog").locator("[data-vendor]")
+    first_vendor = vendors.first
+    expect(first_vendor).to_have_attribute("data-connected", "true")
     shoot(page, shown, evidence, "13-catalog-connected")
 
     # State comes from the provider, without a failed run or error-text inference.

@@ -19,6 +19,16 @@ export { decodeRunResultValue } from "./stepIo";
 export type { EvaluationRecord, EvaluationResult } from "./evaluations";
 // Integrations: the screen that lists and connects them, and the documents it reads.
 export { IntegrationsPanel } from "./Integrations";
+export {
+  IntegrationVendorGrid,
+  IntegrationConnectionsList,
+  IntegrationGrantPicker,
+} from "./IntegrationCatalog";
+export type {
+  IntegrationVendor,
+  IntegrationConnection,
+  IntegrationGrantProject,
+} from "./IntegrationCatalog";
 export type { IntegrationsPanelProps } from "./Integrations";
 export type { IntegrationsApi } from "./integrationsView";
 export {

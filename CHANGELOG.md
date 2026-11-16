@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Browse built-in integrations in a searchable, connected-first vendor grid shared
+  by the local operator and hosted console. Organization admins can connect once
+  and grant or revoke project access; project tabs show only flow declarations.
+
 - The browser interface's tests and build work again from a checkout on a
   case-insensitive filesystem (the macOS default): two source files no longer
   differ only by letter case.

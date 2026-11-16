@@ -20,6 +20,7 @@ import {
   type IntegrationsApi,
 } from "./integrationsView";
 import { formatAbsoluteTime } from "./timeAgo";
+import { IntegrationVendorGrid } from "./IntegrationCatalog";
 
 const ACCOUNT_LABELS: Record<IntegrationAccountState, string> = {
   connected: "Connected",
@@ -707,9 +708,11 @@ function IntegrationRow({
                 ? ` · ${declaration.url ?? declaration.command?.join(" ")}`
                 : ""}
           </p>
-          <p className="m-0 mt-1 text-[10px] text-secondary [overflow-wrap:anywhere]">
-            Used by {steps.join(", ")}
-          </p>
+          {steps.length > 0 && (
+            <p className="m-0 mt-1 text-[10px] text-secondary [overflow-wrap:anywhere]">
+              Used by {steps.join(", ")}
+            </p>
+          )}
         </div>
         <div className="grid min-w-[9rem] gap-0.5">
           <AccountState state={state} />
@@ -806,6 +809,10 @@ function IntegrationRow({
 }
 
 interface IntegrationsScreenProps {
+  /** Project hosts show only declarations and supply their own grant picker. */
+  declaredOnly?: boolean;
+  renderGrant?: (status: IntegrationStatus) => ReactNode;
+  description?: string;
   /** The integration to bring into view with its connect form open. */
   focusName?: string;
   className?: string;
@@ -841,6 +848,9 @@ export function IntegrationsScreen({
   focusName,
   className = "",
   onClose,
+  declaredOnly = false,
+  renderGrant,
+  description = "The outside services the workflows declare. One account is stored per integration name; a stored key is never shown.",
 }: IntegrationsScreenProps) {
   const view = useIntegrationsView();
   const [connectingName, setConnectingName] = useState<string | undefined>(focusName);
@@ -871,10 +881,7 @@ export function IntegrationsScreen({
             <h1 className="m-0 text-lg font-semibold tracking-[-0.02em] text-ink">
               Integrations
             </h1>
-            <p className="m-0 mt-1 text-xs text-secondary">
-              The outside services the workflows declare. One account is stored per integration
-              name; a stored key is never shown.
-            </p>
+            <p className="m-0 mt-1 text-xs text-secondary">{description}</p>
           </div>
           {onClose && (
             <button
@@ -912,16 +919,68 @@ export function IntegrationsScreen({
                 {missing > 0 ? ` · ${missing} not connected` : ""}
                 {reconnect > 0 ? ` · ${reconnect} reconnect needed` : ""}
               </p>
-              <ul className="m-0 list-none rounded border border-line bg-panel p-0">
-                {view.statuses.map((status) => (
-                  <IntegrationRow
-                    key={status.name}
-                    status={status}
-                    focused={status.name === focusName}
-                    connecting={status.name === connecting}
-                    onConnecting={(open) => setConnectingName(open ? status.name : undefined)}
+              {!declaredOnly &&
+                view.statuses.some((status) => status.declaration.kind === "catalog") && (
+                  <IntegrationVendorGrid
+                    vendors={view.statuses
+                      .filter((status) => status.declaration.kind === "catalog")
+                      .map((status) => ({
+                        name: status.name,
+                        displayName: status.display_name ?? status.name,
+                        connected: status.connected,
+                        enabled: status.login.includes("browser"),
+                      }))}
+                    requestConnectorUrl="https://github.com/avalanche-run/avalanche/issues/new?title=Connector%20request"
+                    renderVendor={(vendor) => {
+                      const status = view.statuses.find((item) => item.name === vendor.name)!;
+                      return (
+                        <ul className="m-0 list-none p-0">
+                          <IntegrationRow
+                            status={status}
+                            focused={status.name === focusName}
+                            connecting={status.name === connecting}
+                            onConnecting={(open) =>
+                              setConnectingName(open ? status.name : undefined)
+                            }
+                          />
+                        </ul>
+                      );
+                    }}
                   />
-                ))}
+                )}
+              <ul
+                className={`m-0 list-none rounded border-line bg-panel p-0 ${declaredOnly || view.statuses.some((status) => status.declaration.kind !== "catalog") ? "border" : ""}`}
+              >
+                {view.statuses
+                  .filter((status) => declaredOnly || status.declaration.kind !== "catalog")
+                  .map((status) =>
+                    renderGrant && status.declaration.kind === "catalog" ? (
+                      <li
+                        key={status.name}
+                        className="integration-row border-b border-line p-4"
+                        data-integration={status.name}
+                        data-account={integrationAccountState(status)}
+                      >
+                        <strong className="text-xs text-ink">
+                          {status.display_name ?? status.name}
+                        </strong>
+                        <span className="ml-3 text-xs text-secondary">
+                          {ACCOUNT_LABELS[integrationAccountState(status)]}
+                        </span>
+                        {renderGrant(status)}
+                      </li>
+                    ) : (
+                      <IntegrationRow
+                        key={status.name}
+                        status={status}
+                        focused={status.name === focusName}
+                        connecting={status.name === connecting}
+                        onConnecting={(open) =>
+                          setConnectingName(open ? status.name : undefined)
+                        }
+                      />
+                    ),
+                  )}
               </ul>
             </>
           )
