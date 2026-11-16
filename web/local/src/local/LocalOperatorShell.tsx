@@ -1,5 +1,5 @@
-import { GrpcWebOperatorApi, OperatorUi } from "@trampoline-ai/operator-ui";
-import type { CatalogSnapshotMsg } from "@trampoline-ai/operator-ui";
+import { GrpcWebOperatorApi, OperatorUi } from "@avalanche-run/operator-ui";
+import type { CatalogSnapshotMsg } from "@avalanche-run/operator-ui";
 import { useState } from "react";
 
 const avalancheDiamond = new URL(

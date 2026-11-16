@@ -17,7 +17,7 @@ corresponding `v`-prefixed tag. Normalize it to:
 - npm package and changelog version: hyphenated (`0.1.0-rc3`)
 - Git tag: `v`-prefixed and hyphenated (`v0.1.0-rc3`)
 
-Avalanche and `@trampoline-ai/operator-ui` always release together from this tag.
+Avalanche and `@avalanche-run/operator-ui` always release together from this tag.
 Never create a separate operator UI tag or bump only the UI package. The `Release`
 workflow validates and builds both packages, publishes to PyPI after approval of the
 `pypi` environment, publishes the operator UI only after PyPI succeeds, and creates

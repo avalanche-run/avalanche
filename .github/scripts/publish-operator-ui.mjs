@@ -9,7 +9,7 @@ if (!version || !["latest", "next"].includes(tag) || !archive) {
   );
 }
 
-const spec = `@trampoline-ai/operator-ui@${version}`;
+const spec = `@avalanche-run/operator-ui@${version}`;
 const result = spawnSync("npm", ["view", spec, "dist.integrity", "--json"], {
   encoding: "utf8",
 });

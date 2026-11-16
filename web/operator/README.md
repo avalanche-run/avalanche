@@ -1,4 +1,4 @@
-# @trampoline-ai/operator-ui
+# @avalanche-run/operator-ui
 
 Embeddable React UI for inspecting and controlling Avalanche workflows. The package provides the
 workflow graph, run list, run controls, logs, node details, and agent details; the embedding host
@@ -15,14 +15,14 @@ The package is published through GitHub Packages. Configure the scope and an aut
 outside source control:
 
 ```ini
-@trampoline-ai:registry=https://npm.pkg.github.com
+@avalanche-run:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
 ```
 
 Then install the package with its React peer dependencies:
 
 ```bash
-pnpm add @trampoline-ai/operator-ui react react-dom
+pnpm add @avalanche-run/operator-ui react react-dom
 ```
 
 ## Embed
@@ -30,9 +30,9 @@ pnpm add @trampoline-ai/operator-ui react react-dom
 Import the package stylesheet once, then render `OperatorUi` with a typed host:
 
 ```tsx
-import "@trampoline-ai/operator-ui/styles.css";
-import { OperatorUi } from "@trampoline-ai/operator-ui";
-import type { OperatorUiHost } from "@trampoline-ai/operator-ui";
+import "@avalanche-run/operator-ui/styles.css";
+import { OperatorUi } from "@avalanche-run/operator-ui";
+import type { OperatorUiHost } from "@avalanche-run/operator-ui";
 
 const host: OperatorUiHost = {
   api: operatorApi,

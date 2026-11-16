@@ -1,4 +1,4 @@
-import "@trampoline-ai/operator-ui/styles.css";
+import "@avalanche-run/operator-ui/styles.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 

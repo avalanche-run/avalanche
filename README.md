@@ -348,7 +348,7 @@ rejected by Uvicorn before the request reaches the API.
 
 ### Embedding the operator UI
 
-`@trampoline-ai/operator-ui` is the embeddable React package for an Avalanche operator
+`@avalanche-run/operator-ui` is the embeddable React package for an Avalanche operator
 interface. It exports `OperatorUi`, `WorkflowWorkspace`, `GrpcWebOperatorApi`, and their
 typed host APIs. The embedding host owns its `OperatorApi` implementation and presentation
 configuration.
@@ -357,19 +357,19 @@ After a version is released, configure the GitHub Packages scope and an authenti
 outside source control:
 
 ```ini
-@trampoline-ai:registry=https://npm.pkg.github.com
+@avalanche-run:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
 ```
 
 Then install that version and its styles:
 
 ```bash
-pnpm add @trampoline-ai/operator-ui@<version>
+pnpm add @avalanche-run/operator-ui@<version>
 ```
 
 ```tsx
-import "@trampoline-ai/operator-ui/styles.css";
-import { OperatorUi } from "@trampoline-ai/operator-ui";
+import "@avalanche-run/operator-ui/styles.css";
+import { OperatorUi } from "@avalanche-run/operator-ui";
 ```
 
 Avalanche does not provide a remote operator endpoint or authentication boundary for an
@@ -377,7 +377,7 @@ embedding host.
 
 ### Releasing Avalanche and the operator UI
 
-The Python distribution and `@trampoline-ai/operator-ui` share one version and one
+The Python distribution and `@avalanche-run/operator-ui` share one version and one
 Avalanche `vX.Y.Z` release tag. There are no separate operator UI releases, even when
 only the backend changes. Use the UI version matching your Avalanche operator.
 
