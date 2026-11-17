@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Missing-provider guidance now names Avalanche Cloud (Trampoline Delta) and
+  `uv tool install trampoline-delta` as an example, then asks users to sign in
+  and run `ava connect <name>`. Provider selection stays host-neutral; the SDK
+  does not import Delta.
+
 - Browse built-in integrations in a searchable, connected-first vendor grid shared
   by the local operator and hosted console. Organization admins can connect once
   and grant or revoke project access; project tabs show only flow declarations.

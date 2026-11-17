@@ -1404,7 +1404,11 @@ def test_catalog_without_provider_imports_lists_and_reports_setup_once(tmp_path)
     with _operator(tmp_path / "catalog.db", address, {}, log, fixture) as provider:
         (status,) = provider.list_integrations()
         message = status.provider_error
-        assert message and "No integration provider is installed" in message
+        assert message == (
+            "Built-in integrations need a provider, for example Avalanche Cloud "
+            "(Trampoline Delta): uv tool install trampoline-delta. Then sign in and "
+            "use `ava connect <name>`."
+        )
         listed = _connect(address, "--json")
         assert listed.returncode == 0
         assert json.loads(listed.stdout)[0]["kind"] == "catalog"

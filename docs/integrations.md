@@ -39,6 +39,12 @@ ava connect --json                 # declared entries and account states
 ava disconnect asana               # also works for Connectors and custom MCP
 ```
 
+With no provider installed, setup guidance names Avalanche Cloud (Trampoline
+Delta) as an example: `uv tool install trampoline-delta`. Then sign in and use
+`ava connect <name>`. This is setup text only: the SDK does not import Delta or
+select a provider for you. Connecting an account does not promise that a provider
+supports tool execution on every host.
+
 A provider package registers a zero-argument factory in the Python entry-point
 group `avalanche.integration_providers`. With more than one installed, set
 `AVALANCHE_INTEGRATION_PROVIDER` to the entry name; the SDK never silently picks

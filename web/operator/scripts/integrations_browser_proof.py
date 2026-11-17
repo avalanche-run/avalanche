@@ -817,7 +817,7 @@ def main() -> None:
                 panel = open_integrations(page)
                 row = panel.locator('.integration-row[data-integration="asana"]')
                 message = json.loads(ava_connect(grpc_port, "--json"))[0]["provider_error"]
-                assert "No integration provider is installed" in message
+                assert "Built-in integrations need a provider" in message
                 expect(row.get_by_role("alert")).to_have_text(message)
                 shoot(page, shown, evidence, "21-catalog-no-provider")
             with operator(

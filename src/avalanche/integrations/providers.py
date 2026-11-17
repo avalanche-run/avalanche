@@ -105,8 +105,9 @@ def integration_provider() -> IntegrationProvider:
     selected = os.environ.get("AVALANCHE_INTEGRATION_PROVIDER")
     if not installed:
         raise ProviderNotInstalledError(
-            "No integration provider is installed. Install a catalog provider package "
-            "and follow its sign-in instructions, then use `ava connect <name>`."
+            "Built-in integrations need a provider, for example Avalanche Cloud "
+            "(Trampoline Delta): uv tool install trampoline-delta. Then sign in and "
+            "use `ava connect <name>`."
         )
     choices = ", ".join(entry.name for entry in installed)
     if selected is None and len(installed) != 1:
