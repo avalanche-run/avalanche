@@ -23,7 +23,12 @@ class Research(ava.Signature):
     findings: list[str] = ava.OutputField()
 
 
-CALLS = [("asana__search", {"query": "refunds", "limit": 2})]
+CALLS = [
+    (
+        "asana__search_tasks_in_workspace",
+        {"workspace_gid": "1200000000000001", "assignee": "me", "limit": 2},
+    )
+]
 
 
 def _scripted(code: str) -> ava.runtimes.PredictRLM:
@@ -41,7 +46,10 @@ async def _research(payload: Topic, agent: ava.Agent) -> list[str]:
 
 @ava.agent_step(
     Research,
-    runtime=_scripted("SUBMIT(findings=[str(await asana__search(query='refunds', limit=2))])"),
+    runtime=_scripted(
+        "SUBMIT(findings=[str(await asana__search_tasks_in_workspace("
+        "workspace_gid='1200000000000001', assignee='me', limit=2))])"
+    ),
     integrations=[asana],
     retries=2,
 )
@@ -84,14 +92,16 @@ def on_openai():
     return research_on_openai()
 
 
-def asana__search(query: str, limit: int = 2) -> str:
+def asana__search_tasks_in_workspace(
+    workspace_gid: str, assignee: str = "me", limit: int = 2
+) -> str:
     return "own tool"
 
 
 @ava.agent_step(
     Research,
     runtime=_scripted("SUBMIT(findings=[])"),
-    tools=[asana__search],
+    tools=[asana__search_tasks_in_workspace],
     integrations=[asana],
     retries=0,
 )
@@ -106,7 +116,10 @@ def clash():
 
 @ava.agent_step(
     Research,
-    runtime=_scripted("SUBMIT(findings=[str(await asana__search(query='late'))])"),
+    runtime=_scripted(
+        "SUBMIT(findings=[str(await asana__search_tasks_in_workspace("
+        "workspace_gid='1200000000000001', assignee='me'))])"
+    ),
     integrations=[asana],
     retries=0,
 )

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- The catalog example uses Nango's read-only Asana `search-tasks-in-workspace`
+  action with a workspace ID and assignee filter. Its operator and browser
+  proofs exercise the real hyphenated tool name and task result shape.
+
 ## 0.20.15
 
 - The terminal start/cancel/history smoke test now waits for the displayed

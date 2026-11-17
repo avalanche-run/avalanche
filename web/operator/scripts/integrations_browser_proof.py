@@ -83,12 +83,14 @@ def free_port() -> int:
 class KbServer:
     """The MCP test server as a separate process that serves HTTP and wants a key."""
 
-    def __init__(self, journal: Path, *, key: str = KB_KEY) -> None:
+    def __init__(
+        self, journal: Path, *, key: str = KB_KEY, server: Path = MCP_SERVER
+    ) -> None:
         self._journal = journal
         port = free_port()
         self.url = f"http://127.0.0.1:{port}/mcp"
         self._process = subprocess.Popen(
-            [sys.executable, str(MCP_SERVER), "--http", str(port), key],
+            [sys.executable, str(server), "--http", str(port), key],
             env={**os.environ, "MCP_TEST_SERVER_JOURNAL": str(journal)},
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -774,7 +776,10 @@ def main() -> None:
     grpc_port, web_port = free_port(), free_port()
     crm = CrmService()
     kb = KbServer(kb_journal)
-    catalog_kb = KbServer(evidence / "catalog-kb.jsonl", key=CATALOG_PASS)
+    catalog_kb = KbServer(
+        evidence / "catalog-kb.jsonl", key=CATALOG_PASS,
+        server=PACKAGE / "test/fixtures/catalog_test_server.py",
+    )
     catalog = CatalogService(catalog_kb, evidence / "provider.jsonl")
     provider_path = installed_catalog_provider()
     catalog_fixture = PACKAGE / "test/fixtures/catalog_tools_flow.py"

@@ -25,8 +25,13 @@ async def research(topic: str, *, agent: ava.Agent) -> list[str]:
     return (await agent(topic=topic)).outputs.findings
 ```
 
-`ava.catalog.asana` is the same import. `ava.Catalog("asana", allow=["search"])`
-selects tools explicitly, or names an entry newer than the installed import list.
+`ava.catalog.asana` is the same import.
+`ava.Catalog("asana", allow=["search-tasks-in-workspace"])` selects tools explicitly,
+or names an entry newer than the installed import list. Use the provider's original
+tool names in `allow`; agent callables replace hyphens with underscores, for example
+`asana__search_tasks_in_workspace(workspace_gid="1200000000000001", assignee="me",
+limit=2)`. Nango's action searches tasks in that workspace using filters; its input
+schema does not expose a text-query field.
 Built-ins are for agent steps only. Display names and image addresses come from
 an installed provider, not workflow code. Importing or describing this workflow
 loads no provider and contacts no service. Connect and run it under the local

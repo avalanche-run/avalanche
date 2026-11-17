@@ -217,12 +217,19 @@ def _operator(
 class _McpServer:
     """The MCP test server as a separate process that serves HTTP and wants a key."""
 
-    def __init__(self, journal: Path, key: str, expired: Path | None = None) -> None:
+    def __init__(
+        self,
+        journal: Path,
+        key: str,
+        expired: Path | None = None,
+        *,
+        server: Path = _MCP_SERVER,
+    ) -> None:
         self.journal = journal
         port = _free_port()
         self.url = f"http://127.0.0.1:{port}/mcp"
         self._process = subprocess.Popen(
-            [sys.executable, str(_MCP_SERVER), "--http", str(port), key],
+            [sys.executable, str(server), "--http", str(port), key],
             env={
                 **os.environ,
                 "MCP_TEST_SERVER_JOURNAL": str(journal),
@@ -1065,7 +1072,12 @@ class _CatalogService:
 
     def __init__(self, root: Path) -> None:
         self.expired_pass = root / "expired-pass"
-        self.mcp = _McpServer(root / "catalog-calls.jsonl", _KB_KEY, self.expired_pass)
+        self.mcp = _McpServer(
+            root / "catalog-calls.jsonl",
+            _KB_KEY,
+            self.expired_pass,
+            server=_FIXTURES / "catalog_test_server.py",
+        )
         self.mode = "ready"
         self.connected = False
         self.connected_at: float | None = None
@@ -1210,7 +1222,12 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
     for package in ("claude_agent_sdk", "agents"):
         assert importlib.util.find_spec(package), f"Install the {package} proof extra"
     fixture = _FIXTURES / "catalog_tools_flow.py"
-    calls = [("asana__search", {"query": "refunds", "limit": 2})]
+    calls = [
+        (
+            "asana__search_tasks_in_workspace",
+            {"workspace_gid": "1200000000000001", "assignee": "me", "limit": 2},
+        )
+    ]
     models = ScriptedModelApis(calls, answer_field="findings")
     service = _CatalogService(tmp_path)
     state_db, log = tmp_path / "catalog.db", tmp_path / "operator.log"
@@ -1308,14 +1325,29 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
                 assert "refunds-0" in answer and "refunds-1" in answer
                 assert len(service.sessions) == count
                 shown.append(repr(run))
-            assert [call["query"] for call in service.mcp.entries("call")] == ["refunds"] * 3
+            assert (
+                service.mcp.entries("call")
+                == [
+                    {
+                        "event": "call",
+                        "tool": "search-tasks-in-workspace",
+                        "workspace_gid": "1200000000000001",
+                        "assignee": "me",
+                        "limit": 2,
+                    }
+                ]
+                * 3
+            )
             assert journal.read_text().splitlines() == ["body started"] * 3
 
             # Definition-time names are sound, but remote tool names are checked at step start.
             clash = _finished(provider, "clash", journal, {"journal": str(journal)})
             assert clash.status is RunStatus.FAILED
             (node,) = clash.nodes.values()
-            assert "asana__search" in node.error and "several tools" in node.error
+            assert (
+                "asana__search_tasks_in_workspace" in node.error
+                and "several tools" in node.error
+            )
             assert len(journal.read_text().splitlines()) == 3
             assert len(service.sessions) == 4
 
@@ -1388,7 +1420,7 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
                 0,
             )
         stored = _stored_text_outside_accounts(state_db)
-        assert '"name":"asana__search"' in stored
+        assert '"name":"asana__search_tasks_in_workspace"' in stored
         for text in (stored, log.read_text(), service.journal.read_text(), *shown):
             assert _KB_KEY not in text
     finally:
