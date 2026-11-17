@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.15
 
 - The terminal start/cancel/history smoke test now waits for the displayed
   `succeeded` status introduced by #688, rather than the old `success` label.
