@@ -23,12 +23,14 @@ def _tmux(*args: str) -> str:
     ).stdout
 
 
-def _wait_for(session: str, predicate) -> str:
+def _wait_for(session: str, predicate, *, stable: bool = False) -> str:
     deadline = time.monotonic() + 15
+    previous = None
     while True:
         screen = _tmux("capture-pane", "-t", session, "-p")
-        if predicate(screen):
+        if predicate(screen) and (not stable or screen == previous):
             return screen
+        previous = screen
         assert time.monotonic() < deadline, f"Expected terminal state did not appear:\n{screen}"
         time.sleep(0.1)
 
@@ -180,7 +182,11 @@ def test_terminal_agent_drilldown_and_return(tui_session):
     _tmux("send-keys", "-t", tui_session, "e")
     _wait_for(tui_session, lambda text: "Filter active records" in text)
     _tmux("send-keys", "-t", tui_session, "Right", "Enter")
-    screen = _wait_for(tui_session, lambda text: '"active_count": 1' in text)
+    screen = _wait_for(
+        tui_session,
+        lambda text: "AGENT OUTPUT" in text and '"active_count": 1' in text,
+        stable=True,
+    )
     assert "SANDBOX_STDOUT_SENTINEL" not in screen
     _tmux("send-keys", "-t", tui_session, "Escape")
     _wait_for(tui_session, lambda text: "Agent iteration.recorded" in text)
