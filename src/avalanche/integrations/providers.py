@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
+from contextvars import ContextVar
 from importlib.metadata import entry_points
 from typing import Literal, Protocol, runtime_checkable
 
@@ -76,6 +77,24 @@ class CatalogToolSession(BaseModel):
     url: str = Field(pattern=r"^https?://")
     pass_value: SecretStr = Field(repr=False, exclude=True)
     expires_at: float
+
+
+_DELIVERED_SESSION: ContextVar[tuple[CatalogToolSession, tuple[str, ...]] | None] = ContextVar(
+    "avalanche_catalog_tool_session", default=None
+)
+
+
+def install_tool_session(session: CatalogToolSession, names: tuple[str, ...]) -> None:
+    """Install an already authorized session in a host-owned step process.
+
+    Like install_account_source, this is a host boundary, not workflow input.
+    It never loads a member login or renews the capability.
+    """
+    _DELIVERED_SESSION.set((session, names))
+
+
+def delivered_tool_session() -> tuple[CatalogToolSession, tuple[str, ...]] | None:
+    return _DELIVERED_SESSION.get()
 
 
 @runtime_checkable

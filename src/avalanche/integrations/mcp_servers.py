@@ -50,7 +50,7 @@ from .core import (
     StepAccounts,
     _no_account_store,
 )
-from .providers import CatalogToolSession, integration_provider
+from .providers import CatalogToolSession, delivered_tool_session, integration_provider
 
 if TYPE_CHECKING:
     import httpx2
@@ -129,9 +129,34 @@ class MCPConnections:
     ) -> None:
         self._step_name = step_name
         self._connect_command = accounts.connect_command
+        self._declarations = tuple(servers)
+        self._accounts = accounts
+        self._delivered = delivered_tool_session()
+        self._servers: tuple[_Server, ...] = ()
+        self._resolved: concurrent.futures.Future[tuple[_Server, ...]] = (
+            concurrent.futures.Future()
+        )
+        self._thread = threading.Thread(
+            target=self._run, name=f"avalanche-mcp-{step_name}", daemon=True
+        )
+        self._started = threading.Event()
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._stop: asyncio.Event | None = None
+        self._closed = False
+        self._unavailable: IntegrationError | None = None
+
+    def _resolve_servers(self) -> tuple[_Server, ...]:
+        # Provider methods are synchronous. Run them before starting the existing
+        # MCP thread's event loop, never nested inside the agent's running loop.
+        step_name, servers, accounts = self._step_name, self._declarations, self._accounts
         builtins = tuple(server.name for server in servers if isinstance(server, Catalog))
         session = None
-        if builtins:
+        delivered = self._delivered
+        if builtins and delivered is not None:
+            session, names = delivered
+            if not set(builtins) <= set(names):
+                raise IntegrationError("The host did not authorize this step’s built-ins.")
+        elif builtins:
             provider = integration_provider()
             connected = {item.name: item for item in provider.connections()}
             missing = [name for name in builtins if name not in connected]
@@ -169,15 +194,7 @@ class MCPConnections:
                         else None,
                     )
                 )
-        self._servers = tuple(resolved)
-        self._thread = threading.Thread(
-            target=self._run, name=f"avalanche-mcp-{step_name}", daemon=True
-        )
-        self._started = threading.Event()
-        self._loop: asyncio.AbstractEventLoop | None = None
-        self._stop: asyncio.Event | None = None
-        self._closed = False
-        self._unavailable: MCPServerUnavailableError | None = None
+        return tuple(resolved)
 
     def raise_if_unavailable(self) -> None:
         """A model cannot turn an expired pass or relay outage into step success."""
@@ -196,7 +213,7 @@ class MCPConnections:
         """
         self._thread.start()
         tools: list[IntegrationTool] = []
-        for server in self._servers:
+        for server in await asyncio.wrap_future(self._resolved):
             offered = await asyncio.wrap_future(server.ready)
             tools.extend(self._tool(server, tool) for tool in offered)
         return tuple(tools)
@@ -229,7 +246,16 @@ class MCPConnections:
 
     def _run(self) -> None:
         try:
-            asyncio.run(self._serve_all())
+            if not self._resolved.set_running_or_notify_cancel():
+                return
+            try:
+                self._servers = self._resolve_servers()
+            except Exception as error:
+                self._resolved.set_exception(error)
+                return
+            self._resolved.set_result(self._servers)
+            if not self._closed:
+                asyncio.run(self._serve_all())
         finally:
             # Whatever ended the loop, nothing is left waiting for a server.
             self._started.set()
@@ -333,13 +359,19 @@ class MCPConnections:
             server.statuses.append(response.status_code)
             if server.session is not None and response.status_code in (401, 403):
                 self._catalog_failure("The catalog tool session expired; retry the step.")
+            if server.session is not None and response.status_code == 409:
+                self._unavailable = IntegrationNotConnectedError(
+                    self._step_name,
+                    [server.declaration.name],
+                    self._connect_command or "ava connect",
+                )
 
         # The library follows a redirect only within the server's own origin,
         # so the account's header never leaves for another host.
         http = await stack.enter_async_context(
             httpx2.AsyncClient(
                 auth=(
-                    _session_auth(server.session)
+                    _session_auth(server.session, server.declaration.name)
                     if server.session is not None
                     else None
                     if server.account is None
@@ -580,7 +612,7 @@ class MCPConnections:
         return _text(result)
 
 
-def _session_auth(session: CatalogToolSession) -> httpx2.Auth:
+def _session_auth(session: CatalogToolSession, name: str) -> httpx2.Auth:
     import httpx2
 
     class SessionAuth(httpx2.Auth):
@@ -590,6 +622,7 @@ def _session_auth(session: CatalogToolSession) -> httpx2.Auth:
                     "The catalog tool session expired; retry the step."
                 )
             request.headers["Authorization"] = "Bearer " + session.pass_value.get_secret_value()
+            request.headers["X-Avalanche-Integration"] = name
             yield request
 
     return SessionAuth()

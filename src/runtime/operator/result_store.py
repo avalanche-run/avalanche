@@ -480,7 +480,10 @@ class ResultStore:
         descriptor: int,
         expected_identity: tuple[int, int] | None = None,
     ) -> _OpenedBundle:
-        duplicate = os.dup(descriptor)
+        # dup() shares the worker's open directory description, including its
+        # enumeration cursor and filesystem directory cache. Reopen the same
+        # inode through its retained capability, not through a replaceable path.
+        duplicate = os.open(".", _directory_flags(), dir_fd=descriptor)
         try:
             _validate_bundle_metadata(os.fstat(duplicate), expected_identity)
         except BaseException:

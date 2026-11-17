@@ -123,7 +123,7 @@ def stop_run_process(process: RunProcess, *, grace: float) -> bool:
                 f"previous operator: {exc}. Stop it, then start the operator again."
             ) from exc
         deadline = time.monotonic() + grace
-        while _live_members(process.process_group):
+        while process_group_has_live_members(process.process_group):
             if time.monotonic() >= deadline:
                 break
             time.sleep(_POLL_INTERVAL_SECONDS)
@@ -133,6 +133,15 @@ def stop_run_process(process: RunProcess, *, grace: float) -> bool:
         f"Run process group {process.process_group} left by a previous operator is still "
         "alive after SIGKILL. Stop it, then start the operator again."
     )
+
+
+def process_group_has_live_members(process_group: int) -> bool:
+    """Inspect the group's running members; unreadable process state raises.
+
+    Both live teardown and restart cleanup use this platform-aware reader so
+    Linux can distinguish zombies without depending on an installed ps command.
+    """
+    return bool(_live_members(process_group))
 
 
 def _live_members(process_group: int) -> tuple[_ProcessInfo, ...]:

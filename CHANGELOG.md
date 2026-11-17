@@ -9,6 +9,15 @@
   fork handlers write diagnostics to stderr. Upgrade grpcio to 1.85.1 or newer
   without changing process-wide fork settings.
 
+- Local operator teardown reads Linux process state directly from `/proc`, like
+  restart cleanup, so zombie-only worker groups can finish successfully on minimal
+  installations without `ps`. Live descendants and unreadable state still block success.
+
+- Local runs retain coordinator, protocol, and result-storage failure causes in
+  their terminal activity instead of reporting only an unexplained run failure.
+  Result acceptance reopens the retained directory capability so readers do not
+  inherit the worker's directory-enumeration state.
+
 - Terminal resource panels keep their in-flight pages when live updates select a
   newer run. Run-history cursors retain a separate bounded summary cut, so
   background state synchronization does not expire a reader's next page.
@@ -17,6 +26,9 @@
   `uv tool install trampoline-delta` as an example, then asks users to sign in
   and run `ava connect <name>`. Provider selection stays host-neutral; the SDK
   does not import Delta.
+- Hosts can deliver a short-lived catalog tool session directly to an isolated
+  step, without installing a member login there. Catalog transports identify
+  each declared built-in separately and report revoked accounts as missing.
 
 - Browse built-in integrations in a searchable, connected-first vendor grid shared
   by the local operator and hosted console. Organization admins can connect once

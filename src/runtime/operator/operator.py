@@ -14,6 +14,7 @@ import queue
 import signal
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -177,7 +178,9 @@ from .results import (
 from .run_processes import (
     DEFAULT_CANCEL_GRACE_SECONDS,
     RunProcess,
+    RunProcessLookupError,
     identify_run_process,
+    process_group_has_live_members,
     stop_run_process,
 )
 from .run_topology import expand_run
@@ -3442,6 +3445,7 @@ class Operator:
                     if reducer is None:
                         reducer = self._summary_reducers[run_id] = _SummaryReducer()
                     summary_changed = False
+                    terminal_reason: str | None = None
                     changed_node_ids: tuple[str, ...] = ()
                     status_node_ids: tuple[str, ...] | None = None
                     trace_node_ids: tuple[str, ...] = ()
@@ -3666,6 +3670,19 @@ class Operator:
                                 "failed": RunStatus.FAILED,
                                 "cancelled": RunStatus.CANCELLED,
                             }[effective_status]
+                            if effective_status == "failed":
+                                terminal_reason = (
+                                    record_failure.message
+                                    if record_failure is not None
+                                    else event["error"]
+                                )
+                                if run.error_code is None:
+                                    run.error_code = (
+                                        "result_store_failed"
+                                        if record_failure is not None
+                                        else "coordinator_failed"
+                                    )
+                                    run.error_message = error_message(run.error_code)
                             if record_failure is not None:
                                 try:
                                     self._append_log_locked(run, record_failure)
@@ -3694,6 +3711,7 @@ class Operator:
                         agent_events=agent_events,
                         classifier_events=classifier_events,
                         log_entry=log_entry,
+                        terminal_reason=terminal_reason,
                     )
         except BaseException as error:
             if stored_result is not None:
@@ -4125,6 +4143,10 @@ class Operator:
                     RunStatus.CANCELLED if handle.cancel_event.is_set() else RunStatus.FAILED
                 )
                 run.ended_at = time.monotonic()
+                if run.status == RunStatus.FAILED:
+                    run.error_code = "coordinator_protocol"
+                    run.error_step = None
+                    run.error_message = error_message(run.error_code)
                 log_entry = None
                 try:
                     self._append_log_locked(run, entry)
@@ -4138,6 +4160,7 @@ class Operator:
                     changed_node_ids=changed_node_ids,
                     status_node_ids=changed_node_ids,
                     log_entry=log_entry,
+                    terminal_reason=entry.message,
                 )
         self._result_store.discard(handle.result_bundle)
         if notifications is not None:
@@ -4168,6 +4191,10 @@ class Operator:
             if run is None or self._closed:
                 return
             run.status = RunStatus.CANCELLED if cancelled else RunStatus.FAILED
+            if not cancelled:
+                run.error_code = "coordinator_exited"
+                run.error_step = None
+                run.error_message = error_message(run.error_code)
             run.ended_at = time.monotonic()
             log_entry = None
             if not cancelled:
@@ -4182,6 +4209,7 @@ class Operator:
                 changed_node_ids=changed_node_ids,
                 status_node_ids=changed_node_ids,
                 log_entry=log_entry,
+                terminal_reason=entry.message,
             )
         self._wait_for_notifications(notifications)
 
@@ -5845,6 +5873,13 @@ def _coordinator_group_has_live_members(process_group: int) -> bool:
         return False
     if group_exists is None:
         return True
+    if sys.platform == "linux":
+        # Minimal Linux installations need no ps executable: use the same
+        # /proc reader as restart cleanup, including its zombie classification.
+        try:
+            return process_group_has_live_members(process_group)
+        except RunProcessLookupError:
+            return True
     try:
         completed = subprocess.run(
             ["/bin/ps", "-axo", "pgid=,stat="],

@@ -25,7 +25,7 @@ from runtime.operator import Operator
 from runtime.operator import operator as operator_module
 from runtime.operator import result_store as result_store_module
 from runtime.operator.client import GrpcStateProvider
-from runtime.operator.models import LogLevel, RunState, RunStatus
+from runtime.operator.models import LogLevel, NodeStatus, RunState, RunStatus
 from runtime.operator.operator import RunAlreadyExistsError, RunResultUnavailableError
 from runtime.operator.result_store import (
     MAX_RESULT_MANIFEST_BYTES,
@@ -294,6 +294,7 @@ def result_client(tmp_path):
         "        'workspace': ava.Workspace.from_path(Path(__file__).parent / 'workspace'),\n"
         "    }\n"
         "@ava.workflow\ndef result_bundle():\n    return bundle()\n"
+        "@ava.workflow(output=Report)\ndef invalid_result():\n    return bundle()\n"
         "@ava.source\ndef fail():\n    raise ValueError('failed result')\n"
         "@ava.workflow\ndef failed_result():\n    return fail()\n"
         "@ava.source\ndef slow():\n    time.sleep(10)\n    return 'finished'\n"
@@ -352,8 +353,24 @@ def test_failed_and_cancelled_runs_never_expose_results_or_leave_pending_files(r
     client.cancel_run(cancelled)
     assert _wait_for_terminal(client, cancelled).status == RunStatus.CANCELLED
     failed = client.start_run("failed_result")
-    assert _wait_for_terminal(client, failed).status == RunStatus.FAILED
-    for run_id in (cancelled, failed):
+    failed_run = _wait_for_terminal(client, failed)
+    assert failed_run is not None and failed_run.status == RunStatus.FAILED
+    assert failed_run.terminal_seal is not None
+    assert failed_run.terminal_seal.reason == "ValueError: failed result"
+    # Output validation runs after the node succeeds. Preserve its run-level
+    # cause across the real worker/queue/gRPC boundary, not a fabricated event.
+    invalid = client.start_run("invalid_result")
+    invalid_run = _wait_for_terminal(client, invalid)
+    assert invalid_run is not None and invalid_run.status == RunStatus.FAILED
+    assert invalid_run.terminal_seal is not None
+    assert invalid_run.terminal_seal.reason is not None
+    assert all(node.status == NodeStatus.SUCCESS for node in invalid_run.nodes.values())
+    assert invalid_run.error_code == "coordinator_failed"
+    assert "Report" in invalid_run.terminal_seal.reason
+    assert "ValidationError" in invalid_run.terminal_seal.reason
+    stored_run = operator.get_run(invalid)
+    assert stored_run is not None and stored_run.terminal_seal == invalid_run.terminal_seal
+    for run_id in (cancelled, failed, invalid):
         with pytest.raises(grpc.RpcError) as unavailable:
             client.get_run_result(run_id)
         assert unavailable.value.code() == grpc.StatusCode.FAILED_PRECONDITION

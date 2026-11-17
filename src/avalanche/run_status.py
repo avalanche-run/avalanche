@@ -67,6 +67,10 @@ ERROR_TEMPLATES = {
     "wait_expired": "A wait expired",
     "run_rejected": "Rejected at admission",
     "integrity": "Projection integrity fault",
+    "coordinator_failed": "Run coordinator failed; see run activity",
+    "coordinator_protocol": "Run coordinator protocol failed; see run activity",
+    "coordinator_exited": "Run coordinator exited without an outcome; see run activity",
+    "result_store_failed": "Workflow result could not be recorded; see run activity",
     "unknown": "Run failed",
 }
 _ERROR_TYPE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")

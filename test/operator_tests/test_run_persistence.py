@@ -18,6 +18,7 @@ import grpc
 import pytest
 
 import avalanche as ava
+from runtime.operator import operator as operator_module
 from runtime.operator import run_processes
 from runtime.operator.client import GrpcStateProvider
 from runtime.operator.input_files import InputFileStaging, StagedInputFile
@@ -2386,11 +2387,19 @@ def test_run_processes_are_identified_from_proc_without_ps(monkeypatch):
         recorded = identify_run_process(sleeper.pid)
         assert recorded is not None
         assert recorded.process_group == sleeper.pid
+        assert operator_module._coordinator_group_has_live_members(sleeper.pid)
         assert stop_run_process(recorded, grace=1.0) is True
+        # Do not reap yet: a container's PID 1 may retain exactly this zombie.
+        # killpg still sees its group, but it can no longer execute workflow code.
+        zombie = run_processes._proc_process(sleeper.pid)
+        assert zombie is not None and zombie.state == "Z"
+        assert operator_module._coordinator_group_exists(sleeper.pid) is True
+        assert not operator_module._coordinator_group_has_live_members(sleeper.pid)
         assert sleeper.wait(timeout=5) == -signal.SIGTERM
     finally:
         if sleeper.poll() is None:
             sleeper.kill()
+        sleeper.wait(timeout=5)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="reads /proc")
