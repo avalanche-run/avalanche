@@ -4,26 +4,24 @@ Embeddable React UI for inspecting and controlling Avalanche workflows. The pack
 workflow graph, run list, run controls, logs, node details, and agent details; the embedding host
 owns navigation, the operator connection, and presentation.
 
-This package releases with Avalanche from the same commit and release tag. Use the
-version matching your operator: stable versions are identical, while Avalanche
-`0.4.0rc1` corresponds to operator UI `0.4.0-rc1` (`a`/`b` map to `alpha`/`beta`).
-Stable releases use the npm `latest` tag; prereleases use `next`.
+This source package shares Avalanche's version and release tag. It is no longer
+published to GitHub Packages; 0.20.15 is the last published version.
 
-## Install
+## Consume from source
 
-The package is published through GitHub Packages. Configure the scope and an authenticated token
-outside source control:
+Add `web/operator` to the embedding host's pnpm workspace and declare
+`"@avalanche-run/operator-ui": "workspace:*"` with React and React DOM peers.
+Install with `pnpm install --frozen-lockfile`, then build the UI before
+the host:
 
-```ini
-@avalanche-run:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
+```sh
+pnpm --filter @avalanche-run/operator-ui run build
 ```
 
-Then install the package with its React peer dependencies:
-
-```bash
-pnpm add @avalanche-run/operator-ui react react-dom
-```
+The package exports its built `dist` files. Delta's console build performs this
+UI build automatically; Avalanche's local host uses its web workspace. No npm
+registry scope or token is needed. The release still packs a pinned-builder
+archive as checksummed staging evidence, not for registry publication.
 
 ## Embed
 

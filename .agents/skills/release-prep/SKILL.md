@@ -17,11 +17,13 @@ corresponding `v`-prefixed tag. Normalize it to:
 - npm package and changelog version: hyphenated (`0.1.0-rc3`)
 - Git tag: `v`-prefixed and hyphenated (`v0.1.0-rc3`)
 
-Avalanche and `@avalanche-run/operator-ui` always release together from this tag.
-Never create a separate operator UI tag or bump only the UI package. The `Release`
-workflow validates and builds both packages, publishes to PyPI after approval of the
-`pypi` environment, publishes the operator UI only after PyPI succeeds, and creates
-the GitHub Release only after both publishes succeed.
+Avalanche and the source `@avalanche-run/operator-ui` keep one version and tag.
+The UI is no longer npm-published; 0.20.15 was the last GitHub Packages version.
+Hosts consume the UI through an in-repo pnpm workspace link. Do not create a
+separate UI release. In the monorepo, follow the root Delta release skill and
+use `scripts/releases/bump-version.py`; the public mirror is not a publisher.
+The release workflow stages a reproducible UI archive as evidence and publishes
+Python distributions to PyPI after production verification and smoke.
 
 Do not perform any release action until all preflight checks pass and the user
 explicitly approves the proposed version. Do not switch branches, stash,
@@ -148,7 +150,9 @@ src/avalanche/__init__.py version: <package-version>
 CHANGELOG.md heading: <changelog-version>
 uv.lock editable package version: <package-version>
 web/operator/package.json version: <changelog-version>
-A release commit containing only those five files will be created and pushed to `origin/main`; only then will it be tagged and the tag pushed to `origin`. That tag publishes both packages.
+A release commit containing only those five files will be created and pushed
+to `origin/main`; only then will it be tagged and the tag pushed to `origin`.
+The source UI is versioned, not npm-published.
 Proceed?
 ```
 
@@ -236,12 +240,10 @@ uv lock --check
 Report the release tag, commit SHA, pushed remote (`origin`), and the exact
 verification commands that passed.
 
-Check the `Release` workflow for that tag. Both PyPI and GitHub Packages publishing
-jobs must succeed before claiming publication is complete. A pushed tag alone is
-not proof that either registry received a package.
+Check the joint release workflow for that tag. A tag alone is not publication
+evidence: read back the staged checksums and successful PyPI publication. No
+GitHub Packages publish or npm visibility check is required for the source UI.
 
-If publication partially fails, rerun failed jobs in the same workflow run to reuse
-the validated artifacts. Do not move the tag or publish a separate UI version.
-PyPI skips already uploaded files; npm skips an existing version only if its archive
-integrity matches. Registry errors and conflicting npm contents remain failures.
-An npm retry does not move the distribution tag of an already published version.
+If publication partially fails, rerun failed jobs in the same workflow run to
+reuse validated artifacts. Do not move the tag or publish a separate UI version.
+PyPI skips already uploaded files.

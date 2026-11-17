@@ -29,9 +29,7 @@
     },
     "./styles.css": "./dist/styles.css"
   },
-  "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
-  },
+  "private": true,
   "scripts": {
     "build": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json && vite build && tsc -p tsconfig.build.json && pnpm run rewrite:declarations",
     "rewrite:declarations": "node scripts/rewrite-declaration-specifiers.mjs",

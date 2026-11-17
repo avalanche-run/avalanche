@@ -353,19 +353,11 @@ interface. It exports `OperatorUi`, `WorkflowWorkspace`, `GrpcWebOperatorApi`, a
 typed host APIs. The embedding host owns its `OperatorApi` implementation and presentation
 configuration.
 
-After a version is released, configure the GitHub Packages scope and an authenticated token
-outside source control:
-
-```ini
-@avalanche-run:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}
-```
-
-Then install that version and its styles:
-
-```bash
-pnpm add @avalanche-run/operator-ui@<version>
-```
+The UI is source-only; 0.20.15 was its last GitHub Packages publication. Hosts
+consume `web/operator` from the same source checkout, add it to their pnpm
+workspace, and depend on `@avalanche-run/operator-ui` with `workspace:*`. Build
+that package before the host so its `dist` exports are available. The in-repo
+local host and Delta console use this pattern; no registry token is required.
 
 ```tsx
 import "@avalanche-run/operator-ui/styles.css";
@@ -377,31 +369,15 @@ embedding host.
 
 ### Releasing Avalanche and the operator UI
 
-The Python distribution and `@avalanche-run/operator-ui` share one version and one
-Avalanche `vX.Y.Z` release tag. There are no separate operator UI releases, even when
-only the backend changes. Use the UI version matching your Avalanche operator.
+The Python distribution and source UI retain one shared version and release
+tag. In the monorepo, use `scripts/releases/bump-version.py` to update versions;
+follow the root release runbook rather than releasing from the public mirror.
+The UI version still advances with the SDK, but no npm package is published.
 
-1. Update `pyproject.toml`, `src/avalanche/__init__.py`, and `web/operator/package.json`
-   together, and run `uv lock`. Stable versions are identical; prereleases use Python
-   spelling such as `0.4.0rc1` and npm spelling `0.4.0-rc1` (likewise Python `a`/`b`
-   map to npm `alpha`/`beta`).
-2. Move the unreleased changelog entries under the new version.
-3. Run `make web-test`, `make web-lint`, `make web-assets-check`, and `uv build`.
-   From `web/operator`, run `pnpm pack` to check the npm archive.
-4. Merge the release commit to `main`, then create and push the matching Avalanche
-   tag, such as `v0.4.0` or `v0.4.0-rc1`. Prereleases must have patch version zero.
-
-The `Release` workflow checks both versions, generated clients, browser tests and
-assets, and the npm archive before publishing either package. It publishes Python
-distributions to PyPI and the UI to GitHub Packages (`latest` for stable versions,
-`next` for prereleases). The GitHub Release appears only after both publishes succeed.
-
-The two registries cannot publish atomically. If one publish fails, rerun the failed
-jobs in the same workflow run to reuse its validated artifacts; do not move the tag
-or bump just one package. PyPI skips files already uploaded. The npm publisher skips
-an existing version only when its archive integrity matches, and fails on conflicting
-contents or registry errors. Re-running an already published UI does not move its npm
-distribution tag, so retrying an older release does not change `latest` or `next`.
+Run `make web-test`, `make web-lint`, `make web-assets-check`, and `uv build`
+when preparing the SDK. The release stages a reproducible UI archive alongside
+the Python distributions and built console, with checksums binding their bytes.
+Only the Python distributions are uploaded to PyPI.
 
 ### Running a workflow
 
