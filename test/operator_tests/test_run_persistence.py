@@ -2506,7 +2506,9 @@ class Approval(ava.BaseInput):
 
         def bounded_child(args, **kwargs):
             if args[1:] == ["-m", "runtime.operator.machine_validation"]:
-                kwargs["timeout"] = 1  # Real child timeout, not a synthetic exception.
+                # The failing child still hangs for 65 s. Leave room for process
+                # startup and the repaired validator on a loaded host.
+                kwargs["timeout"] = 5  # Real child timeout, not a synthetic exception.
             return run(args, **kwargs)
 
         monkeypatch.setattr(machine_validation.subprocess, "run", bounded_child)

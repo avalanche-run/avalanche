@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Terminal resource panels keep their in-flight pages when live updates select a
+  newer run. Run-history cursors retain a separate bounded summary cut, so
+  background state synchronization does not expire a reader's next page.
+
 - Missing-provider guidance now names Avalanche Cloud (Trampoline Delta) and
   `uv tool install trampoline-delta` as an example, then asks users to sign in
   and run `ava connect <name>`. Provider selection stays host-neutral; the SDK

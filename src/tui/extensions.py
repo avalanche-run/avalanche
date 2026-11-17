@@ -27,8 +27,9 @@ class ExtensionSession:
     """At most two calls, no executor backlog, one bounded invalidation handoff.
 
     Providers own transport deadlines and cancellation. A cancelled Python future
-    cannot interrupt a running synchronous transport; its completion is fenced by
-    exact context equality. No stale response can repaint a newer selection.
+    cannot interrupt a running synchronous transport. Descriptions and actions
+    use exact selection equality; resource reads use their panel's scope fence.
+    No stale response can repaint a newer selection.
     """
 
     def __init__(
@@ -46,7 +47,8 @@ class ExtensionSession:
         self.loading = False
         self._post = post
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tui-extensions")
-        self._futures: list[Future] = []
+        # True means selection-bound; resource reads keep their own scope fence.
+        self._futures: dict[Future, bool] = {}
         self._lock = threading.Lock()
         self._notices: deque[Invalidation] = deque(maxlen=64)
         self._overflow = False
@@ -76,23 +78,38 @@ class ExtensionSession:
         self.error = ""
         self.loading = False
         self._describe_pending = True
-        for future in self._futures:
-            future.cancel()
+        for future, selection_bound in self._futures.items():
+            if selection_bound:
+                future.cancel()
 
     def _submit(
         self,
         call: Callable[[], ExtensionDescription | ExtensionPage | ActionResult],
         accept: Callable[[ExtensionDescription | ExtensionPage | ActionResult], None],
         fail: Callable[[TuiExtensionError], None],
+        *,
+        context: TuiContext | None = None,
+        is_current: Callable[[], bool] | None = None,
     ) -> bool:
         for future in self._futures:
             if future.done() and not future.cancelled():
                 future.result()  # Surface contract bugs instead of permanent loading.
-        self._futures = [future for future in self._futures if not future.done()]
+        self._futures = {
+            future: selection_bound
+            for future, selection_bound in self._futures.items()
+            if not future.done()
+        }
         if self._closed or len(self._futures) >= 2:
             return False
-        context = self.context
+        context = self.context if context is None else context
         permission_generation = self._permission_generation
+
+        def current() -> bool:
+            return (
+                not self._closed
+                and self._permission_generation == permission_generation
+                and (self.context == context if is_current is None else is_current())
+            )
 
         def run() -> None:
             try:
@@ -104,27 +121,19 @@ class ExtensionSession:
             except TuiExtensionError as error:
 
                 def failed(error=error) -> None:
-                    if (
-                        not self._closed
-                        and self.context == context
-                        and self._permission_generation == permission_generation
-                    ):
+                    if current():
                         fail(error)
 
                 self._post(failed)
                 return
 
             def completed() -> None:
-                if (
-                    not self._closed
-                    and self.context == context
-                    and self._permission_generation == permission_generation
-                ):
+                if current():
                     accept(result)
 
             self._post(completed)
 
-        self._futures.append(self._executor.submit(run))
+        self._futures[self._executor.submit(run)] = is_current is None
         return True
 
     def tick(self) -> bool:
@@ -181,9 +190,12 @@ class ExtensionSession:
         cursor: str | None,
         accept: Callable[[ExtensionPage], None],
         fail: Callable[[TuiExtensionError], None],
+        *,
+        context: TuiContext,
+        is_current: Callable[[], bool],
     ) -> bool:
-        context = self.context
-
+        # ResourceScreen owns the read's scope (flow/tools versus run/node).
+        # Capability descriptions and mutations remain exact-selection-bound.
         def read() -> ExtensionPage:
             page = self.extension.read(
                 panel.resource, context, cursor=cursor, limit=100, byte_limit=262144
@@ -200,7 +212,7 @@ class ExtensionSession:
                 raise TypeError("read must return ExtensionPage")
             accept(page)
 
-        return self._submit(read, received, fail)
+        return self._submit(read, received, fail, context=context, is_current=is_current)
 
     def invoke(
         self,

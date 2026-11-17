@@ -1036,6 +1036,19 @@ class Operator:
         with self._lock:
             return self._run_summary_locked(self._runs[run_id]), self._sequence
 
+    def capture_run_summaries(self, workflow_selector: str = "") -> tuple[RunSummary, ...]:
+        """Share one immutable summary index with an independently bounded reader.
+
+        The reader owns its lifetime; structural synchronization traffic must not
+        evict an interactive traversal. No node snapshots or detail bodies escape.
+        """
+        with self._lock:
+            baseline = self._materialize_structural_baseline_locked()
+            workflow_id = self._resolve_summary_workflow_id(
+                baseline.summaries, workflow_selector
+            )
+            return baseline.summary_indexes.get(workflow_id, ())
+
     def list_run_summaries(
         self,
         workflow_selector: str = "",

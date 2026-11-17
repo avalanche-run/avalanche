@@ -2,7 +2,7 @@ import type * as ReactFlowModule from "@xyflow/react";
 import { useViewport } from "@xyflow/react";
 import { StrictMode, type ComponentType, type ReactNode, useState } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 const { setCenter, updateNodeInternals } = vi.hoisted(() => ({
   setCenter: vi.fn(),
@@ -1744,6 +1744,9 @@ describe("run tree", () => {
   }
 
   it("shows a run between its parent and children and opens them both ways", async () => {
+    // Keep the shared relative-time clock on the fixture's now, even in a slow file run.
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now * 1000);
+    onTestFinished(() => clock.mockRestore());
     const { api, getRunLinks } = treeApi();
     render(<OperatorUi host={{ api, presentation }} />);
     fireEvent.click(await screen.findByRole("button", { name: /run-1,/ }));

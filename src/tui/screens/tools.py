@@ -113,12 +113,18 @@ class ResourceScreen(ModalScreen):
     ]
 
     def __init__(
-        self, session: ExtensionSession, panel: PanelDescriptor, context: TuiContext
+        self,
+        session: ExtensionSession,
+        panel: PanelDescriptor,
+        context: TuiContext,
+        *,
+        operator_instance_id: str,
     ) -> None:
         super().__init__()
         self.session = session
         self.panel = panel
         self.context = context
+        self._operator_instance_id = operator_instance_id
         self._next_cursor: str | None = None
         self._revision: str | None = None
         self._requested_cursor: str | None = None
@@ -189,6 +195,8 @@ class ResourceScreen(ModalScreen):
 
     def _context_is_current(self) -> bool:
         """Follow run/node selection changes unless this panel is about them."""
+        if self.app.store.provider.operator_instance_id != self._operator_instance_id:
+            return False
         current = self.app.extension_context
         if current == self.context:
             return True
@@ -221,7 +229,14 @@ class ResourceScreen(ModalScreen):
         self._requested_cursor = cursor
         self.query_one("#resource-next", Button).disabled = True
         self.query_one("#resource-reload", Button).disabled = True
-        if not self.session.read(self.panel, cursor, self._accept, self._fail):
+        if not self.session.read(
+            self.panel,
+            cursor,
+            self._accept,
+            self._fail,
+            context=self.context,
+            is_current=self._context_is_current,
+        ):
             self._fail(TuiExtensionError("unavailable", "Provider busy; reload when ready"))
 
     def _fail(self, error: TuiExtensionError) -> None:

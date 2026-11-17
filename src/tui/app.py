@@ -395,7 +395,15 @@ class AvalancheApp(App):
         self.push_screen(InspectionScreen("Node / attempt detail", content))
 
     def open_extension_panel(self, panel: PanelDescriptor) -> None:
-        self.push_screen(ResourceScreen(self.extension_session, panel, self.extension_context))
+        context = self.extension_context
+        self.push_screen(
+            ResourceScreen(
+                self.extension_session,
+                panel,
+                context,
+                operator_instance_id=self.store.provider.operator_instance_id,
+            )
+        )
 
     def select_extension_scope(self, scope: ScopeDescriptor) -> None:
         if not scope.selectable:

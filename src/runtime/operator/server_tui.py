@@ -1,8 +1,8 @@
 """Bounded operator resource pages for the TuiExtensions v1 boundary.
 
 Continuations are server-issued, target-bound and evicted with a fixed count.
-Run history reuses the operator's immutable structural baseline, never a live
-list sliced by the client. Artifacts remain references until explicit download.
+Run history retains the operator's immutable summary index independently of
+background synchronization. Artifacts remain references until explicit download.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from avalanche.file import File
 from avalanche.references import read_stored_trees
 from avalanche.workspace import Workspace
 
-from .operator import StructuralBaselineUnavailableError
+from .models import RunSummary
 from .proto import operator_pb2 as pb
 from .registry import AmbiguousWorkflow
 
@@ -61,7 +61,7 @@ class _Position:
     target: tuple[str, ...]
     revision: str
     offset: int = 0
-    run_token: str = ""
+    run_cut: str = ""
 
 
 class TuiResourceReader:
@@ -69,6 +69,9 @@ class TuiResourceReader:
         self._server = server
         self._lock = Lock()
         self._positions: OrderedDict[str, _Position] = OrderedDict()
+        # Interactive cuts have their own bounded lifetime. Background list/reset
+        # reads churn the structural sync cache even while this panel is idle.
+        self._run_cuts: OrderedDict[str, tuple[RunSummary, ...]] = OrderedDict()
 
     def read(self, request: pb.ReadTuiResourceRequestV2, context: grpc.ServicerContext):
         if not 1 <= request.limit <= 500 or not 1 <= request.byte_limit <= 1_048_576:
@@ -132,8 +135,6 @@ class TuiResourceReader:
                 next_position = after
                 if after is None:
                     break
-        except StructuralBaselineUnavailableError:
-            context.abort(grpc.StatusCode.OUT_OF_RANGE, "cursor_expired")
         except AmbiguousWorkflow:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Ambiguous workflow selector")
         except (KeyError, ValueError):
@@ -163,18 +164,25 @@ class TuiResourceReader:
         op = server._op
         offset = position.offset if position is not None else 0
         if request.resource == "runs":
-            page = op.list_run_summaries(
-                request.workflow_selector,
-                page_size=1,
-                page_token=position.run_token if position is not None else "",
-            )
-            # Runs continue by (created_sequence, run_id) position: a new run is
-            # not a reason to expire a reader. The page token fences the
-            # operator instance and the retained baseline (AVA-240).
-            revision = f"{op.operator_instance_id}:runs"
-            if not page.runs:
+            if position is None:
+                runs = op.capture_run_summaries(request.workflow_selector)
+                run_cut = uuid4().hex
+                revision = f"{op.operator_instance_id}:runs:{run_cut}"
+                with self._lock:
+                    self._run_cuts[run_cut] = runs
+                    while len(self._run_cuts) > 8:
+                        self._run_cuts.popitem(last=False)
+            else:
+                run_cut, revision = position.run_cut, position.revision
+                with self._lock:
+                    runs = self._run_cuts.get(run_cut)
+                    if runs is not None:
+                        self._run_cuts.move_to_end(run_cut)
+                if runs is None:
+                    context.abort(grpc.StatusCode.OUT_OF_RANGE, "cursor_expired")
+            if offset >= len(runs):
                 return None, None, revision
-            run = page.runs[0]
+            run = runs[offset]
             row: dict[str, JsonValue] = {
                 "id": run.run_id,
                 "flow": run.workflow_id or run.flow_name,
@@ -193,8 +201,8 @@ class TuiResourceReader:
             if run.error_message is not None:
                 row["error_message"] = run.error_message
             after = (
-                _Position(target, revision, run_token=page.next_page_token)
-                if page.next_page_token
+                _Position(target, revision, offset + 1, run_cut=run_cut)
+                if offset + 1 < len(runs)
                 else None
             )
             return row, after, revision

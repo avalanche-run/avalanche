@@ -160,6 +160,7 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
 
     from tui.app import AvalancheApp
     from tui.screens.input_form import InputForm
+    from tui.screens.tools import ResourceScreen
     from tui.state import ExtensionPage, TuiContext, TuiExtensionError
     from tui.widgets.log_panel import LogWidget
 
@@ -167,6 +168,7 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
     evidence.mkdir(parents=True, exist_ok=True)
     assertions = []
     gate = tmp_path / "release-step"
+    paging_gate = tmp_path / "paging-step"
     artifact = tmp_path / "artifact.bin"
     import shutil
 
@@ -194,6 +196,11 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
             print("live-stderr-sentinel", file=sys.stderr, flush=True)
             logging.getLogger("proof").warning("live-logging-sentinel")
             print("x" * 20000, flush=True)
+            if payload.count == 44:
+                for index in range(10):
+                    print(f"paging-pulse-{{index}}", flush=True)
+                    while not Path({str(paging_gate)!r} + str(index)).exists():
+                        time.sleep(0.01)
             while not Path({str(gate)!r}).exists():
                 time.sleep(0.05)
             return payload.count
@@ -256,8 +263,9 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
         return subprocess.Popen(command, cwd=root, stdout=output, stderr=subprocess.STDOUT)
 
     process = launch()
-    provider = GrpcStateProvider(f"127.0.0.1:{port}", unary_timeout=2)
-    observer = GrpcStateProvider(f"127.0.0.1:{port}", unary_timeout=2)
+    # This scenario checks behavior, not RPC latency on a shared host.
+    provider = GrpcStateProvider(f"127.0.0.1:{port}", unary_timeout=20)
+    observer = GrpcStateProvider(f"127.0.0.1:{port}", unary_timeout=20)
     unary_calls = []
     real_call = provider._call
 
@@ -298,6 +306,9 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
                     provider.stream_state,
                     provider.stream_error,
                     app.extension_session.error if app.extension_session else "no session",
+                    str(app.screen.query_one("#resource-status").render())
+                    if isinstance(app.screen, ResourceScreen) and app.screen.is_mounted
+                    else type(app.screen).__name__,
                 )
                 await pilot.pause(0.05)
 
@@ -602,6 +613,8 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
             real_read = extension.read
             run_reads = []
             run_notices = []
+            first_read = Event()
+            release_first_read = Event()
             unsubscribe_runs = extension.subscribe(run_notices.append)
 
             def read_small_runs(
@@ -621,26 +634,56 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
                 )
                 if resource == "runs":
                     run_reads.append((cursor, tuple(row["id"] for row in page.items)))
+                    if not first_read.is_set():
+                        # Hold only delivery, after the real server issued its cursor.
+                        first_read.set()
+                        release_first_read.wait()
                 return page
 
             extension.read = read_small_runs
+            cuts = []
             try:
                 description = app.extension_session.description
                 assert description is not None
                 panel = next(panel for panel in description.panels if panel.resource == "runs")
                 app.open_extension_panel(panel)
-                await wait_for(
-                    pilot, lambda: app.screen.is_mounted and app.screen._next_cursor is not None
-                )
-                held_cursor = app.screen._next_cursor
+                await wait_for(pilot, first_read.is_set)
                 first_ids = run_reads[0][1]
                 notice_start = len(run_notices)
                 third_typed = await asyncio.to_thread(
                     observer.start_run, flow.selector, input={"count": 44}
                 )
                 await wait_for(
-                    pilot, lambda: any(n.resource == "runs" for n in run_notices[notice_start:])
+                    pilot,
+                    lambda: (
+                        app.store.current_run is not None
+                        and app.store.current_run.run_id == third_typed
+                        and app.extension_session.description is not None
+                        and app.extension_session.description.context == app.extension_context
+                        and any(n.resource == "runs" for n in run_notices[notice_start:])
+                    ),
                 )
+                # Each real log publication advances the operator sequence. Reading
+                # history after it creates ten distinct structural cuts, exceeding
+                # the sync cache's eight entries without expiring this UI cursor.
+                for index in range(10):
+                    deadline = time.monotonic() + 25
+                    while True:
+                        current = await asyncio.to_thread(observer.get_run, third_typed)
+                        assert current is not None
+                        if any(log.message == f"paging-pulse-{index}" for log in current.logs):
+                            break
+                        assert time.monotonic() < deadline
+                        await pilot.pause(0.05)
+                    cut, _ = await asyncio.to_thread(observer._list_run_summaries)
+                    cuts.append(cut[1].event_ulid)
+                    Path(str(paging_gate) + str(index)).touch()
+                assert len(set(cuts)) == 10, cuts
+                release_first_read.set()
+                await wait_for(
+                    pilot, lambda: app.screen.is_mounted and app.screen._next_cursor is not None
+                )
+                held_cursor = app.screen._next_cursor
                 app._tick()
                 await pilot.pause()
                 assert app.screen._next_cursor == held_cursor
@@ -669,6 +712,7 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
                         {
                             "requests": run_reads,
                             "created_during_paging": third_typed,
+                            "structural_cuts_during_paging": cuts,
                             "status": status,
                         }
                     )
@@ -676,6 +720,9 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
                 )
                 await pilot.press("escape")
             finally:
+                release_first_read.set()
+                for index in range(10):
+                    Path(str(paging_gate) + str(index)).touch()
                 extension.read = real_read
                 unsubscribe_runs()
             assertions.append("runs_resource_keeps_cursor_across_real_create_and_changed_page")
@@ -702,7 +749,10 @@ async def test_operator_tui_extensions_live_pilot(tmp_path):
                 next(n for n in app.store.all_nodes if n.name == "sum_numbers_1")
             )
             await pilot.press("enter")
-            await wait_for(pilot, lambda: app.store.selected_agent_trace_envelope is not None)
+            # Trace hydration shares the real daemon and host with spawned workers.
+            await wait_for(
+                pilot, lambda: app.store.selected_agent_trace_envelope is not None, seconds=250
+            )
             assert await asyncio.to_thread(observer.get_run_result, agent_run_id) == {
                 "answer": 10,
                 "lm_calls": 3,
