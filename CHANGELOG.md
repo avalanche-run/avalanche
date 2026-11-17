@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The terminal start/cancel/history smoke test now waits for the displayed
+  `succeeded` status introduced by #688, rather than the old `success` label.
+
 - Workflow starts on macOS accept successful process inspection even when native
   fork handlers write diagnostics to stderr. Upgrade grpcio to 1.85.1 or newer
   without changing process-wide fork settings.

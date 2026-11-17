@@ -142,8 +142,8 @@ def test_terminal_runtime_map_group_strip(tmp_path):
 
 
 def test_terminal_start_cancel_and_select_history(tui_session):
-    screen = _wait_for(tui_session, lambda text: re.search(r"run_[0-9a-f-]+.*success", text))
-    older = re.search(r"(run_[0-9a-f-]+).*success", screen).group(1)
+    screen = _wait_for(tui_session, lambda text: re.search(r"run_[0-9a-f-]+.*succeeded", text))
+    older = re.search(r"(run_[0-9a-f-]+).*succeeded", screen).group(1)
     _tmux("send-keys", "-t", tui_session, "r")
     _confirm_empty_action(tui_session)
     screen = _wait_for(tui_session, lambda text: re.search(r"run_[0-9a-f-]+.*running", text))
