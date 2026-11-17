@@ -1,6 +1,7 @@
 """Real spawned workers: live reload, isolation, shutdown, and process death."""
 
 import os
+import sys
 import threading
 import time
 from pathlib import Path
@@ -8,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from runtime.operator import Operator
+from runtime.operator import Operator, run_processes
 from runtime.operator import operator as operator_module
 from runtime.operator.models import (
     NodeStatus,
@@ -482,6 +483,7 @@ def test_close_rejects_run_when_shutdown_precedes_preparation(tmp_path, monkeypa
     ],
 )
 def test_process_group_quiescence_distinguishes_zombies_from_live_descendants(
+    tmp_path,
     monkeypatch,
     process_table,
     expected,
@@ -491,11 +493,22 @@ def test_process_group_quiescence_distinguishes_zombies_from_live_descendants(
         "_coordinator_group_exists",
         lambda _process_group: True,
     )
-    monkeypatch.setattr(
-        operator_module.subprocess,
-        "run",
-        lambda *_args, **_kwargs: SimpleNamespace(stdout=process_table),
-    )
+    if sys.platform == "linux":
+        # Exercise the real Linux reader against an owned proc tree. ps's ?E
+        # (irreversibly exiting) corresponds to the dead X state in /proc.
+        monkeypatch.setattr(run_processes, "_PROC", tmp_path)
+        for pid, line in enumerate(process_table.splitlines(), start=4242):
+            pgid, state = line.split()
+            proc = tmp_path / str(pid)
+            proc.mkdir()
+            fields = ["X" if state == "?E" else state[0], "1", pgid] + ["0"] * 17
+            (proc / "stat").write_text(f"{pid} (fixture) " + " ".join(fields))
+    else:
+        monkeypatch.setattr(
+            operator_module.subprocess,
+            "run",
+            lambda *_args, **_kwargs: SimpleNamespace(stdout=process_table),
+        )
 
     assert operator_module._coordinator_group_has_live_members(4242) is expected
 
