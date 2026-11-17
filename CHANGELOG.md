@@ -4,6 +4,9 @@
 
 - `@avalanche-run/operator-ui` is no longer published to GitHub Packages
   (0.20.15 is the last published version); the console uses the in-repo source.
+- Document the Delta provider's tool limits and consent scopes, shared by local
+  operator and hosted runs. A workflow's `allow` can narrow, not expand, the
+  provider's tool set; other providers and custom MCP servers are unchanged.
 
 - The catalog example uses Nango's read-only Asana `search-tasks-in-workspace`
   action with a workspace ID and assignee filter. Its operator and browser

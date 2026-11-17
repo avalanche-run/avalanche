@@ -68,6 +68,16 @@ before the body without retries. Missing provider, provider not signed in,
 missing integration and unreachable provider have separate messages. Custom
 Connectors and MCP servers need no catalog provider.
 
+When using the Delta provider, the local operator and hosted runs use the same
+server-enforced tool set: Slack `get-team-info` and `list-channels`, and Asana
+`search-tasks-in-workspace`. Your `allow` can narrow that set, not expand it.
+Slack consent requests `team:read`, `channels:read`, `groups:read`, `im:read` and
+`mpim:read` (all conversation types supported by the listing action); Asana
+requests `tasks:read`. The provider applies these scopes on connect and reconnect.
+Other Delta catalog names remain discoverable metadata but cannot start consent
+until a tool/scope contract is approved. These limits belong to the Delta provider,
+not to the host-neutral SDK or to custom MCP servers and Connectors.
+
 The checked-in `catalog_entries.json` drives `scripts/generate_catalog.py`.
 Regenerate offline with `uv run python scripts/generate_catalog.py`; the
 release gate uses `--check` to reject stale imports.
