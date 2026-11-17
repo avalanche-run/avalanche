@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Workflow starts on macOS accept successful process inspection even when native
+  fork handlers write diagnostics to stderr. Upgrade grpcio to 1.85.1 or newer
+  without changing process-wide fork settings.
+
 - Terminal resource panels keep their in-flight pages when live updates select a
   newer run. Run-history cursors retain a separate bounded summary cut, so
   background state synchronization does not expire a reader's next page.

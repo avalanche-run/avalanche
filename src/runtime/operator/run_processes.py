@@ -218,8 +218,13 @@ def _ps_processes(*selection: str) -> tuple[_ProcessInfo, ...]:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         raise RunProcessLookupError(f"Could not run {ps}: {exc}") from exc
-    # ps exits 1 when a selected process does not exist, with nothing on stderr.
-    if completed.returncode not in (0, 1) or completed.stderr.strip():
+    # Successful ps output is authoritative even when inherited pre-exec fork
+    # handlers write diagnostics to stderr (for example gRPC's EventEngine).
+    # Exit 1 means an absent selection only when both output streams are empty;
+    # other nonzero exits remain inspection failures, never proof of absence.
+    if completed.returncode != 0 and (
+        completed.returncode != 1 or completed.stdout.strip() or completed.stderr.strip()
+    ):
         raise RunProcessLookupError(
             f"{ps} failed with exit status {completed.returncode}: {completed.stderr.strip()}"
         )
