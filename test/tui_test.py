@@ -2486,7 +2486,7 @@ async def test_busy_session_keeps_the_attempt_whose_outcome_is_unknown():
         session = app.extension_session
         release = threading.Event()
         holders = [session._executor.submit(release.wait, 5) for _ in range(2)]
-        session._futures.extend(holders)
+        session._futures.update(dict.fromkeys(holders, False))
         try:
             await pilot.press("enter")
             await _wait_for(pilot, lambda: "busy" in _outcome(screen))
