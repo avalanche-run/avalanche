@@ -6,15 +6,15 @@ database, and no operator can start on it in the meantime.
 
 Deleting a run is one transaction that removes its ``runs`` row (and, through
 ``ON DELETE CASCADE``, its steps, input-file records, logs, events, traces and
-evaluations) together with its result index row. Its files, the result bundle and
-the staged input-file folders no remaining run uses, are removed after that
-commit. An interruption in between leaves only files nothing refers to:
-:meth:`StateMaintenance.info` reports them and :meth:`StateMaintenance.clear`
-removes them.
+evaluations and saved step outputs) together with its result index row. Its files,
+the result bundle, the saved step outputs and the staged input-file folders no
+remaining run uses, are removed after that commit. An interruption in between
+leaves only files nothing refers to: :meth:`StateMaintenance.info` reports them and
+:meth:`StateMaintenance.clear` removes them.
 
-The ``results/``, ``input-files/`` and ``schedule-inputs/`` folders next to the
-database belong to it alone, as the result storage lock already requires of a
-running operator.
+The ``results/``, ``input-files/``, ``schedule-inputs/`` and ``step-outputs/``
+folders next to the database belong to it alone, as the result storage lock already
+requires of a running operator.
 """
 
 from __future__ import annotations
@@ -39,12 +39,14 @@ from ..run_workspaces import (
     run_workspace_folders,
     stored_tree_folders,
 )
+from ..step_outputs import STEP_OUTPUT_FOLDER_NAME, step_output_run_folder_name
 from .errors import StateRowError, StateStoreError
 from .results import RunResultRow, RunResultTable
 from .run_details import DeletedRunDetails, delete_run_details
 from .runs import RunsTable, RunSummary
 from .schedule_input_files import SCHEDULE_INPUT_FOLDER_NAME
 from .schedules import SchedulesTable
+from .step_outputs import StepOutputsTable
 from .store import MEMORY, OperatorStateStore, StateDbPath
 
 UNFINISHED_STATUSES = frozenset(
@@ -88,11 +90,15 @@ class StateInfo:
     """``entries`` counts schedule input-file folders."""
     workspaces: FolderUsage
     """``entries`` counts run workspace folders."""
+    step_outputs: FolderUsage
+    """``entries`` counts saved outputs (index rows), including map items."""
     result_index: ResultIndexReport
     unreferenced_input_files: tuple[Path, ...]
     """Input-file folders no stored run uses."""
     unreferenced_schedule_inputs: tuple[Path, ...]
     """Schedule input-file folders no stored schedule uses."""
+    unreferenced_step_outputs: tuple[Path, ...]
+    """Run folders of saved step outputs that no stored run owns."""
     unexpected_entries: tuple[Path, ...]
     """Entries in the input folders that the operator did not create."""
     removed_pending_bundles: int
@@ -118,6 +124,8 @@ class DeletedRun:
     """The run's result bundle, or ``None`` when it stored no result."""
     input_file_folders: tuple[str, ...]
     """Staged input-file folders it used that no remaining run uses."""
+    step_outputs: int
+    """Saved step outputs removed with it, including map items."""
     workspace_removed: bool = False
     """Whether the run had a workspace folder, removed with it."""
 
@@ -146,6 +154,7 @@ class ClearedState:
     stopped_processes: tuple[StoppedRunProcess, ...]
     result_bundles: int
     input_file_folders: int
+    step_output_folders: int
     schedules_deleted: int
     schedules_kept: int
     schedule_input_folders: int
@@ -179,6 +188,7 @@ class StateMaintenance:
         self._results = results
         self._input_root = database.parent / INPUT_FILE_FOLDER_NAME
         self._schedule_root = database.parent / SCHEDULE_INPUT_FOLDER_NAME
+        self._step_output_root = database.parent / STEP_OUTPUT_FOLDER_NAME
         self._bytes_at_open = bytes_at_open
 
     @classmethod
@@ -233,11 +243,16 @@ class StateMaintenance:
             used_keys = RunsTable.input_file_keys_in_use(connection)
             schedules = SchedulesTable.read_all(connection)
             stored_results = len(RunResultTable.list_all(connection))
+            saved_outputs = StepOutputsTable.count_all(connection)
         runs_by_status: dict[RunStatus, int] = {}
         for summary in summaries:
             runs_by_status[summary.status] = runs_by_status.get(summary.status, 0) + 1
         input_folders, unexpected_inputs = _token_folders(self._input_root)
         schedule_folders, unexpected_schedule_inputs = _token_folders(self._schedule_root)
+        output_folders, unexpected_outputs = _token_folders(self._step_output_root)
+        used_output_folders = {
+            step_output_run_folder_name(summary.run_id) for summary in summaries
+        }
         used_input_folders = {_token_folder(key) for key in used_keys}
         used_schedule_folders = {
             input_file.folder for schedule in schedules for input_file in schedule.input_files
@@ -262,6 +277,9 @@ class StateMaintenance:
                 len(_token_folders(run_workspaces)[0]),
                 _tree_bytes(run_workspaces),
             ),
+            step_outputs=FolderUsage(
+                self._step_output_root, saved_outputs, _tree_bytes(self._step_output_root)
+            ),
             result_index=self._results.check_index(),
             unreferenced_input_files=tuple(
                 self._input_root / name
@@ -273,9 +291,15 @@ class StateMaintenance:
                 for name in schedule_folders
                 if name not in used_schedule_folders
             ),
+            unreferenced_step_outputs=tuple(
+                self._step_output_root / name
+                for name in output_folders
+                if name not in used_output_folders
+            ),
             unexpected_entries=(
                 *(self._input_root / name for name in unexpected_inputs),
                 *(self._schedule_root / name for name in unexpected_schedule_inputs),
+                *(self._step_output_root / name for name in unexpected_outputs),
             ),
             removed_pending_bundles=self._results.recovered_pending_bundles,
         )
@@ -343,12 +367,12 @@ class StateMaintenance:
         )
 
     def clear(self, *, include_schedules: bool) -> ClearedState:
-        """Delete every run, result and staged input file; schedules too if asked.
+        """Delete every run, result, saved output and input file; schedules too if asked.
 
         Processes still alive from an unfinished run are stopped first, as an
         operator start does, since no later operator could find them once the run
-        is gone. The rows go in one transaction; then every result bundle and
-        input-file folder is removed, including leftovers nothing referred to, and
+        is gone. The rows go in one transaction; then every result bundle, saved
+        output and input-file folder is removed, including leftovers nothing referred to, and
         every schedule input-file folder no kept schedule uses.
         """
         with self._store.transaction() as connection:
@@ -372,6 +396,9 @@ class StateMaintenance:
             input_folders, _ = _token_folders(self._input_root)
             for name in input_folders:
                 _remove_folder(self._input_root / name)
+            output_folders, _ = _token_folders(self._step_output_root)
+            for name in output_folders:
+                _remove_folder(self._step_output_root / name)
             used_schedule_folders = {
                 input_file.folder for schedule in kept for input_file in schedule.input_files
             }
@@ -400,6 +427,7 @@ class StateMaintenance:
             stopped_processes=stopped,
             result_bundles=len(bundles),
             input_file_folders=len(input_folders),
+            step_output_folders=len(output_folders),
             schedules_deleted=schedules_deleted,
             schedules_kept=len(kept),
             schedule_input_folders=len(unused_schedule_folders),
@@ -461,6 +489,7 @@ class StateMaintenance:
         run_id = summary.run_id
         with self._store.transaction() as connection:
             result = RunResultTable.delete(connection, run_id)
+            step_outputs = StepOutputsTable.count(connection, run_id)
             details = delete_run_details(connection, run_id)
             keys = RunsTable.input_file_keys(connection, run_id)
             tokens = RunsTable.workspace_tokens(connection, run_id)
@@ -488,6 +517,7 @@ class StateMaintenance:
             workspace_removed = remove_run_workspace(self._database, run_id)
             for token in captures:
                 remove_workspace_folder(captured_folders(self._database) / token)
+            _remove_folder(self._step_output_root / step_output_run_folder_name(run_id))
         except (OSError, ValueError) as exc:
             # The result store refuses a bundle that is not a private directory.
             raise StateMaintenanceError(
@@ -502,6 +532,7 @@ class StateMaintenance:
             result_bundle=None if result is None else result.bundle_name,
             input_file_folders=folders,
             workspace_removed=workspace_removed,
+            step_outputs=step_outputs,
         )
 
     def _remove_bundle(self, result: RunResultRow) -> None:

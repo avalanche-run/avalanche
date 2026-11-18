@@ -26,8 +26,10 @@ import grpc
 from pydantic import JsonValue
 
 from avalanche.file import File
+from avalanche.reruns import RerunRefusedError
 from tui.state import (
     JSON,
+    RERUN_ACTION_ID,
     SCHEDULE_ACTION_IDS,
     ActionDescriptor,
     ActionResult,
@@ -39,7 +41,10 @@ from tui.state import (
     ScopeDescriptor,
     TuiContext,
     TuiExtensionError,
+    TuiRerunRefusedError,
     json_plain,
+    rerun_action,
+    rerun_request,
     schedule_action,
     schedule_input_schema,
     schedule_request,
@@ -167,6 +172,13 @@ class OperatorTuiExtensions:
                         True,
                         "Request cancellation of this run?",
                         None,
+                    )
+                )
+                actions.append(
+                    rerun_action(
+                        step=workflow.node_slugs.get(context.node or "") if workflow else None,
+                        active=active,
+                        read_only=provider._read_only,
                     )
                 )
                 if snapshot.summary.status == RunStatus.SUCCESS:
@@ -362,6 +374,9 @@ class OperatorTuiExtensions:
                 )
                 value: dict[str, JsonValue] = {"run_id": run_id}
                 status: Literal["accepted", "completed"] = "accepted"
+            elif action == RERUN_ACTION_ID:
+                self._start_rerun(context, payload, run_id)
+                value, status = {"run_id": run_id}, "accepted"
             elif action in SCHEDULE_ACTION_IDS:
                 request = schedule_request(
                     self._provider.list_workflows(), action, context, payload
@@ -386,14 +401,34 @@ class OperatorTuiExtensions:
                 status = "completed"
         except OperatorCallError as error:
             if (
-                action == "run.start"
+                action in ("run.start", RERUN_ACTION_ID)
                 and previous is not None
                 and error.status == grpc.StatusCode.ALREADY_EXISTS
             ):
                 value, status = {"run_id": run_id}, "accepted"
+            elif action == RERUN_ACTION_ID:
+                # The rerun's own failures, such as code that no longer imports, are
+                # worded for the person who asked and say what to fix.
+                raise self._error(error, context, message=error.details) from error
             else:
                 raise self._error(error, context) from error
         return ActionResult(context, intent_id, status, None, _object(value))
+
+    def _start_rerun(self, context: TuiContext, payload: Object, run_id: str) -> None:
+        with self._provider._state_lock:
+            catalog = self._provider._catalog
+        workflow = next(flow for flow in catalog.workflows if flow.selector == context.flow)
+        assert context.node is not None and context.version is not None
+        try:
+            self._provider.start_run(
+                workflow.selector,
+                run_id=run_id,
+                expected_version=context.version,
+                trigger=TriggerKind.MANUAL,
+                rerun=rerun_request(context, workflow.node_slugs[context.node], payload),
+            )
+        except RerunRefusedError as refused:
+            raise TuiRerunRefusedError(refused.refusal, context) from refused
 
     def _download(self, context: TuiContext, payload: Object) -> dict[str, JsonValue]:
         artifact_id, destination = payload.get("artifact_id"), payload.get("destination")
@@ -504,7 +539,9 @@ class OperatorTuiExtensions:
             self._intents.clear()
 
     @staticmethod
-    def _error(error: OperatorCallError, context: TuiContext) -> TuiExtensionError:
+    def _error(
+        error: OperatorCallError, context: TuiContext, *, message: str | None = None
+    ) -> TuiExtensionError:
         code = {
             grpc.StatusCode.OUT_OF_RANGE: "cursor_expired",
             grpc.StatusCode.NOT_FOUND: "not_found",
@@ -519,7 +556,7 @@ class OperatorTuiExtensions:
         }.get(error.status, "unavailable")
         return TuiExtensionError(
             code,
-            f"Operator operation failed ({code})",
+            message or f"Operator operation failed ({code})",
             retryable=code == "unavailable",
             context=context,
         )

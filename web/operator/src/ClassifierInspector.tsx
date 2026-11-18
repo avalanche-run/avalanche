@@ -26,6 +26,7 @@ import {
   type RunSnapshotMsg,
 } from "./model";
 import { OpenDefinitionButton } from "./OpenDefinitionButton";
+import { StepRerunActions } from "./RerunDialog";
 import { PythonSource } from "./PythonSource";
 
 const EMPTY_EVENTS: ClassifierEventDescriptorMsg[] = [];
@@ -53,6 +54,8 @@ interface ClassifierInspectorProps {
   definitionLabel?: string;
   /** Run views only: shows the same node's current definition. */
   onOpenDefinition?: () => void;
+  onRerunFromStep?: () => void;
+  onOpenReusedSource?: (runId: string, nodeId: string) => void;
   onClose: () => void;
 }
 
@@ -792,6 +795,8 @@ export function ClassifierInspector({
   embedded = false,
   definitionLabel = "Current definition",
   onOpenDefinition,
+  onRerunFromStep,
+  onOpenReusedSource,
   onClose,
 }: ClassifierInspectorProps) {
   const node = run?.nodes.find((item) => item.nodeId === nodeId);
@@ -831,6 +836,13 @@ export function ClassifierInspector({
             <OpenDefinitionButton
               definitionLabel={definitionLabel}
               onOpenDefinition={onOpenDefinition}
+            />
+          )}
+          {run && (
+            <StepRerunActions
+              node={node}
+              onRerunFromStep={onRerunFromStep}
+              onOpenReusedSource={onOpenReusedSource}
             />
           )}
         </div>

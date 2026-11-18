@@ -23,6 +23,7 @@ from avalanche.agent.declaration import (
     ToolDeclaration,
 )
 from avalanche.agent.live import AgentLiveEvent, AgentTraceFinished
+from avalanche.runtime import Rerun
 
 from .mock_extensions import MockTuiExtensions
 from .models import (
@@ -717,7 +718,7 @@ class MockStateProvider:
         for thread in self._threads:
             thread.join()
 
-    def start_run(self, workflow_selector: str, **kwargs) -> str:
+    def start_run(self, workflow_selector: str, rerun: Rerun | None = None, **kwargs) -> str:
         info = self._workflows.get(workflow_selector)
         if info is None:
             matches = [
@@ -746,6 +747,8 @@ class MockStateProvider:
                 node_type=nt,
                 status=NodeStatus.PENDING,
             )
+        if rerun is not None:
+            self._mark_rerun(run, info, rerun)
         self._runs[run_id] = run
 
         # Start simulation thread
@@ -856,6 +859,27 @@ class MockStateProvider:
         for cb in self._detail_callbacks:
             cb(detail)
 
+    def _mark_rerun(self, run: RunState, info: WorkflowInfo, rerun: Rerun) -> None:
+        """Steps upstream of the start are reused; a lazy rerun skips those after it."""
+        source = self._runs[rerun.run_id]
+        run.rerun_of_run_id = rerun.run_id
+        after: set[str] = set()
+        pending = list(rerun.start)
+        while pending:
+            for child in info.graph.get(pending.pop(), ()):
+                if child not in after:
+                    after.add(child)
+                    pending.append(child)
+        for node_id, node in run.nodes.items():
+            if node_id in rerun.start:
+                continue
+            if node_id not in after:
+                node.status = NodeStatus.REUSED
+                held_by = source.nodes[node_id].reused_from_run_id
+                node.reused_from_run_id = held_by or source.run_id
+            elif rerun.mode == "lazy":
+                node.status = NodeStatus.SKIPPED
+
     def _simulate_run(self, run: RunState, info: WorkflowInfo) -> None:
         """Background thread that drives a run through execution phases."""
         phases = EXECUTION_PHASES.get(info.name, [])
@@ -863,6 +887,15 @@ class MockStateProvider:
         for names, duration, fail_name in phases:
             if run.status != RunStatus.RUNNING:
                 return
+            # A rerun's reused and skipped steps do not run.
+            names = [
+                name
+                for name in names
+                if name in run.nodes and run.nodes[name].status is NodeStatus.PENDING
+            ]
+            if not names:
+                continue
+            fail_name = fail_name if fail_name in names else None
 
             # Start nodes
             now = time.monotonic()

@@ -13,6 +13,7 @@ from urllib.parse import quote
 import grpc
 import pytest
 
+import avalanche as ava
 from runtime.operator.client import GrpcStateProvider, OperatorCallError
 from runtime.operator.convert_v2 import run_summary_from_v2
 from runtime.operator.models import (
@@ -332,6 +333,27 @@ def test_rest_schedule_route_rejects_invalid_targets_and_bodies(served, name, bo
     assert set(payload) == {"error"}
 
 
+def test_rerun_request_of_an_unknown_source_is_not_found(served):
+    operator, _browser, stub = served
+    with pytest.raises(grpc.RpcError) as error:
+        stub.StartRun(
+            pb.StartRunRequestV2(
+                run_id="rerun",
+                workflow_selector=_flow(operator, "unscheduled").selector,
+                input_json="{}",
+                context_json="{}",
+                rerun=pb.RunRerunV2(
+                    source_run_id="source",
+                    start=["step"],
+                    mode=pb.RUN_RERUN_MODE_V2_LAZY,
+                ),
+            )
+        )
+    # The request reached the rerun path, whose source run does not exist.
+    assert error.value.code() is grpc.StatusCode.NOT_FOUND
+    assert operator.get_run("rerun") is None
+
+
 def test_api_starts_are_api_triggers_unless_marked_manual(served):
     operator, browser, stub = served
     selector = _flow(operator, "unscheduled").selector
@@ -543,3 +565,20 @@ def test_null_counts_as_missing_only_when_the_field_rejects_null(field, rejects_
     )
     assert missing_required_input(schema, None) == ("value",)
     assert missing_required_input("", None) == ()
+
+
+def test_client_sends_a_rerun_and_refuses_a_deployment_the_operator_cannot_use(
+    provider, operator
+):
+    selector = _flow(operator, "unscheduled").selector
+    with pytest.raises(OperatorCallError) as error:
+        provider.start_run(
+            selector, run_id="rerun", rerun=ava.Rerun(run_id="src", start="step")
+        )
+    assert error.value.status is grpc.StatusCode.NOT_FOUND
+    with pytest.raises(ValueError, match="deployment_id"):
+        provider.start_run(
+            selector,
+            run_id="rerun",
+            rerun=ava.Rerun(run_id="src", start="step", deployment_id="dep"),
+        )

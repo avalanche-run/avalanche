@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import inspect
 import json
 import logging
+import multiprocessing
 import os
 import sys
 import threading
@@ -28,11 +30,21 @@ from avalanche._agent_evidence import (
 )
 from avalanche.classifier import capture_classifier_evidence
 from avalanche.classifier.models import ClassifierInvocation
-from avalanche.dag import Workflow
+from avalanche.dag import MapFuture, Workflow
 from avalanche.evaluation_capture import capture_evaluations
 from avalanche.integrations.accounts import install_account_source
 from avalanche.machine import Machine
+from avalanche.mapping import NodesExpanded
 from avalanche.policies import Event
+from avalanche.references import local_run_workspace
+from avalanche.reruns import (
+    NotReusableStepOutput,
+    PlannedRerun,
+    RerunRefusal,
+    RerunRefusedError,
+    SavedStepOutput,
+    plan_rerun,
+)
 from avalanche.run_handle import RunHandle
 from avalanche.runtime import BaseInput
 
@@ -56,7 +68,9 @@ from .result_store import (
 )
 from .results import encode_workflow_result
 from .state.machines import InstanceRecord
+from .state.step_outputs import ReusedOutputRecord
 from .step_io import preview_step_inputs, preview_value, step_signatures
+from .step_outputs import LocalSavedOutputProvider, RerunAssignment, StepOutputWriter
 from .wait_control import FinalWaitSnapshot, serve_wait_controls
 from .workflow_metadata import (
     MAX_PREPARED_INPUT_LENGTH,
@@ -66,6 +80,8 @@ from .workflow_metadata import (
     node_docstring_lines_for_workflow,
     step_interface_for_workflow,
 )
+
+_MAX_PROBLEM_DETAIL = 512
 
 _log_attempt: ContextVar[str] = ContextVar("operator_log_attempt", default="")
 _log_node: ContextVar[str] = ContextVar("operator_log_node", default="")
@@ -84,12 +100,14 @@ def run_worker(
     start_event: Any,
     transferred_result_bundle_descriptor: Any,
     result_bundle_identity: tuple[int, int],
+    step_output_folder: str,
     control_connection: Connection | None = None,
     cancel_reader: Connection | None = None,
     machine_state_entry: InstanceRecord | None = None,
     machine_reader: Connection | None = None,
     resume_results: dict[str, str] | None = None,
     accounts_connection: Connection | None = None,
+    rerun_assignment_json: str | None = None,
 ) -> None:
     """Detach exactly one inode-bound bundle capability and close it on exit."""
     bundle_descriptor: int | None = None
@@ -111,12 +129,14 @@ def run_worker(
             start_event,
             bundle_descriptor,
             result_bundle_identity,
+            step_output_folder,
             control_connection,
             cancel_reader,
             machine_state_entry,
             machine_reader,
             resume_results,
             accounts_connection,
+            rerun_assignment_json,
         )
     finally:
         if bundle_descriptor is not None:
@@ -136,12 +156,14 @@ def _run_worker(
     start_event: Any,
     result_bundle_descriptor: int,
     result_bundle_identity: tuple[int, int],
+    step_output_folder: str,
     control_connection: Connection | None = None,
     cancel_reader: Connection | None = None,
     machine_state_entry: InstanceRecord | None = None,
     machine_reader: Connection | None = None,
     resume_results: dict[str, str] | None = None,
     accounts_connection: Connection | None = None,
+    rerun_assignment_json: str | None = None,
 ) -> None:
     """Import/build exactly once, prepare, wait for the parent, and execute."""
     event_queue = _SealableEventQueue(event_queue)
@@ -161,6 +183,8 @@ def _run_worker(
     executor: LocalExecutor | None = None
     terminal_event: dict[str, Any] | None = None
     run_handle: RunHandle | None = None
+    planned_rerun: PlannedRerun | None = None
+    rerun_provider: LocalSavedOutputProvider | None = None
     try:
         if not assignment_event.wait(timeout=30.0):
             raise TimeoutError("Coordinator process ownership was not confirmed")
@@ -195,6 +219,18 @@ def _run_worker(
                 {} if input_value is None else input_value
             )
             prepared_input = _display_copy(validated_input)
+        if rerun_assignment_json is not None:
+            # Checked against the code this process just imported, which is the code
+            # that runs, and before the operator records anything.
+            rerun_assignment = RerunAssignment.model_validate_json(rerun_assignment_json)
+            rerun_provider = rerun_assignment.provider()
+            planned_rerun = PlannedRerun(
+                plan_rerun(
+                    workflow, rerun_assignment.rerun, rerun_assignment.index, rerun_provider
+                ),
+                rerun_provider,
+            )
+            _put_preparation_event(event_queue, {"type": "rerun_accepted"})
         _put_preparation_event(
             event_queue,
             {
@@ -203,6 +239,15 @@ def _run_worker(
                 "input": None if prepared_input is None else prepared_input.model_dump(),
             },
         )
+    except RerunRefusedError as exc:
+        _put_preparation_event(
+            event_queue,
+            {
+                "type": "rerun_refused",
+                "refusal": _bounded_refusal(exc.refusal).model_dump_json(),
+            },
+        )
+        return
     except BaseException as exc:
         _put_preparation_event(
             event_queue,
@@ -214,9 +259,14 @@ def _run_worker(
         )
         return
 
+    parent = multiprocessing.parent_process()
     while not start_event.wait(0.05):
         if cancel_event.is_set():
             _put_run_event(event_queue, {"type": "terminal", "status": "cancelled"})
+            return
+        # A rerun has no stored process group until its checks pass, so an operator
+        # killed before that cannot stop this process after a restart.
+        if parent is not None and not parent.is_alive():
             return
 
     try:
@@ -251,10 +301,103 @@ def _run_worker(
             }
         )
 
+        # A decision map's show steps and items only feed its one declared node,
+        # which is what a rerun reuses.
+        step_outputs = StepOutputWriter(Path(step_output_folder), workflow.node_slugs)
+        # A machine run repeats its steps across state entries and cannot be rerun, so it
+        # saves no step outputs.
+        saves_outputs = machine_state_entry is None
+        # A resumed run restores its finished steps' results; their outputs were
+        # saved and recorded before the restart.
+        restored = frozenset(resume_results or ())
+        map_groups = {
+            node_id for node_id, node in workflow.nodes.items() if isinstance(node, MapFuture)
+        }
+
         def wrap_fn(node_id: str, fn: Callable[..., Any]) -> Callable[..., Any]:
             owner = show_groups.get(node_id, node_id)
-            return _with_local_node_observers(owner, fn, stdout, stderr, event_queue)
+            saves = saves_outputs and node_id not in show_groups
+            saved_outputs = step_outputs if saves else None
+            return _with_local_node_observers(
+                owner, node_id, fn, stdout, stderr, event_queue, saved_outputs
+            )
 
+        def nodes_expanded(expansion: NodesExpanded) -> None:
+            if expansion.parent in map_groups:
+                step_outputs.note_map_size(expansion.parent, expansion.n_expected)
+            if expansion.parent not in show_groups:
+                _put_run_event(
+                    event_queue,
+                    {"type": "nodes_expanded", "expansion": expansion.model_dump_json()},
+                )
+
+        def node_succeeded(node_id: str) -> None:
+            if node_id in show_groups or node_id in item_groups:
+                return
+            _put_run_event(
+                event_queue,
+                {
+                    "type": "node_succeeded",
+                    "node_id": node_id,
+                    "timestamp": time.monotonic(),
+                    **(
+                        {"saved_output": step_outputs.finish(node_id).model_dump_json()}
+                        if saves_outputs and node_id not in restored
+                        else {}
+                    ),
+                },
+            )
+
+        def node_failed(node_id: str, exc: Exception) -> None:
+            step_outputs.discard(node_id)
+            if node_id not in item_groups:
+                _put_run_event(
+                    event_queue,
+                    {
+                        "type": "node_failed",
+                        "error_type": type(exc).__name__,
+                        "node_id": show_groups.get(node_id, node_id),
+                        "timestamp": time.monotonic(),
+                        "error": _bounded_event_text(f"{type(exc).__name__}: {exc}", 65_536),
+                    },
+                )
+
+        def completed_value(node_id: str, value: object) -> object:
+            # Waits and decisions complete here without a task; map groups never do.
+            if (
+                saves_outputs
+                and node_id not in restored
+                and node_id not in show_groups
+                and node_id not in item_groups
+            ):
+                step_outputs.save_if_unsaved(node_id, value)
+            return record_result(node_id, value)
+
+        def node_reused(node_id: str, source_run_id: str) -> None:
+            slug = workflow.node_slugs[node_id]
+            entry = rerun_assignment.index.outputs[slug]
+            record = ReusedOutputRecord(
+                node_id=node_id,
+                step_slug=slug,
+                source_run_id=source_run_id,
+                reason=entry.reason if isinstance(entry, NotReusableStepOutput) else None,
+            )
+            _put_run_event(
+                event_queue,
+                {"type": "node_reused", "reused_output": record.model_dump_json()},
+            )
+
+        if planned_rerun is not None:
+            assert rerun_provider is not None
+            # Steps edit the run's workspace in place; a rerun starts from the
+            # workspace as its reused steps left it.
+            rerun_provider.seed_run_workspace(
+                (
+                    SavedStepOutput(slug=step.slug, run_id=step.source_run_id)
+                    for step in planned_rerun.plan.reused
+                ),
+                local_run_workspace(run_id).path,
+            )
         _put_run_event(event_queue, {"type": "running", "timestamp": time.monotonic()})
         from .machine_steps import MachineStepPending
 
@@ -286,19 +429,11 @@ def _run_worker(
                 event_queue, {"type": "wait_resolved", "node_id": node_id}
             ),
             resume_results=resume_results,
-            unwrap_result=record_result,
             machine_step=machine_step,
             machine_payload=machine_state_entry.payload
             if machine_state_entry is not None
             else None,
-            on_nodes_expanded=lambda expansion: (
-                None
-                if expansion.parent in show_groups
-                else _put_run_event(
-                    event_queue,
-                    {"type": "nodes_expanded", "expansion": expansion.model_dump_json()},
-                )
-            ),
+            on_nodes_expanded=nodes_expanded,
             on_node_start=lambda node_id: (
                 None
                 if node_id in show_groups or node_id in item_groups
@@ -307,37 +442,12 @@ def _run_worker(
                     {"type": "node_started", "node_id": node_id, "timestamp": time.monotonic()},
                 )
             ),
-            on_node_success=lambda node_id: (
-                None
-                if node_id in show_groups or node_id in item_groups
-                else _put_run_event(
-                    event_queue,
-                    {
-                        "type": "node_succeeded",
-                        "node_id": node_id,
-                        "timestamp": time.monotonic(),
-                    },
-                )
-            ),
-            on_node_failure=lambda node_id, exc: (
-                None
-                if node_id in item_groups
-                else _put_run_event(
-                    event_queue,
-                    {
-                        "type": "node_failed",
-                        "error_type": type(exc).__name__,
-                        "node_id": show_groups.get(node_id, node_id),
-                        "timestamp": time.monotonic(),
-                        "error": _bounded_event_text(
-                            f"{type(exc).__name__}: {exc}",
-                            65_536,
-                        ),
-                    },
-                )
-            ),
+            on_node_success=node_succeeded,
+            on_node_failure=node_failed,
+            on_node_reused=None if planned_rerun is None else node_reused,
             cancel_requested=cancel_event.is_set,
             wrap_fn=wrap_fn,
+            unwrap_result=completed_value,
         )
         run_handle = workflow.run(
             executor=executor,
@@ -345,6 +455,7 @@ def _run_worker(
             input=input_value if validated_input is None else validated_input,
             context=context_value,
             run_id=run_id,
+            planned_rerun=planned_rerun,
         )
         if control_connection is not None:
             serve_wait_controls(
@@ -644,10 +755,12 @@ class _QueueStream:
 
 def _with_local_node_observers(
     node_id: str,
+    task_id: str,
     fn: Callable[..., Any],
     stdout: _QueueStream,
     stderr: _QueueStream,
     event_queue: Any,
+    step_outputs: StepOutputWriter | None,
 ) -> Callable[..., Any]:
     if getattr(fn, "__agent_step__", None) is not None:
         fn = _with_agent_evidence(node_id, fn, event_queue)
@@ -655,6 +768,8 @@ def _with_local_node_observers(
     if getattr(fn, "__classifier_step__", None) is not None:
         fn = _with_classifier_evidence(node_id, fn, event_queue)
     fn = _with_step_io(node_id, fn, event_queue)
+    if step_outputs is not None:
+        fn = _with_step_output(task_id, fn, step_outputs)
     return _with_node_streams(node_id, fn, stdout, stderr)
 
 
@@ -880,6 +995,46 @@ def _with_step_io(
         return result
 
     return wrapper
+
+
+def _with_step_output(
+    node_id: str,
+    fn: Callable[..., object],
+    step_outputs: StepOutputWriter,
+) -> Callable[..., object]:
+    """Save a step's return value in the task that ran it, while its files still exist."""
+    if inspect.iscoroutinefunction(fn):
+
+        @wraps(fn)
+        async def async_wrapper(*args: object, **kwargs: object) -> object:
+            result = await fn(*args, **kwargs)
+            # Copying file content must not hold up other steps on this event loop.
+            await asyncio.to_thread(step_outputs.save, node_id, result)
+            return result
+
+        return async_wrapper
+
+    @wraps(fn)
+    def wrapper(*args: object, **kwargs: object) -> object:
+        result = fn(*args, **kwargs)
+        step_outputs.save(node_id, result)
+        return result
+
+    return wrapper
+
+
+def _bounded_refusal(refusal: RerunRefusal) -> RerunRefusal:
+    """Keep every problem, with each detail short enough to travel in a gRPC status."""
+    return refusal.model_copy(
+        update={
+            "problems": tuple(
+                problem.model_copy(
+                    update={"detail": _bounded_event_text(problem.detail, _MAX_PROBLEM_DETAIL)}
+                )
+                for problem in refusal.problems
+            )
+        }
+    )
 
 
 def _put_preparation_event(event_queue: Any, event: dict[str, Any]) -> None:

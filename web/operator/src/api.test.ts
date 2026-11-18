@@ -1,6 +1,8 @@
+import { base64encode } from "@protobuf-ts/runtime";
 import { describe, expect, it, vi } from "vitest";
 
 import { GrpcWebOperatorApi } from "./api";
+import { RerunRefusedError } from "./rerun";
 import type { ClassifierEventPageRequest } from "./api";
 import type { ClassifierDeclaration, ClassifierInvocation } from "./classifier";
 import {
@@ -17,6 +19,7 @@ import {
   LifecycleCursorV2,
   NodeSnapshotV2,
   ProjectSummaryCursorV2,
+  RerunRefusalV2,
   RunActivityDescriptorV2,
   RunActivityPageV2,
   RunSnapshotV2,
@@ -1532,5 +1535,78 @@ describe("operator transport boundary", () => {
       at: Date.parse("2026-11-09T22:00:00Z") / 1000,
     });
     expect((await api.listRunWaits("run-1")).length).toBe(2);
+  });
+});
+
+describe("startRerun", () => {
+  function grpcWebTrailer(lines: string) {
+    const payload = new TextEncoder().encode(lines);
+    const frame = new Uint8Array(5 + payload.length);
+    frame[0] = 0x80;
+    new DataView(frame.buffer).setUint32(1, payload.length);
+    frame.set(payload, 5);
+    return new Response(frame, { headers: { "content-type": "application/grpc-web+proto" } });
+  }
+
+  it("turns the proxy's refusal trailer into every problem and the earliest start", async () => {
+    const refusal = RerunRefusalV2.toBinary({
+      problems: [
+        { step: "b", reason: "missing_from_source", detail: "b is not in the source run" },
+        { reason: "source_run_active", detail: "the source run is still going" },
+      ],
+      earliestStart: ["a", "b"],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        grpcWebTrailer(
+          `grpc-status: 9\r\ngrpc-message: refused\r\nrerun-refusal-bin: ${base64encode(refusal)}\r\n`,
+        ),
+      ),
+    );
+    try {
+      const api = new GrpcWebOperatorApi("http://operator.test");
+      const refused: unknown = await api
+        .startRerun({
+          requestId: "0123456789abcdef",
+          workflowSelector: "flows.py::chain",
+          sourceRunId: "run-1",
+          start: ["c"],
+          mode: "lazy",
+        })
+        .catch((error: unknown) => error);
+
+      expect(refused).toBeInstanceOf(RerunRefusedError);
+      expect((refused as RerunRefusedError).problems).toEqual([
+        { step: "b", reason: "missing_from_source", detail: "b is not in the source run" },
+        { reason: "source_run_active", detail: "the source run is still going" },
+      ]);
+      expect((refused as RerunRefusedError).earliestStart).toEqual(["a", "b"]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the operator's message for a failure that is not a refusal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        grpcWebTrailer("grpc-status: 9\r\ngrpc-message: chain.py no longer imports\r\n"),
+      ),
+    );
+    try {
+      const api = new GrpcWebOperatorApi("http://operator.test");
+      await expect(
+        api.startRerun({
+          requestId: "0123456789abcdef",
+          workflowSelector: "flows.py::chain",
+          sourceRunId: "run-1",
+          start: ["c"],
+          mode: "autorun",
+        }),
+      ).rejects.toThrow("chain.py no longer imports");
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

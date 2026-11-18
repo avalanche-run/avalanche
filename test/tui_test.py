@@ -14,6 +14,7 @@ import pytest
 from predict_rlm import RunEvent, RunEventKind, RunEvidence, RunTrace
 from predict_rlm.trace import IterationStep, PredictCallDetail, PredictCallGroup, ToolCall
 from pydantic import ValidationError
+from textual.widgets import Static
 
 from avalanche._agent_trace import AgentTraceEnvelope
 from avalanche.agent.live import (
@@ -23,6 +24,13 @@ from avalanche.agent.live import (
     AgentTraceUnavailable,
 )
 from avalanche.agent.native.predict_rlm import IterationRecorded, PredictRLMOmissions
+from avalanche.reruns import (
+    RerunProblem,
+    RerunProblemReason,
+    RerunRefusal,
+    RerunRefusedError,
+)
+from avalanche.runtime import Rerun
 from avalanche.runtimes.predict_rlm.events import project_event
 from avalanche.runtimes.predict_rlm.trace import trace_header
 from runtime.operator.client import OperatorCallError
@@ -47,6 +55,9 @@ from tui.models import (
     StreamResetNotice,
     WorkflowInfo,
 )
+from tui.screens.rerun import RerunScreen
+from tui.state import RERUN_ACTION_ID, Object, TuiExtensionError
+from tui.theme import STATUS_CHARS, STATUS_STYLES
 from tui.ui_store import TraceDetailCompletion, UIStore
 from tui.widgets.agent_trace import AgentOutputInspector, AgentTraceInspector
 from tui.widgets.log_panel import LogWidget
@@ -2278,3 +2289,413 @@ def test_openai_declarations_fill_the_metadata_sections(store):
     assert sections["runtime"] == {"max_turns": 4, "narrate": True, "builtin_tools": ["shell"]}
     assert [tool["name"] for tool in sections["tools"]] == ["lookup"]
     assert sections["skills"] == {}
+
+
+# ── Reruns ─────────────────────────────────────────────────────────────────
+
+
+class _RerunProvider(MockStateProvider):
+    """Records rerun requests; ``failures`` are raised by the next attempts, in order."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reruns: list[Rerun] = []
+        self.run_ids: list[str | None] = []
+        self.failures: list[Exception] = []
+        self.release = threading.Event()
+        self.release.set()
+
+    def start_run(self, workflow_selector: str, rerun: Rerun | None = None, **kwargs) -> str:
+        if rerun is not None:
+            self.reruns.append(rerun)
+            self.release.wait(timeout=5)
+            if self.failures:
+                raise self.failures.pop(0)
+        return super().start_run(workflow_selector, rerun=rerun, **kwargs)
+
+
+def _finished_order_run(provider: MockStateProvider) -> RunState:
+    return next(run for run in provider._runs.values() if run.flow_name == "order_workflow")
+
+
+async def _open_rerun_dialog(pilot, app: AvalancheApp) -> RerunScreen:
+    await _wait_for(pilot, lambda: app.store.selected_node is not None)
+    await _wait_for(pilot, app.can_rerun_selected_step)
+    await pilot.press("R")
+    await _wait_for(pilot, lambda: isinstance(app.screen, RerunScreen))
+    return app.screen
+
+
+def _refusal(detail: str) -> RerunRefusedError:
+    return RerunRefusedError(
+        RerunRefusal(
+            problems=(
+                RerunProblem(
+                    step="validate", reason=RerunProblemReason.NOT_REUSABLE, detail=detail
+                ),
+            ),
+            earliest_start=(),
+        )
+    )
+
+
+def _outcome(screen: RerunScreen) -> str:
+    return str(screen.query_one("#rerun-outcome-text", Static).render())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("keys", "mode", "statuses"),
+    [
+        (
+            ["enter"],
+            "autorun",
+            {"fetch_orders_1": NodeStatus.REUSED, "aggregate_1": NodeStatus.PENDING},
+        ),
+        (
+            ["down", "enter"],
+            "lazy",
+            {"fetch_orders_1": NodeStatus.REUSED, "aggregate_1": NodeStatus.SKIPPED},
+        ),
+    ],
+    ids=["this-step-and-after-is-the-default", "only-this-step"],
+)
+async def test_rerun_dialog_starts_the_chosen_mode_and_shows_the_new_run(keys, mode, statuses):
+    provider = _RerunProvider()
+    source = _finished_order_run(provider)
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        await _open_rerun_dialog(pilot, app)
+        await pilot.press(*keys)
+        await _wait_for(pilot, lambda: not isinstance(app.screen, RerunScreen))
+        await _wait_for(pilot, lambda: app.store.current_run.run_id != source.run_id)
+
+        expected = Rerun(run_id=source.run_id, start=("validate_1",), mode=mode)
+        assert provider.reruns == [expected]
+        run = app.store.current_run
+        assert run.rerun_of_run_id == source.run_id
+        assert app.store.run_pinned
+        assert {node: run.nodes[node].status for node in statuses} == statuses
+        assert run.nodes["fetch_orders_1"].reused_from_run_id == source.run_id
+        # The step the rerun started from stays selected.
+        assert app.store.selected_node.name == "validate_1"
+
+
+@pytest.mark.asyncio
+async def test_refused_rerun_shows_every_problem_and_the_earliest_start():
+    provider = _RerunProvider()
+    provider.failures = [
+        RerunRefusedError(
+            RerunRefusal(
+                problems=(
+                    RerunProblem(
+                        step="fetch_orders",
+                        reason=RerunProblemReason.MISSING_FROM_SOURCE,
+                        detail="first problem detail",
+                    ),
+                    RerunProblem(
+                        step="validate",
+                        reason=RerunProblemReason.NOT_REUSABLE,
+                        detail="second problem detail",
+                    ),
+                    RerunProblem(
+                        step=None,
+                        reason=RerunProblemReason.SOURCE_RUN_ACTIVE,
+                        detail="whole run problem detail",
+                    ),
+                ),
+                earliest_start=("fetch_orders", "fetch_inventory"),
+            )
+        )
+    ]
+    runs_before = set(provider._runs)
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="aggregate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        screen = await _open_rerun_dialog(pilot, app)
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: "first problem detail" in _outcome(screen))
+
+        shown = _outcome(screen)
+        for expected in (
+            "second problem detail",
+            "whole run problem detail",
+            "fetch_orders",
+            "fetch_inventory",
+        ):
+            assert expected in shown
+        assert app.screen is screen
+        assert set(provider._runs) == runs_before
+
+        # A refusal started nothing, so the other mode can be tried at once.
+        await pilot.press("down", "enter")
+        await _wait_for(pilot, lambda: not isinstance(app.screen, RerunScreen))
+        assert [rerun.mode for rerun in provider.reruns] == ["autorun", "lazy"]
+
+
+@pytest.mark.asyncio
+async def test_rerun_with_an_unknown_outcome_retries_only_the_same_attempt():
+    provider = _RerunProvider()
+    provider.failures = [TuiExtensionError("unavailable", "Timed out", retryable=True)]
+    invoked: list[tuple[Object, str]] = []
+    invoke = provider.tui_extensions.invoke
+
+    def recording_invoke(action, context, payload, *, intent_id):
+        if action == RERUN_ACTION_ID:
+            invoked.append((dict(payload), intent_id))
+        return invoke(action, context, payload, intent_id=intent_id)
+
+    provider.tui_extensions.invoke = recording_invoke
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        screen = await _open_rerun_dialog(pilot, app)
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: "Timed out" in _outcome(screen))
+
+        # Another mode could start a second rerun beside the first.
+        await pilot.press("down", "enter")
+        await pilot.pause()
+        assert len(invoked) == 1
+        assert app.screen is screen
+
+        await pilot.press("up", "enter")
+        await _wait_for(pilot, lambda: not isinstance(app.screen, RerunScreen))
+        assert [item[0] for item in invoked] == [{"mode": "autorun"}, {"mode": "autorun"}]
+        assert invoked[0][1] == invoked[1][1]
+
+
+@pytest.mark.asyncio
+async def test_busy_session_keeps_the_attempt_whose_outcome_is_unknown():
+    provider = _RerunProvider()
+    provider.failures = [TuiExtensionError("unavailable", "Timed out", retryable=True)]
+    intents: list[str] = []
+    invoke = provider.tui_extensions.invoke
+
+    def recording_invoke(action, context, payload, *, intent_id):
+        if action == RERUN_ACTION_ID:
+            intents.append(intent_id)
+        return invoke(action, context, payload, intent_id=intent_id)
+
+    provider.tui_extensions.invoke = recording_invoke
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        screen = await _open_rerun_dialog(pilot, app)
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: "Timed out" in _outcome(screen))
+
+        # Both of the session's worker slots are taken, so the retry is never sent.
+        session = app.extension_session
+        release = threading.Event()
+        holders = [session._executor.submit(release.wait, 5) for _ in range(2)]
+        session._futures.extend(holders)
+        try:
+            await pilot.press("enter")
+            await _wait_for(pilot, lambda: "busy" in _outcome(screen))
+            assert len(intents) == 1
+            # The earlier attempt may have started, so the other mode stays closed too.
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            assert "busy" not in _outcome(screen)
+            assert len(intents) == 1
+        finally:
+            release.set()
+        await _wait_for(pilot, lambda: all(holder.done() for holder in holders))
+
+        await pilot.press("up", "enter")
+        await _wait_for(pilot, lambda: not isinstance(app.screen, RerunScreen))
+        assert len(intents) == 2 and intents[0] == intents[1]
+
+
+@pytest.mark.asyncio
+async def test_rerun_answer_survives_a_selection_change_and_a_closed_dialog():
+    provider = _RerunProvider()
+    provider.release.clear()
+    provider.failures = [_refusal("late problem")]
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        screen = await _open_rerun_dialog(pilot, app)
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: provider.reruns)
+
+        # The dashboard's selection moves while the operator is still answering.
+        app.store.deselect_node()
+        await pilot.pause(0.1)
+        assert app.screen is screen
+        provider.release.set()
+        await _wait_for(pilot, lambda: "late problem" in _outcome(screen))
+
+        # Closed while waiting: the answer becomes a notification.
+        provider.release.clear()
+        provider.failures = [_refusal("closed problem")]
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: len(provider.reruns) == 2)
+        await pilot.press("escape")
+        await _wait_for(pilot, lambda: app.screen is not screen)
+        provider.release.set()
+        await _wait_for(
+            pilot,
+            lambda: any("closed problem" in item.message for item in app._notifications),
+        )
+
+
+@pytest.mark.asyncio
+async def test_opening_the_new_run_survives_a_stream_reset_while_it_loads():
+    class SlowLinkProvider(_RerunProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.loading = threading.Event()
+            self.proceed = threading.Event()
+            self.proceed.set()
+            self.known_runs = set(self._runs)
+
+        def get_run(self, run_id: str) -> RunState | None:
+            # Only the new run's load waits: the action description reads the source.
+            if run_id not in self.known_runs and not self.proceed.is_set():
+                self.loading.set()
+                self.proceed.wait(timeout=5)
+            return super().get_run(run_id)
+
+    provider = SlowLinkProvider()
+    source = _finished_order_run(provider)
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        await _wait_for(pilot, app.can_rerun_selected_step)
+        # The user was looking at an older run, so following the latest will not help.
+        await _wait_for(pilot, lambda: app.store.current_run is not None)
+        app.store.switch_run(provider.get_run(source.run_id))
+        await _open_rerun_dialog(pilot, app)
+        provider.proceed.clear()
+        await pilot.press("enter")
+        await _wait_for(pilot, provider.loading.is_set)
+
+        # What a reset baseline does to the epoch, while the flow stays selected.
+        app.store._workflow_context_epoch += 1
+        provider.proceed.set()
+        await _wait_for(pilot, lambda: app.store.current_run.run_id != source.run_id)
+        assert app.store.run_pinned
+        assert app.store.current_run.rerun_of_run_id == source.run_id
+
+
+@pytest.mark.asyncio
+async def test_rerun_is_only_offered_for_a_finished_run_and_a_known_step():
+    provider = _RerunProvider()
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(160, 40)) as pilot:
+        await _wait_for(pilot, app.can_rerun_selected_step)
+        legend = app.screen.query_one("#run-key-rerun")
+        await _wait_for(pilot, lambda: not legend.has_class("-disabled"))
+
+        # No step selected.
+        app.store.deselect_node()
+        await _wait_for(pilot, lambda: not app.can_rerun_selected_step())
+        await pilot.press("R")
+        await pilot.pause()
+        assert app.screen is app._screen
+        await _wait_for(pilot, lambda: legend.has_class("-disabled"))
+
+        # A run that is still going.
+        run_id = provider.start_run("order_workflow")
+        app.store.select_node(next(n for n in app.store.all_nodes if n.name == "validate_1"))
+        app.store.switch_run(provider.get_run(run_id))
+        await _wait_for(pilot, lambda: app.extension_session.description is not None)
+        await pilot.pause(0.1)
+        assert not app.can_rerun_selected_step()
+        await pilot.press("R")
+        await pilot.pause()
+        assert app.screen is app._screen
+        assert provider.reruns == []
+
+
+@pytest.mark.asyncio
+async def test_read_only_mode_cannot_open_the_rerun_dialog():
+    provider = _RerunProvider()
+    app = AvalancheApp(
+        provider=provider, workflow="order_workflow", node="validate_1", read_only=True
+    )
+    async with app.run_test(size=(160, 40)) as pilot:
+        await _wait_for(pilot, lambda: app.extension_session.description is not None)
+        assert not app.can_rerun_selected_step()
+        await pilot.press("R")
+        await pilot.pause()
+        assert app.screen is app._screen
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("node_count", [7, 201], ids=["graph", "large-step-list"])
+async def test_reused_step_has_its_own_state_and_links_to_its_source(node_count):
+    provider = MockStateProvider()
+    source = _finished_order_run(provider)
+    workflow = provider._workflows["order_workflow"]
+    ids = workflow.node_ids
+    if node_count > len(ids):
+        ids = [*ids, *(f"extra_{i}_1" for i in range(node_count - len(ids)))]
+        provider._workflows["order_workflow"] = replace(
+            workflow,
+            node_ids=ids,
+            graph={nid: ids[i + 1 : i + 2] for i, nid in enumerate(ids)},
+            node_types={nid: "step" for nid in ids},
+            display_names={nid: nid for nid in ids},
+        )
+    prototype = source.nodes["validate_1"]
+    source.nodes = {nid: replace(prototype, node_id=nid, name=nid) for nid in ids}
+    # The selected step draws selection colors, so its neighbor shows the status style.
+    reused = {"fetch_orders_1", "validate_1"}
+    rerun = RunState(
+        run_id="run_rerun",
+        flow_name="order_workflow",
+        status=RunStatus.SUCCESS,
+        started_at=source.started_at + 100,
+        ended_at=source.started_at + 101,
+        triggered_at=time.time(),
+        rerun_of_run_id=source.run_id,
+        nodes={
+            nid: replace(
+                source.nodes[nid],
+                status=NodeStatus.REUSED if nid in reused else NodeStatus.SUCCESS,
+                reused_from_run_id=source.run_id if nid in reused else None,
+            )
+            for nid in ids
+        },
+    )
+    provider._runs[rerun.run_id] = rerun
+    app = AvalancheApp(provider=provider, workflow="order_workflow", node="validate_1")
+    async with app.run_test(size=(180, 50)) as pilot:
+        await _wait_for(pilot, lambda: app.store.current_run is not None)
+        app.store.switch_run(provider.get_run(rerun.run_id))
+        app._refresh_widgets()
+        await pilot.pause()
+
+        dag = app.screen.query_one("#dag-panel")
+        text = (
+            dag.render()
+            if node_count <= 200
+            else dag._large_row(app.store, dag._large_rows.index(app.store.selected_node))
+        )
+        marker = STATUS_CHARS[NodeStatus.REUSED]
+        assert marker not in {STATUS_CHARS[s] for s in STATUS_CHARS if s != NodeStatus.REUSED}
+        assert marker in text.plain and "reused" in text.plain
+        assert any(
+            span.style == STATUS_STYLES[NodeStatus.REUSED]
+            and marker in text.plain[span.start : span.end]
+            for span in text.spans
+        )
+        status_bar = app.screen.query_one("#status-bar").render().plain
+        assert f"rerun of {source.run_id}" in status_bar
+        assert f"reused from {source.run_id}" in status_bar
+        # A reused step has no logs here: the empty state shows once, not on every row.
+        logs = app.screen.query_one("#log-content")
+        assert [bool(logs._render_row(row).text.strip()) for row in range(3)] == [
+            True,
+            False,
+            False,
+        ]
+        rows = app.screen.query_one("#run-history-content").render().plain
+        assert any(
+            line.startswith("  run_rerun") and f"rerun of {source.run_id}" in line
+            for line in rows.splitlines()
+        )
+
+        # Enter follows the link to the run holding the output, keeping the step.
+        app.store.focused_pane = "dag"
+        await pilot.press("enter")
+        await _wait_for(pilot, lambda: app.store.current_run.run_id == source.run_id)
+        assert app.store.selected_node.name == "validate_1"

@@ -87,6 +87,7 @@ import {
   useGraphOrientation,
 } from "./useGraphOrientation";
 import { ClaudeLogo, isClaudeRuntime } from "./ClaudeLogo";
+import { ReusedFromLink } from "./RerunDialog";
 import { RunStatus, statusTone, statusToneColor, type WaitKind } from "./RunStatusBadge";
 import type { WaitCard } from "./RunWaitPanel";
 import {
@@ -135,6 +136,9 @@ export interface AgentDeclaration extends AgentFieldSchemas {
 
 interface CardData extends Record<string, unknown> {
   label: string;
+  /** Status "reused" only: the run holding this step's saved output. */
+  reusedFromRunId?: string;
+  onOpenReusedSource?: () => void;
   nodeType: string;
   isAgent: boolean;
   /** The agent runs on ClaudeAgent, the Claude Agent SDK runtime. */
@@ -379,7 +383,7 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
     ];
   return (
     <article
-      className={`node-card ${data.current ? "node-card--current" : ""} ${showDescription ? "node-card--description" : ""} ${isCompact ? `node-card--compact ${hasEvaluationRow ? "min-h-[130px]" : "min-h-[100px]"} justify-center gap-0 px-4 py-3` : "min-h-[130px] gap-2 p-4"} relative flex w-[360px] cursor-pointer flex-col items-stretch rounded border text-left motion-reduce:transition-none ${designationClass}`}
+      className={`node-card ${data.current ? "node-card--current" : ""} ${showDescription ? "node-card--description" : ""} ${isCompact ? `node-card--compact ${hasEvaluationRow ? "min-h-[130px]" : "min-h-[100px]"} justify-center gap-0 px-4 py-3` : "min-h-[130px] gap-2 p-4"} relative flex w-[360px] cursor-pointer flex-col items-stretch rounded border text-left motion-reduce:transition-none ${designationClass} ${state === "reused" ? "border-dashed" : ""}`}
       data-node-state={state}
       data-node-wait={waiting ? data.waitKind : undefined}
       data-current={data.current || undefined}
@@ -503,6 +507,13 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
             <span title={data.childRun.runId}>{data.childRun.runId}</span>
           )}
         </div>
+      )}
+      {data.reusedFromRunId && data.onOpenReusedSource && (
+        <ReusedFromLink
+          runId={data.reusedFromRunId}
+          onOpen={data.onOpenReusedSource}
+          className={`nodrag relative z-[3] ${isCompact ? "text-sm" : ""}`}
+        />
       )}
       {data.mapItems && (
         <div className="relative z-[3] flex flex-wrap gap-1" aria-label="Map items">
@@ -1140,6 +1151,8 @@ interface GraphCanvasProps {
   onOpenNode: (nodeId: string) => void;
   /** Start/call nodes' child runs by node ID; each card links to its child's page. */
   childRuns?: Record<string, GraphChildRun>;
+  /** Opens the run holding a reused step's saved output, on that step. */
+  onOpenReusedSource?: (runId: string, nodeId: string) => void;
   inspectionDisabled?: boolean;
   /**
    * What the run timeline points at (a hovered or selected entry): a machine
@@ -1164,6 +1177,7 @@ function GraphCanvasView({
   onClearNode,
   onOpenNode,
   childRuns,
+  onOpenReusedSource,
   inspectionDisabled = false,
   highlight,
 }: GraphCanvasProps) {
@@ -1466,6 +1480,7 @@ function GraphCanvasView({
         topology.standardStepDocstringLines[nodeId] ||
         (!runTopology ? firstInstructionLine(agentDeclaration?.instructions) : undefined);
       const evaluation = runTopology ? evaluations?.[nodeId] : undefined;
+      const reusedFromRunId = runtimeNode?.reusedFromRunId;
       return {
         id: nodeId,
         selected: nodeId === selectedNodeId,
@@ -1516,6 +1531,12 @@ function GraphCanvasView({
             evaluation?.status === "completed" ? evaluation.result.composites : undefined,
           status: runtimeNode?.status,
           waitKind: waitKindFor(nodeId),
+          reusedFromRunId,
+          onOpenReusedSource:
+            reusedFromRunId && onOpenReusedSource
+              ? () =>
+                  onOpenReusedSource(reusedFromRunId, runtimeNode?.reusedFromNodeId ?? nodeId)
+              : undefined,
           error: runtimeNode?.error,
           startedAt: runtimeNode?.startedAt || undefined,
           endedAt: runtimeNode?.endedAt || undefined,
@@ -1560,6 +1581,7 @@ function GraphCanvasView({
     groupedTopology,
     highlight,
     onOpenNode,
+    onOpenReusedSource,
     runTopology,
     selectedNodeId,
     topology,
@@ -1869,6 +1891,7 @@ function sameRunNodeState(
       node.name === other.name &&
       node.nodeType === other.nodeType &&
       node.status === other.status &&
+      node.reusedFromRunId === other.reusedFromRunId &&
       node.error === other.error &&
       node.startedAt === other.startedAt &&
       node.endedAt === other.endedAt
@@ -1912,6 +1935,7 @@ export const GraphCanvas = memo(
     left.selectedNodeId === right.selectedNodeId &&
     left.onClearNode === right.onClearNode &&
     left.onOpenNode === right.onOpenNode &&
+    left.onOpenReusedSource === right.onOpenReusedSource &&
     left.inspectionDisabled === right.inspectionDisabled &&
     left.highlight === right.highlight &&
     sameChildRuns(left.childRuns, right.childRuns) &&

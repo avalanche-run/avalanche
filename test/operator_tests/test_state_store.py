@@ -179,6 +179,35 @@ def test_divergent_migration_history_is_refused(tmp_path, recorded):
             migrate(connection, str(path), (MIGRATIONS[0], Migration(2, "two", ())))
 
 
+def test_upgrading_to_reruns_keeps_stored_runs_and_their_nodes(tmp_path):
+    path = tmp_path / "state.db"
+    with _raw(path) as connection:
+        migrate(connection, str(path), MIGRATIONS[:7])
+        connection.execute(
+            "INSERT INTO runs (run_id, flow_name, status, triggered_by, workflow_id, "
+            "workflow_display_name, topology_json, created_sequence, revision, "
+            "activity_sequence, request_json) VALUES "
+            "('old', 'flow', 'success', 'api', 'flow', 'flow', '{}', 1, 1, 0, '{}')"
+        )
+        connection.execute(
+            "INSERT INTO run_nodes (run_id, node_id, position, name, node_type, status, "
+            "revision, map_parent, map_index) VALUES "
+            "('old', 'item[0]', 0, 'item', 'step', 'skipped', 1, 'item', 0)"
+        )
+        migrate(connection, str(path))
+        node = connection.execute(
+            "SELECT status, map_parent, map_index, reused_from_run_id FROM run_nodes"
+        ).fetchone()
+        assert tuple(node) == ("skipped", "item", 0, None)
+        connection.execute("UPDATE run_nodes SET status = 'reused'")
+        assert connection.execute(
+            "SELECT rerun_of_run_id FROM runs"
+        ).fetchone()[0] is None
+        connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("DELETE FROM runs")
+        assert connection.execute("SELECT COUNT(*) FROM run_nodes").fetchone()[0] == 0
+
+
 def test_migration_versions_must_be_contiguous(tmp_path):
     with _raw(tmp_path / "state.db") as connection, pytest.raises(ValueError):
         migrate(connection, "x", (Migration(2, "two", ()),))

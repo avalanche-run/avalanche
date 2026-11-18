@@ -681,6 +681,7 @@ def _descriptor_to_dict(
         "graph": [[key, value] for key, value in workflow.graph.items()],
         "node_types": [[nid, workflow.nodes[nid].node.node_type.value] for nid in node_ids],
         "display_names": [[nid, display_name_from_id(nid)] for nid in node_ids],
+        "node_slugs": [[nid, workflow.node_slugs[nid]] for nid in node_ids],
         "agent_node_ids": list(agent_declarations),
         "agent_declarations_json": [
             [node_id, declaration.model_dump_json()]
@@ -730,6 +731,7 @@ def _descriptor_from_dict(item: dict[str, Any]) -> WorkflowDescriptor:
         graph=tuple((key, tuple(value)) for key, value in item["graph"]),
         node_types=tuple((key, value) for key, value in item["node_types"]),
         display_names=tuple((key, value) for key, value in item["display_names"]),
+        node_slugs=tuple((key, value) for key, value in item["node_slugs"]),
         agent_node_ids=tuple(item.get("agent_node_ids", ())),
         agent_declarations=tuple(
             (key, AgentDeclaration.model_validate_json(value))

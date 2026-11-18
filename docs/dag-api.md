@@ -399,6 +399,10 @@ For task-scoped platform resources, pass `ava.ExecutionServicesSpec`; see
 
 ## Rerun
 
+To rerun a step of a local operator's run from the CLI, web UI or TUI, see
+[Reruns](api/reruns.md). The rest of this section is embedded Python only, where nothing is
+saved and a step can be skipped only if later steps read its output through `ava.Stream`.
+
 Use `ava.Rerun` to run part of an earlier workflow again. Target stable node
 slugs; set `slug=` explicitly for nodes that must be rerun by name.
 

@@ -16,7 +16,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 import grpc
 from pydantic_core import to_jsonable_python
@@ -28,10 +28,13 @@ from avalanche.integrations.providers import (
     ProviderSelectionError,
     ProviderUnavailableError,
 )
-from avalanche.runtime import File
+from avalanche.reruns import RerunRefusedError
+from avalanche.runtime import File, Rerun
 
 from .convert_v2 import (
     DETAIL_URI_SCHEME,
+    RERUN_MODES,
+    RERUN_REFUSAL_TRAILER,
     RESULT_URI_SCHEME,
     START_RUN_TRIGGERS,
     TRACE_URI_SCHEME,
@@ -39,6 +42,7 @@ from .convert_v2 import (
     classifier_event_activity_to_v2,
     flow_list_to_v2,
     log_activity_to_v2,
+    rerun_refusal_to_v2,
     run_snapshot_to_v2,
     run_summary_to_v2,
     sha256_hex,
@@ -69,6 +73,7 @@ from .operator import (
     RunResultNotReadyError,
     RunResultUnavailableError,
     StructuralBaselineUnavailableError,
+    UnknownRerunSourceError,
     _bounded_page_size,
 )
 from .proto import operator_pb2 as pb
@@ -1225,6 +1230,12 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             )
         if request.trigger not in _START_RUN_TRIGGERS:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Unknown start trigger")
+        rerun = None
+        if request.HasField("rerun"):
+            try:
+                rerun = _rerun_from_v2(request.rerun)
+            except ValueError as exc:
+                context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         trigger = _START_RUN_TRIGGERS[request.trigger]
         # Identity replay precedes attachment claims: stale/unused uploads are irrelevant.
         from .machine_control import existing_keyed_run
@@ -1269,8 +1280,21 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
                     context=run_context,
                     expected_version=request.expected_version,
                     input_files=claims.files,
+                    rerun=rerun,
                 )
                 return self._start_response(run_id)
+            except RerunRefusedError as exc:
+                context.set_trailing_metadata(
+                    (
+                        (
+                            RERUN_REFUSAL_TRAILER,
+                            rerun_refusal_to_v2(exc.refusal).SerializeToString(),
+                        ),
+                    )
+                )
+                context.abort(grpc.StatusCode.FAILED_PRECONDITION, _refusal_message(exc))
+            except UnknownRerunSourceError as exc:
+                context.abort(grpc.StatusCode.NOT_FOUND, exc.args[0])
             except (InvalidRunIdError, MissingRunInputError) as exc:
                 context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             except RunAlreadyExistsError as exc:
@@ -1873,10 +1897,37 @@ def _stream_chunks(data: bytes, chunk_type):
         )
 
 
+# RERUN_MODES by RunRerunModeV2 value.
+_RERUN_MODES: Mapping[int, Literal["autorun", "lazy"]] = MappingProxyType(
+    {value: mode for mode, value in RERUN_MODES.items()}
+)
+_MAX_REFUSAL_MESSAGE_LENGTH = 4096
+
 # START_RUN_TRIGGERS by StartRunTriggerV2 value.
 _START_RUN_TRIGGERS: Mapping[int, TriggerKind] = MappingProxyType(
     {value: kind for kind, value in START_RUN_TRIGGERS.items()}
 )
+
+
+def _rerun_from_v2(message: pb.RunRerunV2) -> Rerun:
+    if not message.source_run_id:
+        raise ValueError("rerun.source_run_id is required")
+    if len(set(message.start)) != len(message.start):
+        raise ValueError("rerun.start must not list a step twice")
+    if message.mode not in _RERUN_MODES:
+        raise ValueError("Unknown rerun mode")
+    return Rerun(
+        run_id=message.source_run_id,
+        start=tuple(message.start),
+        mode=_RERUN_MODES[message.mode],
+    )
+
+
+def _refusal_message(error: RerunRefusedError) -> str:
+    """The status text: every problem for readers without the typed trailer."""
+    earliest = error.refusal.earliest_start
+    suffix = f" Earliest step to rerun from: {', '.join(earliest)}." if earliest else ""
+    return f"{error}.{suffix}"[:_MAX_REFUSAL_MESSAGE_LENGTH]
 
 
 def _decode_input_payload_v2(

@@ -19,6 +19,7 @@ from ..theme import (
     OTHER_STATUS_CHAR,
     OTHER_STATUS_STYLE,
     SPINNER_FRAMES,
+    STATUS_STYLES,
     node_status_display,
     run_wait_kind,
     status_display,
@@ -108,11 +109,19 @@ class StatusBar(Static):
             text.append(f" {icon}", style)
             if not isinstance(run.status, RunStatus):
                 text.append(f" {status_label(run.status)}", style)
+            if run.rerun_of_run_id is not None:
+                text.append(f" rerun of {run.rerun_of_run_id}", DIM_STYLE)
 
         node = store.selected_node
         if node:
             text.append(_SEP, _SEP_STYLE)
             text.append(node.display_name, Style(color=ICE_FROST, bold=True))
+            state = run.nodes.get(node.name) if run else None
+            if state is not None and state.reused_from_run_id is not None:
+                text.append(
+                    f" reused from {state.reused_from_run_id} · Enter opens it",
+                    STATUS_STYLES[NodeStatus.REUSED],
+                )
 
         # Residual search info
         if store.search_query and not store.searching:

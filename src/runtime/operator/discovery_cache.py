@@ -83,6 +83,7 @@ class _CachedDescriptor(_CacheModel):
     machine_spec_json: str
     key_fields: tuple[str, ...]
     display_names: tuple[tuple[str, str], ...]
+    node_slugs: tuple[tuple[str, str], ...]
     agent_node_ids: tuple[str, ...]
     agent_declarations: tuple[tuple[str, AgentDeclaration], ...]
     integration_declarations: tuple[tuple[str, StepIntegrations], ...]
@@ -114,6 +115,7 @@ class _CachedDescriptor(_CacheModel):
             machine_spec_json=descriptor.machine_spec_json,
             key_fields=descriptor.key_fields,
             display_names=descriptor.display_names,
+            node_slugs=descriptor.node_slugs,
             agent_node_ids=descriptor.agent_node_ids,
             agent_declarations=descriptor.agent_declarations,
             integration_declarations=descriptor.integration_declarations,
@@ -145,6 +147,7 @@ class _CachedDescriptor(_CacheModel):
             machine_spec_json=self.machine_spec_json,
             key_fields=self.key_fields,
             display_names=self.display_names,
+            node_slugs=self.node_slugs,
             agent_node_ids=self.agent_node_ids,
             agent_declarations=self.agent_declarations,
             integration_declarations=self.integration_declarations,

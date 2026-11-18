@@ -15,8 +15,14 @@ from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
+from pydantic import JsonValue
+
 from avalanche.file import File
-from avalanche.references import local_workspace
+from avalanche.references import (
+    local_workspace,
+    registered_local_workspace,
+    restore_local_workspace,
+)
 from avalanche.workspace import Workspace
 
 MAX_STAGED_INPUT_FILE_BYTES = 32 * 1024 * 1024
@@ -294,6 +300,62 @@ class InputFileStaging:
         for folder in unused:
             shutil.rmtree(folder)
 
+    def restore_used_files(
+        self, values: Iterable[JsonValue], files: Iterable[StagedInputFile]
+    ) -> tuple[StagedInputFile, ...]:
+        """The stored ``files`` that stored input ``values`` still refer to.
+
+        A later run can reuse them by reference. The reference registry lives in the
+        system temporary folder, which a reboot may clear, so each is registered again.
+        Stored files do not say which reference is theirs, and two uploads can share a
+        name and content. A registered reference names its own folder; one that lost
+        its entry takes any unclaimed file with its name and digest, which is the same
+        content.
+        """
+        files = tuple(files)
+        identities = {(file.name, file.sha256) for file in files}
+        workspaces = {
+            reference.ref.workspace: (reference.ref.path, reference.sha256)
+            for value in values
+            for reference in _file_references(value)
+            if (reference.ref.path, reference.sha256) in identities
+        }
+        by_folder = {file.object_key.partition("/")[0]: file for file in files}
+        claimed: dict[str, StagedInputFile] = {}
+        unregistered: list[str] = []
+        for workspace in workspaces:
+            registered = registered_local_workspace(workspace)
+            if registered is None:
+                unregistered.append(workspace)
+            # A folder outside this staging root belongs to no stored file.
+            elif registered.parent == self._root and registered.name in by_folder:
+                claimed[workspace] = by_folder[registered.name]
+        for workspace in unregistered:
+            taken = {file.object_key for file in claimed.values()}
+            unclaimed = next(
+                (
+                    file
+                    for file in files
+                    if file.object_key not in taken
+                    and (file.name, file.sha256) == workspaces[workspace]
+                ),
+                None,
+            )
+            # A file that was never staged cannot be restored; reading it reports that.
+            if unclaimed is not None:
+                claimed[workspace] = unclaimed
+        for workspace, file in claimed.items():
+            self._validate_key(file.object_key)
+            token = file.object_key.partition("/")[0]
+            try:
+                restore_local_workspace(workspace, self._root / token)
+            except OSError as exc:
+                raise InputFileStorageError(
+                    f"Input file {file.name!r} is no longer stored: {exc}"
+                ) from exc
+        used = {file.object_key for file in claimed.values()}
+        return tuple(file for file in files if file.object_key in used)
+
     def _validate_key(self, object_key: str) -> None:
         token, separator, name = object_key.partition("/")
         if (
@@ -308,6 +370,18 @@ class InputFileStaging:
             raise StagedInputFileError(
                 f"Input file key {object_key!r} points outside the staging folder"
             )
+
+
+def _file_references(value: JsonValue) -> Iterator[File]:
+    if isinstance(value, list):
+        for item in value:
+            yield from _file_references(item)
+    elif isinstance(value, dict):
+        if value.get("kind") == "file" and "ref" in value:
+            yield File.model_validate(value)
+        else:
+            for item in value.values():
+                yield from _file_references(item)
 
 
 class InputFileSource(Protocol):

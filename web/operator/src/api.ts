@@ -1,10 +1,14 @@
 import { GrpcWebFetchTransport } from "@protobuf-ts/grpcweb-transport";
+import { base64decode } from "@protobuf-ts/runtime";
+import { RpcError } from "@protobuf-ts/runtime-rpc";
 
 import {
   AgentEventKindV2,
   AgentTraceStatusV2,
   PageOrderV2,
   RunSnapshotV2 as RunSnapshotV2Message,
+  RerunRefusalV2,
+  RunRerunModeV2,
   StartRunTriggerV2,
 } from "./generated/operator";
 import { runKeyLabel } from "./runKey";
@@ -23,6 +27,7 @@ import {
   type IntegrationStatus,
 } from "./integrationAccounts";
 import { parseJsonValue, parseNullableSchema } from "./stepInterface";
+import { type RerunRequest, RerunRefusedError } from "./rerun";
 import type { WaitCard } from "./RunWaitPanel";
 
 import {
@@ -128,6 +133,7 @@ function mapTraceHeader(header: TraceHeaderV2): TraceHeaderMsg {
   return mapped;
 }
 
+const RERUN_REFUSAL_TRAILER = "rerun-refusal-bin";
 const MAX_BASELINE_PAGES = 100;
 const MAX_BASELINE_SUMMARIES = 10_000;
 const MAX_BASELINE_BYTES = 8 * 1024 * 1024;
@@ -317,6 +323,11 @@ export interface OperatorApi {
     input?: Record<string, unknown>,
     inputFiles?: InputFileAttachment[],
   ): Promise<string>;
+  /**
+   * Rerun part of a finished run; resolves to the new run's ID. Rejects with
+   * RerunRefusedError when refused. Optional: a host without it offers no rerun.
+   */
+  startRerun?(request: RerunRequest): Promise<string>;
   cancelRun(runId: string): Promise<void>;
   /** A state entry filters at the host; never return another state entry's cards/audits. */
   listRunWaits?(runId: string, entry?: number): Promise<WaitCard[]>;
@@ -785,6 +796,41 @@ export class GrpcWebOperatorApi implements OperatorApi {
       trigger: StartRunTriggerV2.MANUAL,
     }).response;
     return response.runId;
+  }
+
+  async startRerun(request: RerunRequest): Promise<string> {
+    const runId = `run_${request.requestId.slice(0, 8)}`;
+    try {
+      const response = await this.client.startRun({
+        runId,
+        workflowSelector: request.workflowSelector,
+        inputJson: "",
+        contextJson: "",
+        inputFiles: [],
+        trigger: StartRunTriggerV2.MANUAL,
+        rerun: {
+          sourceRunId: request.sourceRunId,
+          start: request.start,
+          mode: request.mode === "lazy" ? RunRerunModeV2.LAZY : RunRerunModeV2.AUTORUN,
+        },
+      }).response;
+      return response.runId;
+    } catch (error) {
+      if (!(error instanceof RpcError)) throw error;
+      // A retry whose first attempt did start: that run is this request's run.
+      if (error.code === "ALREADY_EXISTS") return runId;
+      const trailer = error.meta[RERUN_REFUSAL_TRAILER];
+      if (typeof trailer !== "string") throw error;
+      const refusal = RerunRefusalV2.fromBinary(base64decode(trailer));
+      throw new RerunRefusedError(
+        refusal.problems.map(({ step, reason, detail }) => ({
+          ...(step === undefined ? {} : { step }),
+          reason,
+          detail,
+        })),
+        refusal.earliestStart,
+      );
+    }
   }
 
   async setScheduleEnabled(
@@ -1361,6 +1407,7 @@ export class GrpcWebOperatorApi implements OperatorApi {
       mapped.runningElapsedSeconds = node.runningElapsedSeconds;
     }
     if (node.stepIo) mapped.stepIo = mapStepIo(node.stepIo);
+    if (node.reusedFromRunId !== undefined) mapped.reusedFromRunId = node.reusedFromRunId;
     return mapped;
   }
 
@@ -1611,6 +1658,9 @@ export class GrpcWebOperatorApi implements OperatorApi {
               ? { runningElapsedSeconds: node.runningElapsedSeconds }
               : {}),
             ...(node?.stepIo ? { stepIo: mapStepIo(node.stepIo) } : {}),
+            ...(node?.reusedFromRunId !== undefined
+              ? { reusedFromRunId: node.reusedFromRunId }
+              : {}),
           },
         });
       }
@@ -1774,6 +1824,7 @@ function mapRunSummary(summary: RunSummaryV2): RunSummaryMsg {
     triggeredAt: summary.triggeredAt,
     ...(summary.keyJson ? { label: runKeyLabel(parseRunKey(summary.keyJson)) } : {}),
     ...(summary.readState === "expired" ? { expired: true } : {}),
+    ...(summary.rerunOfRunId !== undefined ? { rerunOfRunId: summary.rerunOfRunId } : {}),
   };
 }
 
@@ -1848,6 +1899,7 @@ function mapFlowInfo(flow: FlowInfoV2): FlowInfoMsg {
         ? undefined
         : parseScheduleInput(flow.scheduleInputJson),
     inputSchemaJson: flow.inputSchemaJson,
+    nodeSlugs: flow.nodeSlugs,
     workflowId: flow.workflowId,
     displayName: flow.displayName,
     rootAlias: "",

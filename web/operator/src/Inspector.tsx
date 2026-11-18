@@ -46,6 +46,7 @@ import type { IntegrationDeclaration } from "./integrationAccounts";
 import { stepIntegrations, StepIntegrationsProvider } from "./integrationsView";
 import { OpenDefinitionButton } from "./OpenDefinitionButton";
 import { InitialPromptDialog } from "./InitialPromptDialog";
+import { StepRerunActions } from "./RerunDialog";
 import { RetainedAgentValue } from "./RetainedAgentValue";
 import { isUnknownRecord } from "./guards";
 import { StepInterfacePanel } from "./StepInterfacePanel";
@@ -67,6 +68,10 @@ interface InspectorProps {
   definitionLabel?: string;
   /** Run views only: shows the same node's current definition. */
   onOpenDefinition?: () => void;
+  /** Run views only, on a step a rerun can start from. */
+  onRerunFromStep?: () => void;
+  /** Run views only: opens the run holding a reused step's output. */
+  onOpenReusedSource?: (runId: string, nodeId: string) => void;
   /** The workflow's input draft, editable from the input panel. */
   inputDraft?: InputDraft;
   /** `run` is this machine state entry's snapshot; step results read through the state entry. */
@@ -197,6 +202,8 @@ export function Inspector(props: InspectorProps) {
         embedded={props.embedded}
         definitionLabel={props.definitionLabel}
         onOpenDefinition={props.onOpenDefinition}
+        onRerunFromStep={props.onRerunFromStep}
+        onOpenReusedSource={props.onOpenReusedSource}
         onClose={props.onClose}
       />
     );
@@ -215,6 +222,8 @@ function AgentAndStepInspector({
   definitionLabel = "Current definition",
   onOpenDefinition,
   entry,
+  onRerunFromStep,
+  onOpenReusedSource,
   onClose,
 }: InspectorProps) {
   const [selectedTab, setSelectedTab] = useState<AgentTab>("trace");
@@ -726,7 +735,9 @@ function AgentAndStepInspector({
       ? "status-success text-success"
       : node?.status === "failed"
         ? "status-failed text-failed"
-        : "text-muted";
+        : node?.status === "reused"
+          ? "text-run-status-reused"
+          : "text-muted";
   const nodeName = run
     ? run.topology?.displayNames[nodeId] || node?.name || nodeId
     : workflow?.displayNames[nodeId] || nodeId;
@@ -842,6 +853,13 @@ function AgentAndStepInspector({
               <OpenDefinitionButton
                 definitionLabel={definitionLabel}
                 onOpenDefinition={onOpenDefinition}
+              />
+            )}
+            {run && (
+              <StepRerunActions
+                node={node}
+                onRerunFromStep={onRerunFromStep}
+                onOpenReusedSource={onOpenReusedSource}
               />
             )}
           </div>

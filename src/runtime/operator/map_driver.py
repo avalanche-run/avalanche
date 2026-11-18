@@ -51,13 +51,18 @@ class DynamicMaps[T]:
         self.expected_counts: dict[str, int] = {}
         self.children: dict[str, tuple[str, int]] = {}
         for future in tuple(nodes.values()):
-            if isinstance(future, MapFuture):
+            # A rerun leaves skipped maps out of the schedule; they must not expand.
+            if isinstance(future, MapFuture) and future.future_id in ready:
                 self.add(future)
 
     def add(self, future: MapFuture) -> None:
         self.groups[future.future_id] = _Group(future)
         if future.future_id in self.ready:
             self.ready.remove(future.future_id)
+
+    def is_mapped(self, arg: list[T] | NodeFuture | InputRef) -> bool:
+        """A map in this schedule feeds items; a reused one is already a plain list."""
+        return isinstance(arg, MapFuture) and arg.future_id in self.groups
 
     def emit_failure(self, node_id: str, error: Exception) -> None:
         self.failed.add(node_id)
@@ -98,9 +103,7 @@ class DynamicMaps[T]:
             if group.finished:
                 continue
             future = group.future
-            mapped_sources = {
-                arg.future_id for arg in future.args if isinstance(arg, MapFuture)
-            }
+            mapped_sources = {arg.future_id for arg in future.args if self.is_mapped(arg)}
             plain_dependencies = set(self.dependencies.get(parent, ())) - mapped_sources
             if not plain_dependencies <= self.completed:
                 continue
@@ -109,7 +112,7 @@ class DynamicMaps[T]:
             if group.n is None:
                 lengths = []
                 for position, arg in enumerate(future.args):
-                    if isinstance(arg, MapFuture):
+                    if self.is_mapped(arg):
                         lengths.append(self.groups[arg.future_id].n)
                     else:
                         group.plain[position] = self.resolve_list(arg)
@@ -146,7 +149,7 @@ class DynamicMaps[T]:
                 child_id = f"{parent}[{index}]"
                 args = tuple(
                     self.nodes[f"{arg.future_id}[{index}]"]
-                    if isinstance(arg, MapFuture)
+                    if self.is_mapped(arg)
                     else group.plain[position][index]
                     for position, arg in enumerate(future.args)
                 )

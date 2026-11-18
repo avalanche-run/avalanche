@@ -119,8 +119,9 @@ def _run_clear(args: argparse.Namespace) -> int:
             )
         print(
             f"Deleted {_plural(cleared.runs, 'run')}, "
-            f"{_plural(cleared.result_bundles, 'result bundle')} and "
-            f"{_plural(cleared.input_file_folders, 'input-file folder')}."
+            f"{_plural(cleared.result_bundles, 'result bundle')}, "
+            f"{_plural(cleared.input_file_folders, 'input-file folder')} and "
+            f"{_plural(cleared.step_output_folders, 'step-output folder')}."
         )
         if args.include_schedules:
             print(
@@ -154,7 +155,8 @@ def _confirm_clear(state: StateMaintenance, include_schedules: bool) -> bool:
     kept = "including" if include_schedules else "keeping"
     print(
         f"This deletes all {_plural(info.runs, 'run')} in {state.database} with their "
-        f"logs, events, traces, evaluations, results and input files, {kept} "
+        f"logs, events, traces, evaluations, results, saved step outputs and input "
+        f"files, {kept} "
         f"{_plural(info.schedules, 'schedule')}."
     )
     try:
@@ -200,6 +202,11 @@ def _print_info(state: StateMaintenance) -> int:
             f"{_plural(info.workspaces.entries, 'folder')}, "
             f"{_size(info.workspaces.size_bytes)} in {info.workspaces.path}",
         ),
+        (
+            "Step outputs",
+            f"{_plural(info.step_outputs.entries, 'saved output')}, "
+            f"{_size(info.step_outputs.size_bytes)} in {info.step_outputs.path}",
+        ),
     ]
     width = max(len(label) for label, _ in rows) + 1
     for label, value in rows:
@@ -224,6 +231,7 @@ def _print_info(state: StateMaintenance) -> int:
             f"schedule input-file folder no schedule uses: {path}"
             for path in info.unreferenced_schedule_inputs
         ),
+        *(f"step-output folder no run owns: {path}" for path in info.unreferenced_step_outputs),
     ]
     unexpected = [
         *(info.results.path / name for name in info.result_index.unexpected_entries),
@@ -251,6 +259,7 @@ def _print_deleted(run: DeletedRun) -> None:
         "its result bundle" if run.result_bundle is not None else "no result bundle",
         _plural(len(run.input_file_folders), "input-file folder"),
         *(("its workspace",) if run.workspace_removed else ()),
+        _plural(run.step_outputs, "saved step output"),
     ]
     print(f"Deleted run {run.run_id} ({run.status.value}): {', '.join(removed)}.")
 

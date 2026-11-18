@@ -243,6 +243,13 @@ def read_stored_trees(value: JsonValue, *, own_copy: bool = False) -> JsonValue:
 
 def _is_token(token: str) -> bool:
     return len(token) == 32 and all(c in "0123456789abcdef" for c in token)
+def registered_local_workspace(reference: str) -> Path | None:
+    """The folder the registry names for a reference, or ``None`` if it has no entry."""
+    try:
+        with (_registry() / _local_workspace_token(reference)).open() as handle:
+            return Path(json.load(handle))
+    except FileNotFoundError:
+        return None
 
 
 def _local_workspace_token(identifier: str) -> str:

@@ -7,8 +7,11 @@ from collections.abc import Callable
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
+from avalanche.reruns import RerunRefusedError
+
 from .models import RunStatus
 from .state import (
+    RERUN_ACTION_ID,
     SCHEDULE_ACTION_IDS,
     ActionDescriptor,
     ActionResult,
@@ -19,6 +22,9 @@ from .state import (
     PanelDescriptor,
     TuiContext,
     TuiExtensionError,
+    TuiRerunRefusedError,
+    rerun_action,
+    rerun_request,
     schedule_action,
     schedule_input_schema,
     schedule_request,
@@ -59,6 +65,21 @@ class MockTuiExtensions:
             if workflow is not None and workflow.cron
             else ()
         )
+        # The simulation's node IDs are its slugs.
+        rerun = (
+            (
+                rerun_action(
+                    step=context.node
+                    if workflow is not None and context.node in workflow.node_ids
+                    else None,
+                    active=run.status
+                    in (RunStatus.PENDING, RunStatus.RUNNING, RunStatus.REQUESTING),
+                    read_only=False,
+                ),
+            )
+            if run is not None
+            else ()
+        )
         return ExtensionDescription(
             context,
             self.protocol_version,
@@ -88,6 +109,7 @@ class MockTuiExtensions:
                     "Confirm cancellation",
                     None,
                 ),
+                *rerun,
                 *scheduled,
             ),
             (
@@ -164,6 +186,17 @@ class MockTuiExtensions:
             )
             changed: Literal["runs", "schedules"] = "runs"
             status: Literal["accepted", "completed"] = "accepted"
+        elif action == RERUN_ACTION_ID:
+            assert context.flow is not None and context.node is not None
+            try:
+                run_id = self.provider.start_run(
+                    context.flow, rerun=rerun_request(context, context.node, payload)
+                )
+            except RerunRefusedError as refused:
+                raise TuiRerunRefusedError(refused.refusal, context) from refused
+            value = MappingProxyType({"run_id": run_id})
+            changed = "runs"
+            status = "accepted"
         elif action in SCHEDULE_ACTION_IDS:
             request = schedule_request(self.provider.list_workflows(), action, context, payload)
             info = self.provider.set_schedule_enabled(

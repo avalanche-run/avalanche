@@ -48,6 +48,46 @@
 - Delta applies `@ava.workflow(classifier_defaults={...})` to classifier steps,
   as the local operator does. Earlier Delta workers ignored a workflow-level
   classifier `model` or `timeout` and used the step's own or the default values.
+- Reruns: `StartRunRequestV2` and the Python client carry an optional `rerun` (source
+  run, start steps, mode).
+- Reruns: `avalanche.reruns.plan_rerun` decides before a run starts which steps run and
+  which reuse saved outputs, or refuses listing every problem and the nearest start that
+  would work. `Workflow.run(planned_rerun=...)` runs that plan, giving later steps the
+  saved outputs rebuilt into their declared types. Embedded `rerun=` is unchanged.
+- Operator: every successful step's return value is saved next to the state database
+  in `step-outputs/`, as JSON plus read-only copies of `ava.File` and `ava.Workspace`
+  content, ready for reruns to reuse. A step returning `ava.Workspace()` keeps a copy
+  of the run's workspace as it left it, and a rerun starts its workspace from the last
+  reused step's copy. A step whose files cannot be copied is marked not reusable, and
+  its run carries on.
+  State machine runs save none. `ava state info`, `delete`, `prune` and `clear` include
+  saved outputs.
+- Reruns: the operator starts reruns, and `ava run FLOW --rerun-of RUN_ID --from SLUG
+  [--only]` asks for one. Steps before the chosen ones are not run again: their saved
+  outputs are reused and they show the new `reused` status with the run holding the
+  output. A rerun reuses the source run's input, context and input files, and `--input`,
+  `--context` and `--file` replace the fields they name. A rerun that cannot work is
+  refused before anything starts, listing every problem and the earliest step to rerun
+  from. State machine and keyed flow runs cannot be rerun. The REST `POST /v1/runs` does
+  not accept reruns.
+- TUI: `ava tui --connect` can rerun from the selected step. Press `R`, choose this step
+  and everything after or only this step, and the new run opens. A refused rerun lists
+  every problem and the earliest step to rerun from. Reused steps have their own marker
+  and color and show which run holds their output (Enter opens it), and a rerun shows
+  which run it reruns.
+- Operator: the flow catalog now carries each step's slug (`FlowInfoV2.node_slugs`).
+- Web UI: "Rerun from here" on a step of a finished, failed or cancelled run opens a dialog
+  choosing that step and everything after, or only that step, then opens the new run. A
+  refused rerun lists every problem and the earliest step, which you can pick in the dialog.
+  Reused steps have their own state and link to the run holding their output, and a rerun
+  links to the run it reruns from its run view and the run list. The gRPC-Web proxy now
+  forwards the typed refusal to the browser.
+- Operator UI: hosts can implement the optional `OperatorApi.startRerun`
+  (rejecting with `RerunRefusedError`) to offer reruns. `navigation.onSelectRun` may receive a
+  step, and `initialNodeId` opens one on mount. `FlowInfoMsg.nodeSlugs` lists what can be
+  chosen; `deployments` adds a picker to the dialog.
+- Docs: a reruns guide (`docs/api/reruns.md`) covers the CLI, web UI and TUI, what is saved,
+  what cannot be reused and refusals. The operator UI README describes `startRerun`.
 
 ## 0.20.18
 

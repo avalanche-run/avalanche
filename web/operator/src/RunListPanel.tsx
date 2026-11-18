@@ -1,5 +1,5 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronUp, Maximize2, Minimize2, Workflow } from "lucide-react";
 
 import { formatElapsedSeconds } from "./elapsedDuration";
@@ -32,6 +32,11 @@ const statusChipClass = (active: boolean) =>
 // 12px column gap and the 100px status column.
 const RUN_ROW_CHROME = 16 + 30 + 12 + 100;
 const RUN_FIELD_GAP = 8;
+
+/** Room a rerun's row keeps clear for its "rerun of" link, which sits on top of it. */
+function rerunBadgeReserve(expanded: boolean) {
+  return expanded ? 170 : 52;
+}
 
 interface RunListPanelProps extends Pick<
   WorkflowWorkspaceProps,
@@ -229,7 +234,7 @@ export function RunListPanel({
       const triggeredAt = runTriggeredAt(summary);
       const elapsedSeconds = runElapsedSeconds(summary);
       return fitRunRow(
-        listWidth - RUN_ROW_CHROME,
+        listWidth - RUN_ROW_CHROME - (summary.rerunOfRunId ? rerunBadgeReserve(expanded) : 0),
         {
           timeText: `${summary.expired ? "expired · " : ""}${triggeredAt ? formatTimeAgo(triggeredAt, now) : "start time not recorded"}`,
           label: summary.label || undefined,
@@ -240,7 +245,7 @@ export function RunListPanel({
         measure,
       );
     });
-  }, [filteredRuns, fontSize, listWidth, now, pageOffset, visibleRunCount]);
+  }, [expanded, filteredRuns, fontSize, listWidth, now, pageOffset, visibleRunCount]);
   // Notes own a full-width second line, never the fixed status column. Reserve
   // enough lines before virtualizing so long safe messages cannot overlap rows.
   const rowNotes = filteredRuns
@@ -583,83 +588,107 @@ export function RunListPanel({
                     const showKey = Boolean(summary.label) && priorityFieldVisible(fit, "key");
                     const showDuration =
                       elapsedSeconds !== undefined && priorityFieldVisible(fit, "duration");
+                    const rerunOf = summary.rerunOfRunId;
                     return (
-                      <button
-                        type="button"
-                        className={`run-list-row run-list-columns absolute top-0 left-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_100px] items-center gap-x-3 gap-y-1 border-0 border-b border-run-list-line text-left font-mono text-ink leading-none ${expanded ? "pl-[16px] pr-[30px] text-[11px]" : "pl-[16px] pr-[30px] text-[10px]"} ${selectedRunId === summary.runId ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
-                        key={summary.runId}
-                        onClick={() => onSelectRun(summary.runId)}
-                        aria-pressed={selectedRunId === summary.runId}
-                        style={rowStyle}
-                        title={summary.runId}
-                        data-run-history={summary.expired ? "expired" : undefined}
-                        data-fields={
-                          fit
-                            ? ["status", "time", "key", "id", "duration"]
-                                .filter((id) => id === "status" || fit.visible.has(id))
-                                .join(" ")
-                            : undefined
-                        }
-                        aria-label={`${summary.label ? `${summary.label}, ` : ""}${summary.runId}, ${summary.status}${summary.expired ? ", expired" : ""}, ${runDuration(elapsedSeconds)}, ${
-                          triggeredAt
-                            ? `started ${timeAgo}, ${absolute}`
-                            : "start time not recorded"
-                        }`}
-                      >
-                        {/* Nothing here ellipsizes: low-priority fields drop out whole
-                            (duration, then run id, then key); a kept key may wrap. */}
-                        <span
-                          className="run-row-fields flex min-w-0 items-center font-mono text-secondary"
-                          style={{ gap: RUN_FIELD_GAP }}
+                      <Fragment key={summary.runId}>
+                        <button
+                          type="button"
+                          className={`run-list-row run-list-columns absolute top-0 left-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_100px] items-center gap-x-3 gap-y-1 border-0 border-b border-run-list-line text-left font-mono text-ink leading-none ${expanded ? "pl-[16px] pr-[30px] text-[11px]" : "pl-[16px] pr-[30px] text-[10px]"} ${selectedRunId === summary.runId ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
+                          onClick={() => onSelectRun(summary.runId)}
+                          aria-pressed={selectedRunId === summary.runId}
+                          style={rowStyle}
+                          title={summary.runId}
+                          data-run-history={summary.expired ? "expired" : undefined}
+                          data-fields={
+                            fit
+                              ? ["status", "time", "key", "id", "duration"]
+                                  .filter((id) => id === "status" || fit.visible.has(id))
+                                  .join(" ")
+                              : undefined
+                          }
+                          aria-label={`${summary.label ? `${summary.label}, ` : ""}${summary.runId}, ${summary.status}${summary.expired ? ", expired" : ""}, ${runDuration(elapsedSeconds)}, ${rerunOf ? `rerun of ${rerunOf}, ` : ""}${
+                            triggeredAt
+                              ? `started ${timeAgo}, ${absolute}`
+                              : "start time not recorded"
+                          }`}
                         >
-                          {showKey && (
-                            <span className="run-label min-w-0 text-ink [overflow-wrap:anywhere]">
-                              {summary.label}
-                            </span>
-                          )}
-                          {priorityFieldVisible(fit, "id") && (
-                            <span className="run-short-id shrink-0 whitespace-nowrap">
-                              {shortRunId(summary.runId)}
-                            </span>
-                          )}
-                          <span className="run-when shrink-0 whitespace-nowrap">
-                            {summary.expired && (
-                              <span className="run-expired text-amber">expired · </span>
-                            )}
-                            <time
-                              className="run-triggered-at"
-                              dateTime={triggeredAt?.toISOString()}
-                              title={absolute}
-                            >
-                              {timeAgo}
-                            </time>
-                            {showDuration && (
-                              <span
-                                className="run-duration"
-                                title={`${elapsedSeconds.toFixed(1)} seconds`}
-                              >
-                                {` (${formatElapsedSeconds(elapsedSeconds)})`}
+                          {/* Nothing here ellipsizes: low-priority fields drop out whole
+                              (duration, then run id, then key); a kept key may wrap. */}
+                          <span
+                            className="run-row-fields flex min-w-0 items-center font-mono text-secondary"
+                            style={{
+                              gap: RUN_FIELD_GAP,
+                              paddingRight: rerunOf ? rerunBadgeReserve(expanded) : undefined,
+                            }}
+                          >
+                            {showKey && (
+                              <span className="run-label min-w-0 text-ink [overflow-wrap:anywhere]">
+                                {summary.label}
                               </span>
                             )}
+                            {priorityFieldVisible(fit, "id") && (
+                              <span className="run-short-id shrink-0 whitespace-nowrap">
+                                {shortRunId(summary.runId)}
+                              </span>
+                            )}
+                            <span className="run-when shrink-0 whitespace-nowrap">
+                              {summary.expired && (
+                                <span className="run-expired text-amber">expired · </span>
+                              )}
+                              <time
+                                className="run-triggered-at"
+                                dateTime={triggeredAt?.toISOString()}
+                                title={absolute}
+                              >
+                                {timeAgo}
+                              </time>
+                              {showDuration && (
+                                <span
+                                  className="run-duration"
+                                  title={`${elapsedSeconds.toFixed(1)} seconds`}
+                                >
+                                  {` (${formatElapsedSeconds(elapsedSeconds)})`}
+                                </span>
+                              )}
+                            </span>
                           </span>
-                        </span>
-                        <span className="justify-self-end text-right">
-                          <RunStatus
-                            status={summary.status}
-                            waitKind={
-                              summary.runId === selectedRunId ? selectedRunWaitKind : undefined
-                            }
-                          />
-                        </span>
-                        {rowNotes[virtualRow.index] && (
-                          <span
-                            className="run-summary-note col-span-2 break-all text-secondary normal-case tracking-normal"
-                            style={{ lineHeight: `${fontSize + 3}px` }}
+                          <span className="justify-self-end text-right">
+                            <RunStatus
+                              status={summary.status}
+                              waitKind={
+                                summary.runId === selectedRunId ? selectedRunWaitKind : undefined
+                              }
+                            />
+                          </span>
+                          {rowNotes[virtualRow.index] && (
+                            <span
+                              className="run-summary-note col-span-2 break-all text-secondary normal-case tracking-normal"
+                              style={{ lineHeight: `${fontSize + 3}px` }}
+                            >
+                              {rowNotes[virtualRow.index]}
+                            </span>
+                          )}
+                        </button>
+                        {rerunOf && (
+                          // A sibling on top of the row: a row is a button, which cannot hold one.
+                          <button
+                            type="button"
+                            className={`run-rerun-of absolute top-0 z-[1] flex cursor-pointer items-center border-0 bg-transparent p-0 font-mono text-run-status-reused hover:underline ${expanded ? "right-[142px] w-[166px] text-[11px]" : "right-[142px] w-[48px] text-[10px]"}`}
+                            style={{
+                              // The run's own line, above any note line.
+                              height: rowHeight + (fit?.wrapped.has("key") ? fontSize : 0),
+                              transform: rowStyle.transform,
+                            }}
+                            title={`Rerun of run ${rerunOf}`}
+                            aria-label={`Open run ${rerunOf}, which ${summary.runId} reruns`}
+                            onClick={() => onSelectRun(rerunOf)}
                           >
-                            {rowNotes[virtualRow.index]}
-                          </span>
+                            <span className="min-w-0 truncate">
+                              ↺ {expanded ? `rerun of ${rerunOf}` : "rerun"}
+                            </span>
+                          </button>
                         )}
-                      </button>
+                      </Fragment>
                     );
                   })}
                 </div>

@@ -258,6 +258,38 @@ class ExtensionSession:
             fail,
         )
 
+    def invoke_pinned(
+        self,
+        action: ActionDescriptor,
+        context: TuiContext,
+        payload: Object,
+        intent_id: str,
+        accept: Callable[[ActionResult], None],
+        fail: Callable[[TuiExtensionError], None],
+    ) -> bool:
+        """Invoke for ``context`` and report the outcome even if the selection moves on.
+
+        For a dialog that owns its result: a long call must not lose its answer because
+        a new run or a new workflow version changed what the dashboard has selected.
+        The provider still checks the action against ``context``.
+        """
+        if self.read_only and action.mutates:
+            fail(TuiExtensionError("read_only", "Read-only mode", context=context))
+            return False
+
+        def received(result) -> None:
+            if not isinstance(result, ActionResult) or result.intent_id != intent_id:
+                raise TuiExtensionError("integrity", "Action returned a different intent")
+            accept(result)
+
+        return self._submit(
+            lambda: self.extension.invoke(action.id, context, payload, intent_id=intent_id),
+            received,
+            fail,
+            context=context,
+            is_current=lambda: True,
+        )
+
     def close(self, *, wait: bool = True) -> None:
         with self._lock:
             closed = self._closed

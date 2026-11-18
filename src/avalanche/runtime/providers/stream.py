@@ -463,11 +463,7 @@ def consume_stream(
         if upstream_data is not None:
             df = _upstream_to_polars(upstream_data)
         else:
-            df = _read_rerun_rows(
-                table,
-                active_rerun.run_id,
-                node_slugs=source_node_slugs,
-            )
+            df = _read_replay_rows(table, active_rerun, source_node_slugs)
         _merge_input_lineage(context, df)
         yield df
         # Persist the rerun-of edge only after the consumer generator resumes
@@ -729,6 +725,29 @@ def _read_rerun_rows(
         return empty_result if empty_result is not None else pl.DataFrame()
 
     return _overlay_rerun_frames(frames)
+
+
+def _read_replay_rows(table: Any, rerun: "Rerun", node_slugs: tuple[str, ...]) -> pl.DataFrame:
+    """Read each producer's rows from the run holding them, not only the direct source.
+
+    A run that reused a step without reading its table leaves no ancestry edge on that
+    table, so walking edges from the direct source alone would find nothing.
+    """
+    if not rerun.row_sources:
+        return _read_rerun_rows(table, rerun.run_id, node_slugs=node_slugs)
+    slugs_by_run: dict[str, tuple[str, ...]] = {}
+    if node_slugs:
+        for slug in node_slugs:
+            holder = rerun.row_sources.get(slug, rerun.run_id)
+            slugs_by_run[holder] = (*slugs_by_run.get(holder, ()), slug)
+    else:
+        slugs_by_run = dict.fromkeys((rerun.run_id, *rerun.row_sources.values()), ())
+    frames = [
+        _read_rerun_rows(table, holder, node_slugs=slugs)
+        for holder, slugs in slugs_by_run.items()
+    ]
+    written = [frame for frame in frames if not frame.is_empty()]
+    return _overlay_rerun_frames(written) if written else frames[0]
 
 
 def _overlay_rerun_frames(frames: list[pl.DataFrame]) -> pl.DataFrame:

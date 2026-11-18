@@ -20,6 +20,7 @@ ICE_BRIGHT = "#b8f4ff"
 ICE_FROST = "#f0faff"
 ICE_WARN = "#f8d078"  # warm amber (stands out against cool palette)
 ICE_FAIL = "#f87898"  # bright rose-red
+ICE_REUSED = "#9ee6b0"  # soft green: done, but not in this run
 
 # Colors for skip-edge connectors (distinct, muted pastels)
 SKIP_EDGE_COLORS = ["#e8b8e0", "#b8e0b8", "#e0d898", "#98d8e0", "#e0b8b8", "#b8b8f0"]
@@ -46,6 +47,7 @@ STATUS_STYLES: dict[NodeStatus, Style] = {
     NodeStatus.SUCCESS: Style(color=ICE_TEAL, bold=True),
     NodeStatus.FAILED: Style(color=ICE_FAIL, bold=True),
     NodeStatus.SKIPPED: Style(color=ICE_PURPLE),
+    NodeStatus.REUSED: Style(color=ICE_REUSED),
 }
 
 # Unknown statuses are display-only; identity prevents a raw string or a
@@ -98,6 +100,7 @@ STATUS_CHARS: dict[NodeStatus, str] = {
     NodeStatus.SUCCESS: "✓",
     NodeStatus.FAILED: "✗",
     NodeStatus.SKIPPED: "⊘",
+    NodeStatus.REUSED: "↺",
 }
 
 WaitKind = Literal["sleep", "event", "decision", "run"]

@@ -15,6 +15,7 @@ import avalanche as ava
 | --- | --- |
 | [Workflows](workflows.md) | `source`, `step`, `dest`, `workflow`; agent/classifier step entry points; graph operations; `cron` and `Webhook`. |
 | [Runs](runs.md) | `Workflow.run`, `LocalExecutor`, and the returned run handle's result, status, and cancellation methods. |
+| [Reruns](reruns.md) | `ava run --rerun-of`, the web UI and TUI: what is saved, what can be reused, and refusals. |
 | [Inputs and context](inputs-context.md) | `BaseInput`, `BaseContext`, injected `RunContext`, `ava.input`, and `Logger`. |
 | [Files and workspaces](files-workspaces.md) | `File` and `Workspace` construction, fields, reads, and snapshots. |
 | [Agents](agents.md) | `agent_step`, `Signature`, `InputField`, `OutputField`, injected `Agent`, skills, agent files, and caller errors. |

@@ -17,6 +17,7 @@ from avalanche.agent.trace import AgentTraceStatus, TokenUsage
 from avalanche.integrations.declaration import StepIntegrations
 from avalanche.mapping import MapSpec
 from avalanche.policies import StepPolicy, WaitSpec
+from avalanche.reruns import RerunProblem, RerunProblemReason, RerunRefusal
 from avalanche.run_status import WAITING_ON_SLOTS
 from avalanche.run_steps import RunOpSpec
 
@@ -83,6 +84,15 @@ START_RUN_TRIGGERS: Mapping[TriggerKind, int] = MappingProxyType(
 )
 
 
+# The RunRerunModeV2 value for each rerun mode.
+RERUN_MODES: Mapping[str, int] = MappingProxyType(
+    {
+        "autorun": pb.RUN_RERUN_MODE_V2_AUTORUN,
+        "lazy": pb.RUN_RERUN_MODE_V2_LAZY,
+    }
+)
+
+
 def schedule_input_to_json(value: dict[str, JsonValue]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
 
@@ -145,6 +155,7 @@ def workflow_info_to_v2(info: WorkflowInfo) -> pb.FlowInfoV2:
         file_path=info.source_file,
         topology=workflow_topology_to_v2(topology),
         agent_node_ids=info.agent_node_ids,
+        node_slugs=info.node_slugs,
         node_policies_json={
             node: policy.model_dump_json() for node, policy in info.node_policies.items()
         },
@@ -219,6 +230,36 @@ def flow_list_to_v2(
     return message
 
 
+# The trailing metadata key holding a serialized RerunRefusalV2.
+RERUN_REFUSAL_TRAILER = "rerun-refusal-bin"
+
+
+def rerun_refusal_to_v2(refusal: RerunRefusal) -> pb.RerunRefusalV2:
+    return pb.RerunRefusalV2(
+        problems=[
+            pb.RerunProblemV2(
+                step=problem.step, reason=problem.reason.value, detail=problem.detail
+            )
+            for problem in refusal.problems
+        ],
+        earliest_start=refusal.earliest_start,
+    )
+
+
+def rerun_refusal_from_v2(msg: pb.RerunRefusalV2) -> RerunRefusal:
+    return RerunRefusal(
+        problems=tuple(
+            RerunProblem(
+                step=problem.step if problem.HasField("step") else None,
+                reason=RerunProblemReason(problem.reason),
+                detail=problem.detail,
+            )
+            for problem in msg.problems
+        ),
+        earliest_start=tuple(msg.earliest_start),
+    )
+
+
 def run_summary_to_v2(summary) -> pb.RunSummaryV2:
     message = pb.RunSummaryV2(
         run_id=summary.run_id,
@@ -233,6 +274,7 @@ def run_summary_to_v2(summary) -> pb.RunSummaryV2:
         triggered_by=summary.triggered_by.value,
         triggered_at=summary.triggered_at or 0.0,
         kind=summary.kind,
+        rerun_of_run_id=summary.rerun_of_run_id,
     )
     if summary.waiting_on is not None:
         message.waiting_on.CopyFrom(
@@ -440,6 +482,7 @@ def node_snapshot_to_v2(
         started_at=node.started_at or 0.0,
         ended_at=node.ended_at or 0.0,
         revision=node.revision,
+        reused_from_run_id=node.reused_from_run_id,
     )
     if node.map_parent is not None:
         message.map_parent = node.map_parent
@@ -755,6 +798,7 @@ def update_envelope_to_v2(
                         revision=change.revision,
                         running_elapsed_seconds=change.running_elapsed_seconds,
                         step_io=change.step_io,
+                        reused_from_run_id=change.reused_from_run_id,
                     ),
                 ),
             )
@@ -951,6 +995,7 @@ def workflow_info_from_v2(msg: pb.FlowInfoV2) -> WorkflowInfo:
         },
         key_fields=tuple(msg.key_fields),
         display_names=dict(msg.topology.display_names),
+        node_slugs=dict(msg.node_slugs),
         agent_node_ids=list(msg.agent_node_ids),
         agent_declarations={
             node_id: AgentDeclaration.model_validate_json(value)
@@ -1047,6 +1092,7 @@ def run_summary_from_v2(msg: pb.RunSummaryV2) -> RunSummary:
         workflow_display_name=msg.workflow_display_name,
         created_sequence=msg.created_sequence,
         revision=msg.revision,
+        rerun_of_run_id=msg.rerun_of_run_id if msg.HasField("rerun_of_run_id") else None,
     )
 
 
@@ -1120,6 +1166,9 @@ def node_snapshot_from_v2(msg: pb.NodeSnapshotV2) -> NodeSnapshot:
         map_index=msg.map_index if msg.HasField("map_index") else None,
         running_elapsed_seconds=(
             msg.running_elapsed_seconds if msg.HasField("running_elapsed_seconds") else None
+        ),
+        reused_from_run_id=(
+            msg.reused_from_run_id if msg.HasField("reused_from_run_id") else None
         ),
     )
 
@@ -1319,6 +1368,9 @@ def operator_update_envelope_from_v2(
                 else None
             ),
             step_io=step_io_from_v2(node.step_io) if node.HasField("step_io") else None,
+            reused_from_run_id=(
+                node.reused_from_run_id if node.HasField("reused_from_run_id") else None
+            ),
         )
     elif payload == "activity_appended":
         appended = msg.activity_appended

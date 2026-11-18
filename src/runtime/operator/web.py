@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import mimetypes
 import re
@@ -30,6 +31,7 @@ from starlette.routing import Mount, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from ._grpc import _BOUNDED_MESSAGE_OPTIONS
+from .convert_v2 import RERUN_REFUSAL_TRAILER
 from .input_files import MAX_STAGED_INPUT_FILE_BYTES
 from .proto import operator_pb2 as pb
 from .rest import create_rest_app
@@ -264,7 +266,9 @@ def _create_browser_app(
                 _data_frame(response) + _trailer_frame(grpc.StatusCode.OK, "")
             )
         except grpc.RpcError as exc:
-            return _grpc_response(_trailer_frame(exc.code(), exc.details()))
+            return _grpc_response(
+                _trailer_frame(exc.code(), exc.details(), _rerun_refusal_trailer(exc))
+            )
         except Exception:
             logger.exception("Unhandled gRPC-Web proxy failure: %s", method_name)
             return _grpc_response(
@@ -474,10 +478,21 @@ def _data_frame(message: Message) -> bytes:
     return struct.pack(">BI", 0, len(payload)) + payload
 
 
-def _trailer_frame(code: grpc.StatusCode, detail: str) -> bytes:
+def _rerun_refusal_trailer(error: grpc.RpcError) -> str:
+    """A refused rerun's typed trailer as a gRPC-Web line, or nothing for other errors."""
+    if not isinstance(error, grpc.Call):
+        return ""
+    for key, value in error.trailing_metadata() or ():
+        if key == RERUN_REFUSAL_TRAILER:
+            # gRPC-Web carries binary trailer values as base64 text.
+            return f"{key}: {base64.b64encode(value).decode()}\r\n"
+    return ""
+
+
+def _trailer_frame(code: grpc.StatusCode, detail: str, extra_lines: str = "") -> bytes:
     status = code.value[0]
     safe_detail = detail.replace("\r", " ").replace("\n", " ")
-    payload = f"grpc-status: {status}\r\ngrpc-message: {safe_detail}\r\n".encode()
+    payload = f"grpc-status: {status}\r\ngrpc-message: {safe_detail}\r\n{extra_lines}".encode()
     return struct.pack(">BI", 0x80, len(payload)) + payload
 
 

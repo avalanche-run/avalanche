@@ -50,6 +50,7 @@ class NodeStatus(Enum):
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"
+    REUSED = "reused"
 
 
 class RunStatus(Enum):
@@ -290,6 +291,7 @@ class NodeState:
     event_page_token: str = ""
     map_parent: str | None = None
     map_index: int | None = None
+    reused_from_run_id: str | None = None
 
     @property
     def elapsed(self) -> float | None:
@@ -341,6 +343,7 @@ class RunState:
             )
             else self.open_waits
         )
+    rerun_of_run_id: str | None = None
 
     @property
     def elapsed(self) -> float | None:
@@ -428,6 +431,7 @@ class NodeSnapshot:
     map_parent: str | None = None
     map_index: int | None = None
     running_elapsed_seconds: float | None = None
+    reused_from_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -459,6 +463,7 @@ class RunSummary:
             sum(self.waiting_on or EMPTY_WAITING_ON),
             self.running_outside_wait,
         )
+    rerun_of_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -774,6 +779,7 @@ class NodeStatusChanged:
     revision: int = 0
     running_elapsed_seconds: float | None = None
     step_io: StepIo | None = None
+    reused_from_run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -880,6 +886,7 @@ class WorkflowInfo:
     machine_spec_json: str = ""
     key_fields: tuple[str, ...] = ()
     display_names: dict[str, str] = field(default_factory=dict)  # node_id -> display name
+    node_slugs: dict[str, str] = field(default_factory=dict)  # node_id -> rerun address
     agent_node_ids: list[str] = field(default_factory=list)
     agent_declarations: dict[str, AgentDeclaration] = field(default_factory=dict)
     # node_id -> the integrations that step declares; steps with none are absent.
@@ -993,6 +1000,7 @@ class WorkflowDescriptor:
     graph: tuple[tuple[str, tuple[str, ...]], ...]
     node_types: tuple[tuple[str, str], ...]
     display_names: tuple[tuple[str, str], ...]
+    node_slugs: tuple[tuple[str, str], ...] = ()
     node_policies: tuple[tuple[str, StepPolicy], ...] = ()
     node_waits: tuple[tuple[str, WaitSpec], ...] = ()
     node_machines: tuple[tuple[str, MachineOpSpec], ...] = ()

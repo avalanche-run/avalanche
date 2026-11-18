@@ -60,6 +60,8 @@ class RunDetailWidget(Static):
             text.append(f"{status_label(ns.status):<9}", ns_style)
             if ns.elapsed is not None:
                 text.append(f"{_fmt_time(ns.elapsed):>6}", DIM_STYLE)
+            if ns.reused_from_run_id is not None:
+                text.append(f" from {ns.reused_from_run_id}", DIM_STYLE)
             text.append("\n")
 
         return text

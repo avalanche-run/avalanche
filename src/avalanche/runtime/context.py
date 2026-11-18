@@ -35,6 +35,8 @@ class Rerun(BaseModel):
     start: tuple[str, ...]
     mode: Literal["autorun", "lazy"] = "autorun"
     deployment_id: str | None = None
+    row_sources: dict[str, str] = Field(default_factory=dict)
+    """A planned rerun's skipped steps by slug, with the run holding each one's rows."""
 
     @field_validator("start", mode="before")
     @classmethod

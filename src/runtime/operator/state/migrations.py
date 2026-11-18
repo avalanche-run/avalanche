@@ -474,6 +474,93 @@ MIGRATIONS += (
     ),
 )
 
+MIGRATIONS += (
+    Migration(
+        version=15,
+        name="saved step outputs",
+        statements=(
+            # What each successful step left for a later rerun: a folder and its
+            # manifest digest, or the reason it is not reusable. A map group's row
+            # has item_count and no folder; its items' rows name it as map_parent.
+            """
+            CREATE TABLE run_step_outputs (
+                run_id TEXT NOT NULL REFERENCES runs (run_id) ON DELETE CASCADE,
+                node_id TEXT NOT NULL,
+                step_slug TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('saved', 'not_reusable')),
+                reason TEXT,
+                folder TEXT,
+                manifest_sha256 TEXT,
+                map_parent TEXT,
+                map_index INTEGER CHECK (map_index >= 0),
+                item_count INTEGER CHECK (item_count >= 0),
+                byte_size INTEGER NOT NULL CHECK (byte_size >= 0),
+                saved_at REAL NOT NULL,
+                PRIMARY KEY (run_id, node_id),
+                UNIQUE (run_id, step_slug)
+            ) STRICT
+            """,
+        ),
+    ),
+    Migration(
+        version=16,
+        name="reruns",
+        statements=(
+            "ALTER TABLE runs ADD COLUMN rerun_of_run_id TEXT",
+            # SQLite cannot change a CHECK, so the table is rebuilt to allow 'reused'.
+            """
+            CREATE TABLE run_nodes_new (
+                run_id TEXT NOT NULL REFERENCES runs (run_id) ON DELETE CASCADE,
+                node_id TEXT NOT NULL,
+                position INTEGER NOT NULL CHECK (position >= 0),
+                name TEXT NOT NULL,
+                node_type TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN ('pending', 'running', 'success', 'failed', 'skipped', 'reused')
+                ),
+                started_at REAL,
+                ended_at REAL,
+                error TEXT,
+                step_io_json TEXT,
+                revision INTEGER NOT NULL CHECK (revision > 0),
+                map_parent TEXT,
+                map_index INTEGER CHECK (map_index >= 0),
+                reused_from_run_id TEXT,
+                PRIMARY KEY (run_id, node_id),
+                UNIQUE (run_id, position)
+            ) STRICT
+            """,
+            """
+            INSERT INTO run_nodes_new (
+                run_id, node_id, position, name, node_type, status, started_at, ended_at,
+                error, step_io_json, revision, map_parent, map_index
+            )
+            SELECT
+                run_id, node_id, position, name, node_type, status, started_at, ended_at,
+                error, step_io_json, revision, map_parent, map_index
+            FROM run_nodes
+            """,
+            "DROP TABLE run_nodes",
+            "ALTER TABLE run_nodes_new RENAME TO run_nodes",
+            # What a rerun inherited instead of saving: each reused step and the run
+            # whose run_step_outputs row holds it, or why it is not reusable. A later
+            # rerun of this run goes straight to that run. The source is not a foreign
+            # key: a rerun outlives its source, and then cannot reuse what is gone.
+            """
+            CREATE TABLE run_reused_outputs (
+                run_id TEXT NOT NULL REFERENCES runs (run_id) ON DELETE CASCADE,
+                node_id TEXT NOT NULL,
+                step_slug TEXT NOT NULL,
+                source_run_id TEXT NOT NULL,
+                reason TEXT,
+                PRIMARY KEY (run_id, node_id),
+                UNIQUE (run_id, step_slug)
+            ) STRICT
+            """,
+        ),
+    ),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

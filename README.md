@@ -235,7 +235,7 @@ to change the HTTP port; `ava web` uses `--port` instead.
 `ava operator` and `ava dev` keep what they know in a SQLite database, by default
 `.avalanche/operator/state.db` under the folder you start them in (pass
 `--state-db PATH` to choose another file, or `--state-db :memory:` for a throwaway
-one). Next to it are three folders:
+one). Next to it are four folders:
 
 | Path | Holds |
 | --- | --- |
@@ -243,6 +243,7 @@ one). Next to it are three folders:
 | `results/` | Result bundles of successful runs, served by `ava result RUN_ID` |
 | `input-files/` | Uploaded run input files; the ones a run used are kept with it |
 | `schedule-inputs/` | Copies of the files a schedule's input uses |
+| `step-outputs/` | Each successful step's return value as JSON, with copies of its files |
 
 So run history, traces, logs, evaluations, results and schedules survive an
 operator restart, including a crash or `kill -9`. What does not survive:
@@ -541,6 +542,7 @@ uv add "avalanche-ai[lance,claude,openai,gemini]"
 - [DAG API](docs/dag-api.md)
 - [State machines and native calls](docs/state-machines.md)
 - [File references](docs/file-references.md)
+- [Reruns](docs/api/reruns.md)
 - [Agent steps](docs/agent-steps.md)
 - [Classifier steps](docs/classifier-steps.md)
 - [Integrations](docs/integrations.md)

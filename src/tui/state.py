@@ -9,6 +9,9 @@ from typing import Any, Callable, Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
+from avalanche.reruns import RerunRefusal
+from avalanche.runtime import Rerun
+
 from .models import (
     CatalogSnapshot,
     DetailUpdate,
@@ -333,6 +336,47 @@ class TuiExtensionError(Exception):
         self.retryable = retryable
         self.retry_after_s = retry_after_s
         self.context = context
+
+
+class TuiRerunRefusedError(TuiExtensionError):
+    """The rerun checks refused the rerun; nothing started and ``refusal`` says why."""
+
+    def __init__(self, refusal: RerunRefusal, context: TuiContext) -> None:
+        super().__init__("rerun_refused", "Rerun refused", context=context)
+        self.refusal = refusal
+
+
+RERUN_ACTION_ID = "run.rerun"
+RERUN_ACTION_LABEL = "Rerun from here"
+
+
+def rerun_action(*, step: str | None, active: bool, read_only: bool) -> ActionDescriptor:
+    """Rerun the selected run from its selected step, whose slug is ``step``.
+
+    The rerun dialog is the confirmation and collects the mode, so the action
+    declares neither.
+    """
+    if read_only:
+        reason = "read_only"
+    elif active:
+        reason = "This run is still going"
+    elif step is None:
+        reason = "Select a step that is in the current code"
+    else:
+        reason = None
+    return ActionDescriptor(
+        RERUN_ACTION_ID, RERUN_ACTION_LABEL, None, reason is None, reason, True, None, None
+    )
+
+
+def rerun_request(context: TuiContext, step: str, payload: Object) -> Rerun:
+    """Check a rerun action's payload, which names only the mode."""
+    mode = payload.get("mode")
+    if context.run is None or set(payload) != {"mode"} or mode not in ("autorun", "lazy"):
+        raise TuiExtensionError(
+            "invalid_input", "A rerun takes a run and a mode", context=context
+        )
+    return Rerun(run_id=context.run, start=(step,), mode=mode)
 
 
 @runtime_checkable

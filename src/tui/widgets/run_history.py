@@ -119,7 +119,9 @@ class RunHistoryWidget(Static):
         duration = f"{_fmt_time(elapsed):>7}" if elapsed is not None else "      —"
         bg = _SELECTED_BG if selected else Style()
         text = Text("  ", bg)
-        text.append(f"{run.run_id:<14}", Style(color=ICE_FROST, bold=selected) + bg)
+        # IDs started from the TUI are longer than the column; the status bar has it in full.
+        run_id = run.run_id if len(run.run_id) < 14 else f"{run.run_id[:12]}…"
+        text.append(f"{run_id:<14}", Style(color=ICE_FROST, bold=selected) + bg)
         text.append(f"{ts}  {duration}   ", DIM_STYLE + bg)
         label = (
             local_human_status(run.status.value, sum(waits), run.running_outside_wait)
@@ -128,6 +130,8 @@ class RunHistoryWidget(Static):
         )
         note = waiting_on_label(waits) if label == "waiting" else run.error_message
         text.append(f"{label} {icon}" + (f"  {note}" if note else ""), style + bg)
+        if run.rerun_of_run_id is not None:
+            text.append(f"  rerun of {run.rerun_of_run_id}", DIM_STYLE + bg)
         return text
 
     def get_content_height(self, container, viewport, width: int) -> int:

@@ -211,7 +211,7 @@ class WorkflowDetailScreen(Screen):
     """Two-pane layout: sidebar on left, DAG + run history + logs on right."""
 
     AUTO_FOCUS = ""  # Disable auto-focus so DAG navigation works immediately
-    _control_state: tuple[bool, bool, bool, bool, bool, bool, int] | None = None
+    _control_state: tuple[bool, bool, bool, bool, bool, bool, bool, int] | None = None
 
     CSS = """
     WorkflowDetailScreen {
@@ -433,11 +433,13 @@ class WorkflowDetailScreen(Screen):
                                 yield Static(Text("[r] Run"), id="run-key-run")
                                 yield Static(Text("[x] Stop"), id="run-key-stop")
                                 yield Static(Text("[a] Actions"), id="run-key-actions")
+                                yield Static(Text("[R] Rerun step"), id="run-key-rerun")
                                 yield Static(Text("[↑↓] Select"), id="run-key-select")
                             with Horizontal(id="run-controls", classes="pane-controls"):
                                 yield Button("Start run (r)", id="run-start-button")
                                 yield Button("Stop selected", id="run-stop-button")
                                 yield Button("Actions ▾", id="run-actions-button")
+                                yield Button("Rerun step (R)", id="run-rerun-button")
                             with Vertical(id="run-action-menu"):
                                 yield Button("Start run (r)", id="run-menu-start-button")
                                 yield Button("Stop selected run", id="run-menu-stop-button")
@@ -499,6 +501,7 @@ class WorkflowDetailScreen(Screen):
         logs_visible = app._logs_visible
         can_start = app.can_start_run()
         can_stop = app.can_cancel_selected_run()
+        can_rerun = app.can_rerun_selected_step()
         compact_layout = self.size.height <= 15
         menu_was_open = app._run_actions_menu_open
         if compact_layout:
@@ -509,6 +512,7 @@ class WorkflowDetailScreen(Screen):
             logs_visible,
             can_start,
             can_stop,
+            can_rerun,
             menu_open,
             compact_layout,
             self.size.height,
@@ -529,6 +533,8 @@ class WorkflowDetailScreen(Screen):
         )
         self.query_one("#run-start-button", Button).disabled = not can_start
         self.query_one("#run-stop-button", Button).disabled = not can_stop
+        self.query_one("#run-rerun-button", Button).disabled = not can_rerun
+        self.query_one("#run-key-rerun", Static).set_class(not can_rerun, "-disabled")
         self.query_one("#run-key-run", Static).set_class(not can_start, "-disabled")
         self.query_one("#run-key-stop", Static).set_class(not can_stop, "-disabled")
         self.query_one("#run-key-actions", Static).set_class(
@@ -611,6 +617,7 @@ class WorkflowDetailScreen(Screen):
             "run-start-button": self.app.action_start_run,
             "run-stop-button": self.app.action_cancel_run,
             "run-actions-button": self.app.action_toggle_run_actions_menu,
+            "run-rerun-button": self.app.action_rerun_step,
             "run-menu-start-button": self.app.action_start_run,
             "run-menu-stop-button": self.app.action_cancel_run,
         }

@@ -573,6 +573,14 @@ export interface FlowInfoV2 {
     integrationDeclarationsJson: {
         [key: string]: string;
     };
+    /**
+     * The slug of each node, by node ID: what RunRerunV2.start names.
+     *
+     * @generated from protobuf field: map<string, string> node_slugs = 36
+     */
+    nodeSlugs: {
+        [key: string]: string;
+    };
 }
 /**
  * @generated from protobuf message avalanche.operator.DiscoveryDiagnosticV2
@@ -860,6 +868,75 @@ export interface StartRunRequestV2 {
      * @generated from protobuf field: avalanche.operator.StartRunTriggerV2 trigger = 7
      */
     trigger: StartRunTriggerV2;
+    /**
+     * Rerun part of a previous run, reusing the saved outputs of the steps it skips.
+     *
+     * @generated from protobuf field: optional avalanche.operator.RunRerunV2 rerun = 8
+     */
+    rerun?: RunRerunV2;
+}
+/**
+ * Same field names and meanings as Delta's RunRerunSpecV2. The operator always runs
+ * the code in its folder, so Delta's source_deployment_id has no counterpart here.
+ *
+ * @generated from protobuf message avalanche.operator.RunRerunV2
+ */
+export interface RunRerunV2 {
+    /**
+     * The finished, failed or cancelled run to reuse saved step outputs from.
+     *
+     * @generated from protobuf field: string source_run_id = 1
+     */
+    sourceRunId: string;
+    /**
+     * Slugs of the steps to run again; at least one, without duplicates.
+     *
+     * @generated from protobuf field: repeated string start = 2
+     */
+    start: string[];
+    /**
+     * @generated from protobuf field: avalanche.operator.RunRerunModeV2 mode = 3
+     */
+    mode: RunRerunModeV2;
+}
+/**
+ * Why a rerun was refused. StartRun fails with FAILED_PRECONDITION, a status message
+ * listing the same problems, and this message in the "rerun-refusal-bin" trailer.
+ *
+ * @generated from protobuf message avalanche.operator.RerunRefusalV2
+ */
+export interface RerunRefusalV2 {
+    /**
+     * @generated from protobuf field: repeated avalanche.operator.RerunProblemV2 problems = 1
+     */
+    problems: RerunProblemV2[];
+    /**
+     * The nearest start steps that would pass; empty when no start can pass yet.
+     *
+     * @generated from protobuf field: repeated string earliest_start = 2
+     */
+    earliestStart: string[];
+}
+/**
+ * @generated from protobuf message avalanche.operator.RerunProblemV2
+ */
+export interface RerunProblemV2 {
+    /**
+     * The step's slug; absent when the problem is with the whole source run.
+     *
+     * @generated from protobuf field: optional string step = 1
+     */
+    step?: string;
+    /**
+     * One of avalanche.reruns.RerunProblemReason, such as "missing_from_source".
+     *
+     * @generated from protobuf field: string reason = 2
+     */
+    reason: string;
+    /**
+     * @generated from protobuf field: string detail = 3
+     */
+    detail: string;
 }
 /**
  * @generated from protobuf message avalanche.operator.SetScheduleEnabledRequestV2
@@ -1171,6 +1248,12 @@ export interface RunSummaryV2 {
      * @generated from protobuf field: optional string error_message = 18
      */
     errorMessage?: string;
+    /**
+     * The run this one reruns; absent for a run that is not a rerun.
+     *
+     * @generated from protobuf field: optional string rerun_of_run_id = 19
+     */
+    rerunOfRunId?: string;
 }
 /**
  * @generated from protobuf message avalanche.operator.RunWaitingOnV2
@@ -1341,6 +1424,12 @@ export interface NodeSnapshotV2 {
      * @generated from protobuf field: optional uint32 map_index = 14
      */
     mapIndex?: number;
+    /**
+     * Status "reused" only: the run holding the saved output this step reuses.
+     *
+     * @generated from protobuf field: optional string reused_from_run_id = 15
+     */
+    reusedFromRunId?: string;
 }
 /**
  * A bounded, display-only rendering of one value, never the value itself. Cut
@@ -2352,6 +2441,23 @@ export interface RunStatusEnvelopeV2 {
      * @generated from protobuf field: avalanche.operator.ScopeReferenceV2 scope_ref = 10
      */
     scopeRef?: ScopeReferenceV2;
+}
+/**
+ * @generated from protobuf enum avalanche.operator.RunRerunModeV2
+ */
+export enum RunRerunModeV2 {
+    /**
+     * The start steps and everything downstream of them.
+     *
+     * @generated from protobuf enum value: RUN_RERUN_MODE_V2_AUTORUN = 0;
+     */
+    AUTORUN = 0,
+    /**
+     * Only the start steps.
+     *
+     * @generated from protobuf enum value: RUN_RERUN_MODE_V2_LAZY = 1;
+     */
+    LAZY = 1
 }
 /**
  * The trigger kinds a StartRun caller may claim. Cron and webhook runs are
@@ -3915,7 +4021,8 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
             { no: 32, name: "machine_spec_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 33, name: "node_runs_json", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } },
             { no: 34, name: "key_fields", kind: "scalar", repeat: 2 /*RepeatType.UNPACKED*/, T: 9 /*ScalarType.STRING*/ },
-            { no: 35, name: "integration_declarations_json", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } }
+            { no: 35, name: "integration_declarations_json", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } },
+            { no: 36, name: "node_slugs", kind: "map", K: 9 /*ScalarType.STRING*/, V: { kind: "scalar", T: 9 /*ScalarType.STRING*/ } }
         ]);
     }
     create(value?: PartialMessage<FlowInfoV2>): FlowInfoV2 {
@@ -3945,6 +4052,7 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
         message.nodeRunsJson = {};
         message.keyFields = [];
         message.integrationDeclarationsJson = {};
+        message.nodeSlugs = {};
         if (value !== undefined)
             reflectionMergePartial<FlowInfoV2>(this, message, value);
         return message;
@@ -4034,6 +4142,9 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
                     break;
                 case /* map<string, string> integration_declarations_json */ 35:
                     this.binaryReadMap35(message.integrationDeclarationsJson, reader, options);
+                    break;
+                case /* map<string, string> node_slugs */ 36:
+                    this.binaryReadMap36(message.nodeSlugs, reader, options);
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -4158,6 +4269,22 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
         }
         map[key ?? ""] = val ?? "";
     }
+    private binaryReadMap36(map: FlowInfoV2["nodeSlugs"], reader: IBinaryReader, options: BinaryReadOptions): void {
+        let len = reader.uint32(), end = reader.pos + len, key: keyof FlowInfoV2["nodeSlugs"] | undefined, val: FlowInfoV2["nodeSlugs"][any] | undefined;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case 1:
+                    key = reader.string();
+                    break;
+                case 2:
+                    val = reader.string();
+                    break;
+                default: throw new globalThis.Error("unknown map entry field for avalanche.operator.FlowInfoV2.node_slugs");
+            }
+        }
+        map[key ?? ""] = val ?? "";
+    }
     internalBinaryWrite(message: FlowInfoV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
         /* string workflow_selector = 1; */
         if (message.workflowSelector !== "")
@@ -4240,6 +4367,9 @@ class FlowInfoV2$Type extends MessageType<FlowInfoV2> {
         /* map<string, string> integration_declarations_json = 35; */
         for (let k of globalThis.Object.keys(message.integrationDeclarationsJson))
             writer.tag(35, WireType.LengthDelimited).fork().tag(1, WireType.LengthDelimited).string(k).tag(2, WireType.LengthDelimited).string(message.integrationDeclarationsJson[k]).join();
+        /* map<string, string> node_slugs = 36; */
+        for (let k of globalThis.Object.keys(message.nodeSlugs))
+            writer.tag(36, WireType.LengthDelimited).fork().tag(1, WireType.LengthDelimited).string(k).tag(2, WireType.LengthDelimited).string(message.nodeSlugs[k]).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -5042,7 +5172,8 @@ class StartRunRequestV2$Type extends MessageType<StartRunRequestV2> {
             { no: 4, name: "context_json", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
             { no: 5, name: "input_files", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => FileAttachmentV2 },
             { no: 6, name: "expected_version", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
-            { no: 7, name: "trigger", kind: "enum", T: () => ["avalanche.operator.StartRunTriggerV2", StartRunTriggerV2, "START_RUN_TRIGGER_V2_"] }
+            { no: 7, name: "trigger", kind: "enum", T: () => ["avalanche.operator.StartRunTriggerV2", StartRunTriggerV2, "START_RUN_TRIGGER_V2_"] },
+            { no: 8, name: "rerun", kind: "message", T: () => RunRerunV2 }
         ]);
     }
     create(value?: PartialMessage<StartRunRequestV2>): StartRunRequestV2 {
@@ -5083,6 +5214,9 @@ class StartRunRequestV2$Type extends MessageType<StartRunRequestV2> {
                 case /* avalanche.operator.StartRunTriggerV2 trigger */ 7:
                     message.trigger = reader.int32();
                     break;
+                case /* optional avalanche.operator.RunRerunV2 rerun */ 8:
+                    message.rerun = RunRerunV2.internalBinaryRead(reader, reader.uint32(), options, message.rerun);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -5116,6 +5250,9 @@ class StartRunRequestV2$Type extends MessageType<StartRunRequestV2> {
         /* avalanche.operator.StartRunTriggerV2 trigger = 7; */
         if (message.trigger !== 0)
             writer.tag(7, WireType.Varint).int32(message.trigger);
+        /* optional avalanche.operator.RunRerunV2 rerun = 8; */
+        if (message.rerun)
+            RunRerunV2.internalBinaryWrite(message.rerun, writer.tag(8, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -5126,6 +5263,186 @@ class StartRunRequestV2$Type extends MessageType<StartRunRequestV2> {
  * @generated MessageType for protobuf message avalanche.operator.StartRunRequestV2
  */
 export const StartRunRequestV2 = new StartRunRequestV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class RunRerunV2$Type extends MessageType<RunRerunV2> {
+    constructor() {
+        super("avalanche.operator.RunRerunV2", [
+            { no: 1, name: "source_run_id", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "start", kind: "scalar", repeat: 2 /*RepeatType.UNPACKED*/, T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "mode", kind: "enum", T: () => ["avalanche.operator.RunRerunModeV2", RunRerunModeV2, "RUN_RERUN_MODE_V2_"] }
+        ]);
+    }
+    create(value?: PartialMessage<RunRerunV2>): RunRerunV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.sourceRunId = "";
+        message.start = [];
+        message.mode = 0;
+        if (value !== undefined)
+            reflectionMergePartial<RunRerunV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: RunRerunV2): RunRerunV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* string source_run_id */ 1:
+                    message.sourceRunId = reader.string();
+                    break;
+                case /* repeated string start */ 2:
+                    message.start.push(reader.string());
+                    break;
+                case /* avalanche.operator.RunRerunModeV2 mode */ 3:
+                    message.mode = reader.int32();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: RunRerunV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* string source_run_id = 1; */
+        if (message.sourceRunId !== "")
+            writer.tag(1, WireType.LengthDelimited).string(message.sourceRunId);
+        /* repeated string start = 2; */
+        for (let i = 0; i < message.start.length; i++)
+            writer.tag(2, WireType.LengthDelimited).string(message.start[i]);
+        /* avalanche.operator.RunRerunModeV2 mode = 3; */
+        if (message.mode !== 0)
+            writer.tag(3, WireType.Varint).int32(message.mode);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.RunRerunV2
+ */
+export const RunRerunV2 = new RunRerunV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class RerunRefusalV2$Type extends MessageType<RerunRefusalV2> {
+    constructor() {
+        super("avalanche.operator.RerunRefusalV2", [
+            { no: 1, name: "problems", kind: "message", repeat: 2 /*RepeatType.UNPACKED*/, T: () => RerunProblemV2 },
+            { no: 2, name: "earliest_start", kind: "scalar", repeat: 2 /*RepeatType.UNPACKED*/, T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<RerunRefusalV2>): RerunRefusalV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.problems = [];
+        message.earliestStart = [];
+        if (value !== undefined)
+            reflectionMergePartial<RerunRefusalV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: RerunRefusalV2): RerunRefusalV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* repeated avalanche.operator.RerunProblemV2 problems */ 1:
+                    message.problems.push(RerunProblemV2.internalBinaryRead(reader, reader.uint32(), options));
+                    break;
+                case /* repeated string earliest_start */ 2:
+                    message.earliestStart.push(reader.string());
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: RerunRefusalV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* repeated avalanche.operator.RerunProblemV2 problems = 1; */
+        for (let i = 0; i < message.problems.length; i++)
+            RerunProblemV2.internalBinaryWrite(message.problems[i], writer.tag(1, WireType.LengthDelimited).fork(), options).join();
+        /* repeated string earliest_start = 2; */
+        for (let i = 0; i < message.earliestStart.length; i++)
+            writer.tag(2, WireType.LengthDelimited).string(message.earliestStart[i]);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.RerunRefusalV2
+ */
+export const RerunRefusalV2 = new RerunRefusalV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class RerunProblemV2$Type extends MessageType<RerunProblemV2> {
+    constructor() {
+        super("avalanche.operator.RerunProblemV2", [
+            { no: 1, name: "step", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "reason", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "detail", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<RerunProblemV2>): RerunProblemV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.reason = "";
+        message.detail = "";
+        if (value !== undefined)
+            reflectionMergePartial<RerunProblemV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: RerunProblemV2): RerunProblemV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* optional string step */ 1:
+                    message.step = reader.string();
+                    break;
+                case /* string reason */ 2:
+                    message.reason = reader.string();
+                    break;
+                case /* string detail */ 3:
+                    message.detail = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: RerunProblemV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* optional string step = 1; */
+        if (message.step !== undefined)
+            writer.tag(1, WireType.LengthDelimited).string(message.step);
+        /* string reason = 2; */
+        if (message.reason !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.reason);
+        /* string detail = 3; */
+        if (message.detail !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.detail);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.RerunProblemV2
+ */
+export const RerunProblemV2 = new RerunProblemV2$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class SetScheduleEnabledRequestV2$Type extends MessageType<SetScheduleEnabledRequestV2> {
     constructor() {
@@ -5860,7 +6177,8 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
             { no: 15, name: "waiting_on", kind: "message", T: () => RunWaitingOnV2 },
             { no: 16, name: "error_code", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
             { no: 17, name: "error_step", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
-            { no: 18, name: "error_message", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+            { no: 18, name: "error_message", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 19, name: "rerun_of_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<RunSummaryV2>): RunSummaryV2 {
@@ -5942,6 +6260,9 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
                 case /* optional string error_message */ 18:
                     message.errorMessage = reader.string();
                     break;
+                case /* optional string rerun_of_run_id */ 19:
+                    message.rerunOfRunId = reader.string();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -6008,6 +6329,9 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
         /* optional string error_message = 18; */
         if (message.errorMessage !== undefined)
             writer.tag(18, WireType.LengthDelimited).string(message.errorMessage);
+        /* optional string rerun_of_run_id = 19; */
+        if (message.rerunOfRunId !== undefined)
+            writer.tag(19, WireType.LengthDelimited).string(message.rerunOfRunId);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -6398,7 +6722,8 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
             { no: 11, name: "activity_continuation", kind: "message", T: () => ContinuationRefV2 },
             { no: 12, name: "step_io", kind: "message", T: () => StepIoV2 },
             { no: 13, name: "map_parent", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
-            { no: 14, name: "map_index", kind: "scalar", opt: true, T: 13 /*ScalarType.UINT32*/ }
+            { no: 14, name: "map_index", kind: "scalar", opt: true, T: 13 /*ScalarType.UINT32*/ },
+            { no: 15, name: "reused_from_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<NodeSnapshotV2>): NodeSnapshotV2 {
@@ -6461,6 +6786,9 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
                 case /* optional uint32 map_index */ 14:
                     message.mapIndex = reader.uint32();
                     break;
+                case /* optional string reused_from_run_id */ 15:
+                    message.reusedFromRunId = reader.string();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -6515,6 +6843,9 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
         /* optional uint32 map_index = 14; */
         if (message.mapIndex !== undefined)
             writer.tag(14, WireType.Varint).uint32(message.mapIndex);
+        /* optional string reused_from_run_id = 15; */
+        if (message.reusedFromRunId !== undefined)
+            writer.tag(15, WireType.LengthDelimited).string(message.reusedFromRunId);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

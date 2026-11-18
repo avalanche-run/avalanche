@@ -56,7 +56,9 @@ from avalanche.integrations.providers import IntegrationProvider, integration_pr
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
 from avalanche.references import read_stored_trees
+from avalanche.reruns import RerunRefusal, RerunRefusedError, SavedOutputIndex
 from avalanche.run_status import EMPTY_WAITING_ON, WAIT_KIND_SLOT, error_message, error_step
+from avalanche.runtime import Rerun
 from avalanche.step_interface import StepInterface
 
 from ._signals import shutdown_cleanup
@@ -212,9 +214,21 @@ from .state.schedule_input_files import (
     ScheduleInputFileFolder,
 )
 from .state.schedules import ScheduleState
+from .state.step_outputs import (
+    ReusedOutputRecord,
+    ReusedOutputsTable,
+    SavedOutputRecord,
+    StepOutputsTable,
+)
 from .state.traces import RunTracesTable
 from .state.waits import WaitsTable
 from .step_io import StepInputs, StepIo, StepValuePreview
+from .step_outputs import (
+    STEP_OUTPUT_FOLDER_NAME,
+    LocalSavedOutputProvider,
+    RerunAssignment,
+    StepOutputStore,
+)
 from .wait_control import (
     FinalWaitSnapshot,
     RunControls,
@@ -294,6 +308,22 @@ class NoScheduleError(ValueError):
     """Raised when a schedule control targets a workflow that declares no cron."""
 
 
+class UnknownRerunSourceError(LookupError):
+    """A rerun names a source run the operator does not know."""
+
+
+class RerunStartError(RuntimeError):
+    """A rerun's code or input could not be prepared, so no run was recorded."""
+
+
+class _PreparationFailedError(RuntimeError):
+    """The coordinator reported that the workflow could not be prepared."""
+
+    def __init__(self, error: str, details: str) -> None:
+        super().__init__(f"Workflow preparation failed: {error}\n{details}")
+        self.error = error
+
+
 class _CoordinatorProtocolError(RuntimeError):
     """A coordinator event does not match the parent-side protocol."""
 
@@ -313,6 +343,18 @@ class _RunHandle:
     success_quiesced: bool = False
     cancel_writer: Connection | None = None
     controls: RunControls | None = None
+    # Events that arrived while waiting for a preparation event, oldest first.
+    early_events: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _RerunStart:
+    """What a rerun starts with: the source's values with the caller's on top."""
+
+    input: dict[str, Any] | None
+    context: dict[str, Any] | None
+    input_files: tuple[StagedInputFile, ...]
+    assignment: RerunAssignment
 
 
 @dataclass(kw_only=True)
@@ -450,6 +492,8 @@ class _DetailWrites:
     """The details one publication announces, stored with it in one transaction."""
 
     log: SequencedLogEntry | None
+    saved_output: SavedOutputRecord | None
+    reused_output: ReusedOutputRecord | None
     agent_events: Mapping[str, AgentEvent]
     classifier_events: Mapping[str, ClassifierEvent]
     traces: tuple[_TraceWrite, ...]
@@ -682,6 +726,7 @@ class Operator:
             report_result_index(result_store)
             self._input_files = self._open_input_file_staging()
             self._workspace_root = open_workspace_root(self._state_store.path)
+            self._step_outputs = StepOutputStore(self._state_store)
             self._notification_stop_enqueued = False
             self._notification_shutdown_thread: threading.Thread | None = None
             self._notification_queue: queue.Queue[_RunNotifications | None] = queue.Queue()
@@ -1557,6 +1602,7 @@ class Operator:
                 ),
                 error=node.error,
                 step_io=node.step_io,
+                reused_from_run_id=node.reused_from_run_id,
                 trace=self._trace_descriptors.get((run.run_id, node.node_id)),
                 revision=self._node_revisions.get(
                     (run.run_id, node.node_id),
@@ -1858,7 +1904,25 @@ class Operator:
             error_code=run.error_code,
             error_step=run.error_step,
             error_message=run.error_message,
+            rerun_of_run_id=run.rerun_of_run_id,
         )
+
+    def saved_output_index(self, run_id: str) -> SavedOutputIndex | None:
+        """What a run saved for later reruns, per step slug; ``None`` for an unknown run."""
+        with self._lock:
+            run = self._runs.get(run_id)
+            if run is None:
+                return None
+            run_active = run.status in {
+                RunStatus.REQUESTING,
+                RunStatus.PENDING,
+                RunStatus.RUNNING,
+            }
+            return self._step_outputs.index(run_id, run_active=run_active)
+
+    def saved_output_provider(self) -> LocalSavedOutputProvider:
+        """Loads saved outputs and binds what they refer to their read-only copies."""
+        return self._step_outputs.provider()
 
     def get_run_result(
         self, run_id: str, *, entry: int | None = None, node_id: str | None = None
@@ -2048,18 +2112,29 @@ class Operator:
         _machine_state_entry: InstanceRecord | None = None,
         _key_claim: list[JsonValue] | None = None,
         _resume: bool = False,
+        rerun: Rerun | None = None,
     ) -> str:
         """Publish a requesting run, then prepare it asynchronously.
 
         The run is stored with its input and context in JSON form and with
         ``input_files``, the staged files its input uses, so they outlive the
         operator together with the run.
+
+        A ``rerun`` is checked first, against the code that will run, and waits for
+        the answer. A refused rerun raises ``RerunRefusedError`` and records nothing.
         """
         if run_id is not None and not isinstance(run_id, str):
             raise InvalidRunIdError("run_id must be a string")
         if run_id and len(run_id.encode("utf-8")) > MAX_RUN_ID_BYTES:
             raise InvalidRunIdError(f"run_id exceeds {MAX_RUN_ID_BYTES}-byte UTF-8 limit")
         triggered_at = time.time()
+        rerun_assignment: RerunAssignment | None = None
+        if rerun is not None:
+            rerun_start = self._prepare_rerun(flow_name, rerun, input, context, input_files)
+            input = rerun_start.input
+            context = rerun_start.context
+            input_files = rerun_start.input_files
+            rerun_assignment = rerun_start.assignment
         try:
             request = RunRequest(
                 # A file tree an earlier release stored inline becomes this run's own
@@ -2141,12 +2216,16 @@ class Operator:
                         start_event,
                         transferred_result_bundle,
                         (result_bundle.device, result_bundle.inode),
+                        str(self._step_outputs.run_folder(run_id)),
                         control_child,
                         cancel_reader,
                         _machine_state_entry,
                         machine_reader,
                         self._resume_results(run_id) if _resume else None,
                         accounts_child,
+                        None
+                        if rerun_assignment is None
+                        else rerun_assignment.model_dump_json(),
                     ),
                     name=f"avalanche-run-{run_id}",
                     daemon=False,
@@ -2216,6 +2295,11 @@ class Operator:
                     else identify_run_process(process.pid),
                 )
                 assignment_event.set()
+            if rerun is not None:
+                self._await_rerun_check(handle)
+            with self._lock:
+                if self._closed:
+                    raise RuntimeError("Operator closed while creating run")
                 run = (
                     self._runs[run_id]
                     if _machine_state_entry is not None or _resume
@@ -2227,6 +2311,7 @@ class Operator:
                         triggered_by=triggered_by,
                         workflow_id=descriptor.workflow_id,
                         workflow_display_name=descriptor.display_name,
+                        rerun_of_run_id=None if rerun is None else rerun.run_id,
                     )
                 )
                 self._runs[run_id] = run
@@ -2323,6 +2408,71 @@ class Operator:
                 (run_id,),
             ).fetchall()
         return {row[0]: row[1] for row in rows}
+    def _prepare_rerun(
+        self,
+        flow_name: str,
+        rerun: Rerun,
+        input: dict[str, Any] | None,
+        context: dict[str, Any] | None,
+        input_files: tuple[StagedInputFile, ...],
+    ) -> _RerunStart:
+        """Load the source run; the caller's input and context replace it field by field.
+
+        Merging by field lets a caller change one input, or attach one file, without
+        restating the rest. A source file whose field was replaced is not kept.
+        """
+        descriptor, _ = self._registry.resolve_source(flow_name)
+        # Machines and keyed flows start through the machine host, which keys runs by
+        # input and saves no step outputs to reuse.
+        if descriptor.machine_spec_json:
+            raise ValueError("state machine runs cannot be rerun from a step")
+        if descriptor.key_fields:
+            raise ValueError("keyed flow runs cannot be rerun from a step")
+        with self._lock:
+            source = self._runs.get(rerun.run_id)
+            if source is None:
+                raise UnknownRerunSourceError(f"Run {rerun.run_id} not found")
+            if source.workflow_id != descriptor.workflow_id:
+                raise ValueError(
+                    f"Run {rerun.run_id} is a run of {source.workflow_id}, not "
+                    f"{descriptor.workflow_id}; a rerun is always of the same flow"
+                )
+            index = self.saved_output_index(rerun.run_id)
+            with self._state_store.transaction() as connection:
+                request = RunsTable.read_request(connection, rerun.run_id)
+        given_input = input or {}
+        kept_input = {
+            field_name: value
+            for field_name, value in (request.input or {}).items()
+            if field_name not in given_input
+        }
+        merged_context = {**(request.context or {}), **(context or {})}
+        return _RerunStart(
+            input={**kept_input, **given_input} or None,
+            context=merged_context or None,
+            input_files=(
+                *self._input_files.restore_used_files(
+                    kept_input.values(), request.input_files
+                ),
+                *input_files,
+            ),
+            assignment=self._step_outputs.rerun_assignment(rerun, index),
+        )
+
+    def _await_rerun_check(self, handle: _RunHandle) -> None:
+        """Wait for the coordinator's rerun checks; raise unless the rerun may start."""
+        try:
+            event = self._await_preparation_event(
+                handle, frozenset({"rerun_accepted", "rerun_refused"})
+            )
+        except _PreparationFailedError as exc:
+            raise RerunStartError(exc.error[:_MAX_RERUN_START_ERROR_LENGTH]) from exc
+        if event["type"] == "rerun_refused":
+            try:
+                refusal = RerunRefusal.model_validate_json(event["refusal"])
+            except ValueError as exc:
+                raise _CoordinatorProtocolError("invalid rerun refusal") from exc
+            raise RerunRefusedError(refusal)
 
     def _integration_credentials(self, names: Sequence[str]) -> AccountsResponse:
         """The stored accounts among ``names``, for a run's worker at a step start.
@@ -2553,7 +2703,13 @@ class Operator:
                     run.workflow_display_name = prepared_run.workflow_display_name
                 run.topology = prepared_run.topology
                 run.input = prepared_run.input
-                run.nodes = prepared_run.nodes
+                # A resumed rerun keeps the steps it reused.
+                reused = {
+                    node_id: node
+                    for node_id, node in run.nodes.items()
+                    if node.status == NodeStatus.REUSED and node_id in prepared_run.nodes
+                }
+                run.nodes = prepared_run.nodes | reused
                 if handle.cancel_event.is_set():
                     run.status = RunStatus.CANCELLED
                     run.ended_at = time.monotonic()
@@ -2877,6 +3033,7 @@ class Operator:
             # Runs are stopped, so no coordinator still reads a staged input file.
             self._input_files.close()
             self._schedule_input_files.close()
+            self._step_outputs.close()
 
     def _forget_run_details_locked(self, run: RunState) -> None:
         """Drop a removed run's detail counters and protocol checks from memory.
@@ -3041,6 +3198,7 @@ class Operator:
             folder / INPUT_FILE_FOLDER_NAME,
             folder / SCHEDULE_INPUT_FOLDER_NAME,
             folder / WORKSPACE_FOLDER_NAME,
+            folder / STEP_OUTPUT_FOLDER_NAME,
         )
 
     def _record_fatal_error(self, error: Exception) -> None:
@@ -3110,8 +3268,15 @@ class Operator:
     def _await_prepared(
         self, handle: _RunHandle
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        return (
+            self._await_preparation_event(handle, frozenset({"prepared"})),
+            handle.early_events,
+        )
+
+    def _await_preparation_event(
+        self, handle: _RunHandle, awaited: frozenset[str]
+    ) -> dict[str, Any]:
         deadline = time.monotonic() + self._prepare_timeout
-        buffered: list[dict[str, Any]] = []
         while time.monotonic() < deadline:
             try:
                 event = handle.event_queue.get(timeout=0.1)
@@ -3125,13 +3290,11 @@ class Operator:
                     )
                 continue
             event_type = _validate_preparation_event(event)
-            if event_type == "prepared":
-                return event, buffered
+            if event_type in awaited:
+                return event
             if event_type == "prepare_failed":
-                raise RuntimeError(
-                    f"Workflow preparation failed: {event['error']}\n{event['traceback']}"
-                )
-            buffered.append(event)
+                raise _PreparationFailedError(event["error"], event["traceback"])
+            handle.early_events.append(event)
         raise TimeoutError(f"Workflow preparation exceeded {self._prepare_timeout:.1f}s")
 
     @staticmethod
@@ -3435,6 +3598,8 @@ class Operator:
 
         discard_stored_result = False
         recorded_result = False
+        saved_output: SavedOutputRecord | None = None
+        reused_output: ReusedOutputRecord | None = None
         try:
             with self._lock:
                 run = self._runs.get(run_id)
@@ -3506,6 +3671,22 @@ class Operator:
                             raise _CoordinatorProtocolError("invalid nodes expansion") from exc
                         status_node_ids = ()
                         mutated = True
+                    elif event_type == "node_reused":
+                        reused_output = ReusedOutputRecord.model_validate_json(
+                            event["reused_output"]
+                        )
+                        node = run.nodes.get(reused_output.node_id)
+                        if node is None:
+                            raise _CoordinatorProtocolError(
+                                "node event references unpublished node "
+                                f"{_bounded_ascii(reused_output.node_id)}"
+                            )
+                        if run.status != RunStatus.CANCELLED:
+                            node.status = NodeStatus.REUSED
+                            node.reused_from_run_id = reused_output.source_run_id
+                            changed_node_ids = (node.node_id,)
+                            status_node_ids = changed_node_ids
+                            mutated = True
                     elif event_type.startswith("node_"):
                         node = run.nodes.get(event["node_id"])
                         if node is None:
@@ -3513,7 +3694,12 @@ class Operator:
                                 "node event references unpublished node "
                                 f"{_bounded_ascii(event['node_id'])}"
                             )
-                        if run.status != RunStatus.CANCELLED:
+                        # A resumed rerun restores its reused steps as finished; they
+                        # stay reused.
+                        restored_reuse = (
+                            event_type == "node_succeeded" and node.status == NodeStatus.REUSED
+                        )
+                        if run.status != RunStatus.CANCELLED and not restored_reuse:
                             status = {
                                 "node_started": NodeStatus.RUNNING,
                                 "node_succeeded": NodeStatus.SUCCESS,
@@ -3539,6 +3725,8 @@ class Operator:
                                 run.error_code = run.error_step = run.error_message = None
                             summary_changed = True
                             node.status = status
+                            if status == NodeStatus.SUCCESS and "saved_output" in event:
+                                saved_output = _saved_output_from_event(event)
                             if status == NodeStatus.RUNNING:
                                 node.started_at = event["timestamp"]
                             else:
@@ -3712,6 +3900,8 @@ class Operator:
                         classifier_events=classifier_events,
                         log_entry=log_entry,
                         terminal_reason=terminal_reason,
+                        saved_output=saved_output,
+                        reused_output=reused_output,
                     )
         except BaseException as error:
             if stored_result is not None:
@@ -4242,6 +4432,8 @@ class Operator:
         agent_events: Mapping[str, AgentEvent] | None = None,
         classifier_events: Mapping[str, ClassifierEvent] | None = None,
         log_entry: LogEntry | None = None,
+        saved_output: SavedOutputRecord | None = None,
+        reused_output: ReusedOutputRecord | None = None,
         start: _RunStart | None = None,
         terminal_reason: str | None = None,
         machine_write: Callable[[sqlite3.Connection], None] | None = None,
@@ -4428,6 +4620,7 @@ class Operator:
                             revision=publication_sequence,
                             error=node.error,
                             step_io=node.step_io,
+                            reused_from_run_id=node.reused_from_run_id,
                         )
                     )
                 if log_item is not None:
@@ -4506,6 +4699,8 @@ class Operator:
                 machine_write=machine_write,
                 details=_DetailWrites(
                     log=log_item,
+                    saved_output=saved_output,
+                    reused_output=reused_output,
                     agent_events=agent_events,
                     classifier_events=classifier_events,
                     traces=tuple(trace_writes),
@@ -4630,6 +4825,10 @@ class Operator:
                 machine_write(connection)
             if details.log is not None:
                 RunLogsTable.insert(connection, run.run_id, details.log)
+            if details.saved_output is not None:
+                StepOutputsTable.insert(connection, run.run_id, details.saved_output)
+            if details.reused_output is not None:
+                ReusedOutputsTable.insert(connection, run.run_id, details.reused_output)
             for node_id, agent_event in details.agent_events.items():
                 RunAgentEventsTable.insert(connection, run.run_id, node_id, agent_event)
             for node_id, classifier_event in details.classifier_events.items():
@@ -5052,6 +5251,7 @@ _RUN_EVENT_TYPES = {
     "machine_step",
     "nodes_expanded",
     "running",
+    "node_reused",
     "node_started",
     "node_succeeded",
     "node_failed",
@@ -5084,6 +5284,8 @@ _MAX_EVENT_STEP_INTERFACES_TOTAL_BYTES = 16 * 1024 * 1024
 _MAX_EVENT_TRACEBACK_LENGTH = 262_144
 _MAX_EVENT_INPUT_DECLARATION_LENGTH = 1024 * 1024
 _MAX_EVENT_TIMESTAMP_MAGNITUDE = 10**12
+_MAX_EVENT_RERUN_REFUSAL_LENGTH = 16 * 1024 * 1024
+_MAX_RERUN_START_ERROR_LENGTH = 2048
 
 
 def _validate_agent_detail_depth(value: object, *, detail_kind: str = "agent") -> None:
@@ -5133,6 +5335,17 @@ def _validate_agent_detail_depth(value: object, *, detail_kind: str = "agent") -
                 active.remove(identity)
 
     walk(value, 0)
+
+
+def _saved_output_from_event(event: dict[str, Any]) -> SavedOutputRecord:
+    """Validate a worker's report once; it must be about the node the event names."""
+    try:
+        record = SavedOutputRecord.model_validate_json(event["saved_output"])
+    except ValueError as exc:
+        raise _CoordinatorProtocolError("invalid saved output report") from exc
+    if record.node_id != event["node_id"]:
+        raise _CoordinatorProtocolError("saved output report names another node")
+    return record
 
 
 def _step_io_from_event(
@@ -5387,6 +5600,13 @@ def _validate_preparation_event(event: object) -> str:
         _string_field(event, "error", maximum_length=_MAX_EVENT_MESSAGE_LENGTH)
         _string_field(event, "traceback", maximum_length=_MAX_EVENT_TRACEBACK_LENGTH)
         return event_type
+    if event_type == "rerun_accepted":
+        _require_exact_event_keys(event, {"type"})
+        return event_type
+    if event_type == "rerun_refused":
+        _require_exact_event_keys(event, {"type", "refusal"})
+        _string_field(event, "refusal", maximum_length=_MAX_EVENT_RERUN_REFUSAL_LENGTH)
+        return event_type
     if event_type == "log":
         return _validate_run_event(event)
     if event_type in _RUN_EVENT_TYPES:
@@ -5459,10 +5679,18 @@ def _validate_run_event(event: object, *, validate_result: bool = True) -> str:
     elif event_type == "nodes_expanded":
         _require_exact_event_keys(event, {"type", "expansion"})
         _string_field(event, "expansion", maximum_length=_MAX_EVENT_MESSAGE_LENGTH)
+    elif event_type == "node_reused":
+        _require_exact_event_keys(event, {"type", "reused_output"})
+        try:
+            ReusedOutputRecord.model_validate_json(_required_field(event, "reused_output"))
+        except (ValueError, TypeError) as exc:
+            raise _CoordinatorProtocolError("invalid reused output") from exc
     elif event_type in _NODE_EVENT_TYPES:
         expected = {"type", "node_id", "timestamp"}
         if event_type == "node_failed":
             expected.update({"error", "error_type"})
+        if event_type == "node_succeeded" and "saved_output" in event:
+            expected.add("saved_output")
         _require_exact_event_keys(event, expected)
         _string_field(event, "node_id", maximum_length=_MAX_EVENT_FIELD_LENGTH)
         _timestamp_field(event, "timestamp")

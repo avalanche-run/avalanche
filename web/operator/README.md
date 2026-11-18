@@ -181,7 +181,17 @@ For route-controlled embedding, pass
 `navigation={{ selectedRunId, onSelectRun }}` to `WorkflowWorkspace`.
 `onSelectRun(undefined)` clears the run; changing routes within a workflow should
 retain the same component instance. Without `navigation`, selection is managed
-locally and `onSelectedRunChange` can observe it.
+locally and `onSelectedRunChange` can observe it. `onSelectRun(runId, nodeId)` also names
+a step when a link points at one, such as a reused step's source. A host that remounts the
+workspace per run passes that step back as `initialNodeId` to open it on mount.
+
+To offer **Rerun from here**, implement the optional `startRerun(request)` on `OperatorApi`.
+It resolves to the new run's ID and rejects with `RerunRefusedError(problems, earliestStart)`
+when the rerun is refused, so the dialog can list every problem and the earliest step. A
+host without it offers no rerun. `request.requestId` stays the same across retries of one
+attempt, so use it to make a retry return the first run. Steps are offered from
+`FlowInfoMsg.nodeSlugs`. A `deployments` prop on the workspace adds a deployment picker to
+the dialog. `GrpcWebOperatorApi` implements `startRerun` for the local operator.
 
 Pass `bottomRightPanel` to `WorkflowWorkspace` to replace the graph's floating
 actions with host controls. Omit it to retain built-in controls, or pass `null`

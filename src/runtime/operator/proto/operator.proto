@@ -255,6 +255,8 @@ message FlowInfoV2 {
   // Node id to the StepIntegrations document of the integrations that step
   // declares. Steps that declare none are absent.
   map<string, string> integration_declarations_json = 35;
+  // The slug of each node, by node ID: what RunRerunV2.start names.
+  map<string, string> node_slugs = 36;
 }
 
 message DiscoveryDiagnosticV2 {
@@ -348,6 +350,41 @@ message StartRunRequestV2 {
   optional string expected_version = 6;
   // Who asked for this run. Callers that do not say are recorded as "api".
   StartRunTriggerV2 trigger = 7;
+  // Rerun part of a previous run, reusing the saved outputs of the steps it skips.
+  optional RunRerunV2 rerun = 8;
+}
+
+// Same field names and meanings as Delta's RunRerunSpecV2. The operator always runs
+// the code in its folder, so Delta's source_deployment_id has no counterpart here.
+message RunRerunV2 {
+  // The finished, failed or cancelled run to reuse saved step outputs from.
+  string source_run_id = 1;
+  // Slugs of the steps to run again; at least one, without duplicates.
+  repeated string start = 2;
+  RunRerunModeV2 mode = 3;
+}
+
+// Why a rerun was refused. StartRun fails with FAILED_PRECONDITION, a status message
+// listing the same problems, and this message in the "rerun-refusal-bin" trailer.
+message RerunRefusalV2 {
+  repeated RerunProblemV2 problems = 1;
+  // The nearest start steps that would pass; empty when no start can pass yet.
+  repeated string earliest_start = 2;
+}
+
+message RerunProblemV2 {
+  // The step's slug; absent when the problem is with the whole source run.
+  optional string step = 1;
+  // One of avalanche.reruns.RerunProblemReason, such as "missing_from_source".
+  string reason = 2;
+  string detail = 3;
+}
+
+enum RunRerunModeV2 {
+  // The start steps and everything downstream of them.
+  RUN_RERUN_MODE_V2_AUTORUN = 0;
+  // Only the start steps.
+  RUN_RERUN_MODE_V2_LAZY = 1;
 }
 
 // The trigger kinds a StartRun caller may claim. Cron and webhook runs are
@@ -464,6 +501,8 @@ message RunSummaryV2 {
   optional string error_code = 16;
   optional string error_step = 17;
   optional string error_message = 18;
+  // The run this one reruns; absent for a run that is not a rerun.
+  optional string rerun_of_run_id = 19;
 }
 
 message RunWaitingOnV2 {
@@ -522,6 +561,8 @@ message NodeSnapshotV2 {
   StepIoV2 step_io = 12;
   optional string map_parent = 13;
   optional uint32 map_index = 14;
+  // Status "reused" only: the run holding the saved output this step reuses.
+  optional string reused_from_run_id = 15;
 }
 
 enum StepValuePreviewKindV2 {

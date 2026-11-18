@@ -304,6 +304,7 @@ function applyEnvelope(
               revision: changed.revision,
               error: changed.error,
               stepIo: changed.stepIo,
+              reusedFromRunId: changed.reusedFromRunId,
             }
           : node,
       ),

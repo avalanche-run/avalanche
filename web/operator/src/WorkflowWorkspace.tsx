@@ -24,6 +24,8 @@ import {
 import type { MachineGraphView } from "./machineGraph";
 import { GraphCanvas, type CanvasReserve } from "./GraphCanvas";
 import { Inspector } from "./Inspector";
+import { RerunDialog } from "./RerunDialog";
+import { canRerunRun, type RerunRequest } from "./rerun";
 import type { FlowInfoMsg, InputFileAttachment, RunSnapshotMsg } from "./model";
 import { RunLogPane, stateEntryStep } from "./RunLogPane";
 import { stepScopeLabel } from "./ScopeChip";
@@ -128,7 +130,8 @@ export interface WorkflowWorkspaceProps {
   emptyRunPanel?: ReactNode;
   navigation?: {
     selectedRunId?: string;
-    onSelectRun: (runId: string | undefined) => void;
+    /** `nodeId` is the step to open with the run, when a link names one. */
+    onSelectRun: (runId: string | undefined, nodeId?: string) => void;
   };
   /**
    * Opens a related run (a parent or child in the run tree, or a call node's child)
@@ -141,6 +144,8 @@ export interface WorkflowWorkspaceProps {
    * it, a step that failed for a missing account links to that screen.
    */
   onOpenIntegrations?: (name?: string) => void;
+  /** The step open when this workspace mounts, for a host whose URL names one. */
+  initialNodeId?: string;
 }
 
 interface WorkflowWorkspaceSurfaceProps extends Pick<
@@ -160,7 +165,8 @@ interface WorkflowWorkspaceSurfaceProps extends Pick<
   workflowId?: string;
   workflow?: FlowInfoMsg;
   selectedRunId?: string;
-  onSelectRun: (runId: string | undefined) => void;
+  onSelectRun: (runId: string | undefined, nodeId?: string) => void;
+  initialNodeId?: string;
   selectRun: (runId?: string) => Promise<void>;
   startRun: (
     workflowSelector: string,
@@ -245,6 +251,7 @@ export function WorkflowWorkspaceSurface({
   workflow,
   selectedRunId,
   onSelectRun,
+  initialNodeId,
   selectRun,
   startRun,
   cancelRun,
@@ -265,7 +272,8 @@ export function WorkflowWorkspaceSurface({
   layoutStorageKey,
   onOpenRun,
 }: WorkflowWorkspaceSurfaceProps) {
-  const [inspectedNode, setInspectedNode] = useState<string>();
+  const [inspectedNode, setInspectedNode] = useState(initialNodeId);
+  const [rerunStep, setRerunStep] = useState<{ runId: string; nodeId: string; slug: string }>();
   const {
     layout,
     setInspectorWidth,
@@ -320,13 +328,14 @@ export function WorkflowWorkspaceSurface({
     if (!workflowId) return;
     const current = selection.current;
     if (current.workflowId !== workflowId) {
+      // The first workflow keeps the host's initial step; only a switch clears it.
+      if (current.workflowId !== undefined) setInspectedNode(undefined);
       current.workflowId = workflowId;
       current.observedRunId = selectedRunId;
       current.latestRunId = latestRunId;
       current.awaitingStartedRunId = undefined;
       current.following = selectedRunId !== undefined && selectedRunId === latestRunId;
       current.pendingSelection = undefined;
-      setInspectedNode(undefined);
     } else if (current.observedRunId !== selectedRunId) {
       if (!current.pendingSelection || current.pendingSelection.runId !== selectedRunId) {
         // A host route change, rather than a selection made by this workspace.
@@ -378,16 +387,34 @@ export function WorkflowWorkspaceSurface({
   ]);
 
   const selectWorkflowRun = useCallback(
-    (runId: string | undefined, started = false) => {
+    (runId: string | undefined, started = false, nodeId?: string) => {
       navigationGeneration.current += 1;
       selection.current.pendingSelection =
         selection.current.observedRunId === runId ? undefined : { runId };
       selection.current.following = runId !== undefined && runId === latestRunId;
       selection.current.awaitingStartedRunId = started ? runId : undefined;
-      onSelectRun(runId);
+      if (nodeId === undefined) onSelectRun(runId);
+      else onSelectRun(runId, nodeId);
       void selectRun(runId);
     },
     [latestRunId, onSelectRun, selectRun],
+  );
+  const openReusedSource = useCallback(
+    (runId: string, nodeId: string) => {
+      setInspectedNode(nodeId);
+      selectWorkflowRun(runId, false, nodeId);
+    },
+    [selectWorkflowRun],
+  );
+  const startRerun = useCallback(
+    async (request: RerunRequest) => {
+      if (!api.startRerun) throw new Error("This host cannot start reruns");
+      const generation = navigationGeneration.current;
+      const runId = await api.startRerun(request);
+      if (navigationGeneration.current === generation) selectWorkflowRun(runId, true);
+      return runId;
+    },
+    [api, selectWorkflowRun],
   );
   const startWorkflowRun = useCallback(
     async (
@@ -1177,6 +1204,16 @@ export function WorkflowWorkspaceSurface({
     ) : (
       normalRunControls
     );
+  const rerunOfRunId = run?.summary?.rerunOfRunId;
+  // A step missing from the code's slug map, such as a map item, cannot be a start.
+  const rerunSlug = inspectedNode ? workflow?.nodeSlugs[inspectedNode] : undefined;
+  const canRerun =
+    Boolean(api.startRerun) &&
+    runActionsEnabled &&
+    run === loadedRun &&
+    canRerunRun(run?.summary?.status) &&
+    // The operator refuses reruns of state machine runs.
+    !machineRunId;
   const liveEventDescriptorKey =
     displayedRunId && inspectedNode ? `${displayedRunId}:${inspectedNode}` : "";
   const workspaceStyle = {
@@ -1277,6 +1314,7 @@ export function WorkflowWorkspaceSurface({
                     onOpenNode={openNode}
                     childRuns={childRunNodes}
                     highlight={graphHighlight}
+                    onOpenReusedSource={openReusedSource}
                     bottomRightPanel={
                       bottomRightPanel === undefined ? runControlsPanel : bottomRightPanel
                     }
@@ -1337,14 +1375,28 @@ export function WorkflowWorkspaceSurface({
                       history and artifacts expired under the run&apos;s retention policy. The
                       run and its label remain.
                     </div>
-                  ) : run && !runLive ? (
+                  ) : run && (!runLive || rerunOfRunId) ? (
                     <div
                       ref={bannerRef}
                       data-under-panel={bannerClear ? undefined : true}
-                      className={`historical-badge${bannerHidden} pointer-events-none absolute top-[18px] right-[18px] z-[5] rounded border border-history-line bg-history-surface px-3 py-[9px] text-[9px] text-history-ink shadow-[0_4px_14px_var(--color-shadow-4)] max-[700px]:hidden [&>span]:mb-[3px] [&>span]:block [&>span]:font-mono [&>span]:text-[8px] [&>span]:text-amber [&>span]:uppercase`}
+                      className={`${bannerHidden} pointer-events-none absolute top-[18px] right-[18px] z-[5] flex flex-col items-end gap-1.5`}
                     >
-                      <span>Viewing a run snapshot</span>This view does not represent the
-                      workflow&apos;s current state.
+                      {!runLive && (
+                        <div className="historical-badge rounded border border-history-line bg-history-surface px-3 py-[9px] text-[9px] text-history-ink shadow-[0_4px_14px_var(--color-shadow-4)] max-[700px]:hidden [&>span]:mb-[3px] [&>span]:block [&>span]:font-mono [&>span]:text-[8px] [&>span]:text-amber [&>span]:uppercase">
+                          <span>Viewing a run snapshot</span>This view does not represent the
+                          workflow&apos;s current state.
+                        </div>
+                      )}
+                      {rerunOfRunId && (
+                        <button
+                          type="button"
+                          className="run-rerun-of-header pointer-events-auto max-w-[240px] cursor-pointer truncate rounded border border-history-line bg-history-surface px-3 py-1.5 font-mono text-[9px] text-run-status-reused underline underline-offset-2 shadow-[0_4px_14px_var(--color-shadow-4)] hover:text-ink"
+                          title={`Rerun of run ${rerunOfRunId}`}
+                          onClick={() => selectWorkflowRun(rerunOfRunId)}
+                        >
+                          ↺ Rerun of run {rerunOfRunId}
+                        </button>
+                      )}
                     </div>
                   ) : null}
                 </div>
@@ -1423,6 +1475,18 @@ export function WorkflowWorkspaceSurface({
                       : undefined
                   }
                   inputDraft={!historical && runActionsEnabled ? inputDraft : undefined}
+                  onRerunFromStep={
+                    canRerun && displayedRunId && inspectedNode && rerunSlug
+                      ? () =>
+                          setRerunStep({
+                            // The view can follow a newer run while the dialog is open.
+                            runId: displayedRunId,
+                            nodeId: inspectedNode,
+                            slug: rerunSlug,
+                          })
+                      : undefined
+                  }
+                  onOpenReusedSource={openReusedSource}
                 />
               ) : (
                 <MachineSendPanel
@@ -1443,6 +1507,17 @@ export function WorkflowWorkspaceSurface({
           </>
         )}
       </div>
+      {rerunStep && workflowId && (
+        <RerunDialog
+          workflowSelector={workflowId}
+          sourceRunId={rerunStep.runId}
+          stepName={workflow?.displayNames[rerunStep.nodeId] || rerunStep.slug}
+          stepSlug={rerunStep.slug}
+          deployments={deployments}
+          onStart={startRerun}
+          onClose={() => setRerunStep(undefined)}
+        />
+      )}
       {state.workflowReloading && (
         <div
           className="workflow-reload-indicator pointer-events-none fixed inset-x-0 bottom-5 z-50 flex justify-center px-4"
@@ -1474,6 +1549,7 @@ export function WorkflowWorkspace({
   loadingFallback,
   emptyRunPanel,
   navigation,
+  initialNodeId,
   currentLabel,
   currentRowAction,
   showCurrentRow,
@@ -1545,6 +1621,7 @@ export function WorkflowWorkspace({
         workflow={workflow}
         selectedRunId={selectedRunId}
         onSelectRun={navigation ? navigation.onSelectRun : onSelectRun}
+        initialNodeId={initialNodeId}
         selectRun={selectRun}
         startRun={startRun}
         cancelRun={cancelRun}

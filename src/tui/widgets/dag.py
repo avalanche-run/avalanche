@@ -98,6 +98,8 @@ class DagWidget(Static, can_focus=False):
             node_status_display(node_status, item.wait_kind, store.frame)[1],
         )
         line.append(f"  → {edges}")
+        if state is not None and state.reused_from_run_id is not None:
+            line.append(f"  reused from {state.reused_from_run_id}", "dim")
         if selected:
             line.stylize("reverse")
         self._node_lines[item.name] = (token, line)
@@ -207,7 +209,10 @@ class DagWidget(Static, can_focus=False):
                 continue
             count = run.expansions.get(node.name) if run is not None else None
             if count is None:
-                node.map_summary = " ×?"
+                # A reused group never expanded in this run, so its count is not unknown.
+                group = run.nodes.get(node.name) if run is not None else None
+                reused = group is not None and group.status is NodeStatus.REUSED
+                node.map_summary = "" if reused else " ×?"
                 continue
             items = {
                 item.map_index: item

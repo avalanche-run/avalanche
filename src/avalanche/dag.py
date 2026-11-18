@@ -58,7 +58,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import update_wrapper, wraps
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, DefaultDict, TypeVar, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Literal, TypeVar, get_type_hints
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from ulid import ULID
@@ -84,7 +84,7 @@ from .step_interface import (
 from .webhook import Webhook
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Collection, Iterator, Mapping
 
     from runtime.executor import Executor
     from runtime.operator.hooks import RunHooks
@@ -93,6 +93,7 @@ if TYPE_CHECKING:
     from .classifier.models import ClassifierDefaults
     from .execution_services import ExecutionServicesSpec
     from .machine_test import WorkflowTest
+    from .reruns import PlannedRerun
     from .run_steps import RunTarget
     from .runtime import BaseInput
 
@@ -1321,19 +1322,26 @@ def _incoming_refs_for_node(
     return [nodes[parent_id] for parent_id in original_dependencies_map.get(node_id, [])]
 
 
-def _validate_no_skipped_non_stream_inputs(
-    nodes: dict[str, NodeFuture],
-    scheduled_node_ids: set[str],
-    original_dependencies_map: dict[str, list[str]],
-) -> None:
-    """Reject rerun schedules where a skipped upstream feeds a non-stream input.
+@dataclass(frozen=True)
+class _SkippedRead:
+    """A scheduled step reading a skipped step's return value or table rows."""
 
-    v1 reruns require skipped upstream data to be consumed through ava.Stream.
-    This runs before any node is submitted so the failure is a clear validation
-    error rather than a downstream Python TypeError.
-    """
+    consumer: str
+    producer: str
+    kind: Literal["value", "replay", "not_replayable"]
+    """``replay`` is a Stream read the source run's rows can serve."""
+    message: str = ""
+
+
+def _skipped_input_reads(
+    nodes: dict[str, NodeFuture],
+    scheduled_node_ids: Collection[str],
+    original_dependencies_map: dict[str, list[str]],
+) -> Iterator[_SkippedRead]:
+    """Yield the skipped steps whose output the scheduled steps cannot do without."""
     from .runtime.providers import PROVIDERS
 
+    scheduled = frozenset(scheduled_node_ids)
     for node_id in scheduled_node_ids:
         node_ref = nodes[node_id]
         binding_plan = _build_node_binding_plan(
@@ -1353,39 +1361,55 @@ def _validate_no_skipped_non_stream_inputs(
             producer = nodes[selector.future_id]
             if (
                 selector.tuple_index is not None or producer.node.num_returns > 1
-            ) and selector.future_id not in scheduled_node_ids:
-                raise ValueError(
+            ) and selector.future_id not in scheduled:
+                yield _SkippedRead(
+                    node_id,
+                    selector.future_id,
+                    "not_replayable",
                     f"Rerun node {node_id!r} has an indexed or multi-return "
                     "ava.Stream selector "
                     f"for skipped upstream node {selector.future_id!r}; indexed "
                     "Stream selectors cannot replay skipped upstreams because "
                     "durable lineage is keyed only by (run_id, node_slug). Include "
                     "the producer in the rerun, or model its outputs as distinct "
-                    "source nodes."
+                    "source nodes.",
                 )
+            elif selector.future_id not in scheduled:
+                yield _SkippedRead(node_id, selector.future_id, "replay")
 
         # 1. Explicit NodeFuture args/kwargs referencing skipped upstreams.
         for arg in binding_plan.args:
             for ref in _node_future_refs(arg):
-                if ref.future_id not in scheduled_node_ids:
-                    raise ValueError(
+                if ref.future_id not in scheduled:
+                    yield _SkippedRead(
+                        node_id,
+                        ref.future_id,
+                        "value",
                         f"Rerun node {node_id!r} has an explicit dependency on skipped "
                         f"upstream node {ref.future_id!r}; skipped upstream data "
-                        "must be consumed through ava.Stream"
+                        "must be consumed through ava.Stream",
                     )
 
         for kwarg in binding_plan.kwargs.values():
             for ref in _node_future_refs(kwarg):
-                if ref.future_id not in scheduled_node_ids:
-                    raise ValueError(
+                if ref.future_id not in scheduled:
+                    yield _SkippedRead(
+                        node_id,
+                        ref.future_id,
+                        "value",
                         f"Rerun node {node_id!r} has an explicit dependency on skipped "
                         f"upstream node {ref.future_id!r}; skipped upstream data "
-                        "must be consumed through ava.Stream"
+                        "must be consumed through ava.Stream",
                     )
 
         # 2. Implicit chain refs assigned by logical upstream slot order.
         if node_ref.args or binding_plan.has_explicit_provider_selectors:
-            # Explicit args suppress implicit positional binding.
+            # Explicit args suppress implicit positional binding. An unselected Stream
+            # then replays every parent's rows.
+            if "stream" in binding_plan.implicit_slot_kinds:
+                for parent_id in original_dependencies_map.get(node_id, []):
+                    if parent_id not in scheduled:
+                        yield _SkippedRead(node_id, parent_id, "replay")
             continue
 
         if not binding_plan.implicit_slot_kinds:
@@ -1395,25 +1419,47 @@ def _validate_no_skipped_non_stream_inputs(
             parent_id = binding.ref.future_id
             if binding.slot_kind == "stream":
                 if (
-                    parent_id not in scheduled_node_ids
+                    parent_id not in scheduled
                     and binding.may_expand_single_return
                     and "python" in binding_plan.implicit_slot_kinds[binding.slot_index + 1 :]
                 ):
-                    raise ValueError(
+                    yield _SkippedRead(
+                        node_id,
+                        parent_id,
+                        "not_replayable",
                         f"Rerun node {node_id!r} has an ambiguous single-return "
                         f"container from skipped upstream node {parent_id!r}; its "
                         "ava.Stream slot is replayable, but tuple/list values could "
                         "also populate a non-stream parameter. Include the producer "
-                        "in the rerun or declare separate returns."
+                        "in the rerun or declare separate returns.",
                     )
                 continue
-            if parent_id not in scheduled_node_ids:
-                raise ValueError(
+            if parent_id not in scheduled:
+                yield _SkippedRead(
+                    node_id,
+                    parent_id,
+                    "value",
                     f"Rerun node {node_id!r} has an implicit dependency on skipped "
                     f"upstream node {parent_id!r} bound to a non-stream parameter; "
                     "v1 reruns require skipped upstream data to be consumed through "
-                    "ava.Stream"
+                    "ava.Stream",
                 )
+
+
+def _validate_no_skipped_non_stream_inputs(
+    nodes: dict[str, NodeFuture],
+    scheduled_node_ids: set[str],
+    original_dependencies_map: dict[str, list[str]],
+) -> None:
+    """Reject rerun schedules where a skipped upstream feeds a non-stream input.
+
+    v1 reruns require skipped upstream data to be consumed through ava.Stream.
+    This runs before any node is submitted so the failure is a clear validation
+    error rather than a downstream Python TypeError.
+    """
+    for read in _skipped_input_reads(nodes, scheduled_node_ids, original_dependencies_map):
+        if read.kind != "replay":
+            raise ValueError(read.message)
 
 
 def _inspect_providers(fn: Callable, kwargs: dict[str, Any], providers: list) -> dict[str, Any]:
@@ -2309,6 +2355,20 @@ class Workflow:
 
         return order
 
+    def _scheduled_from(self, start_node_ids: set[str], mode: str) -> set[str]:
+        """The start steps, plus everything downstream of them unless the rerun is lazy."""
+        if mode == "lazy":
+            return start_node_ids
+        scheduled_node_ids = set(start_node_ids)
+        queue = list(start_node_ids)
+        while queue:
+            node_id = queue.pop(0)
+            for child_id in self.graph.get(node_id, []):
+                if child_id not in scheduled_node_ids:
+                    scheduled_node_ids.add(child_id)
+                    queue.append(child_id)
+        return scheduled_node_ids
+
     def _plan_rerun_execution(self, rerun: Any, execution_order: list[str]) -> list[str]:
         slug_to_node_id = {slug: node_id for node_id, slug in self.node_slugs.items()}
         missing = [slug for slug in rerun.start if slug not in slug_to_node_id]
@@ -2318,18 +2378,9 @@ class Workflow:
                 f"Unknown rerun start slug(s): {', '.join(missing)}. Known slugs: {known}"
             )
 
-        start_node_ids = {slug_to_node_id[slug] for slug in rerun.start}
-        if rerun.mode == "lazy":
-            scheduled_node_ids = start_node_ids
-        else:
-            scheduled_node_ids = set(start_node_ids)
-            queue = list(start_node_ids)
-            while queue:
-                node_id = queue.pop(0)
-                for child_id in self.graph.get(node_id, []):
-                    if child_id not in scheduled_node_ids:
-                        scheduled_node_ids.add(child_id)
-                        queue.append(child_id)
+        scheduled_node_ids = self._scheduled_from(
+            {slug_to_node_id[slug] for slug in rerun.start}, rerun.mode
+        )
 
         original_dependencies_map = _reverse_graph(self.graph)
         _validate_no_skipped_non_stream_inputs(
@@ -2349,6 +2400,7 @@ class Workflow:
         rerun: Any = None,
         execution_services: "ExecutionServicesSpec | None" = None,
         *,
+        planned_rerun: "PlannedRerun | None" = None,
         fast_timers: bool = False,
         events: dict[str, BaseModel | dict[str, JsonValue]] | None = None,
         decisions: dict[str, BaseModel | dict[str, JsonValue]] | None = None,
@@ -2365,6 +2417,8 @@ class Workflow:
             run_id: Optional caller-owned run identity
             rerun: Optional Rerun spec for re-executing part of a previous run
             execution_services: Optional versioned worker lifecycle service request
+            planned_rerun: Optional checked rerun whose skipped steps' saved outputs
+                the runtime supplies; downstream steps receive them as normal outputs
 
         The handle is returned immediately. Call ``handle.result()`` to block in
         synchronous code or ``await handle`` from asynchronous code.
@@ -2381,6 +2435,8 @@ class Workflow:
                 "Declared RUN/MACHINE nodes require a scheduler host; the embedded runner "
                 "has no run or MachineHost. Use workflow.test() for in-memory execution."
             )
+        if rerun is not None and planned_rerun is not None:
+            raise ValueError("Use either rerun= or planned_rerun=, not both")
         canonical_run_id = run_id if run_id is not None else str(ULID())
         handle: RunHandle[Any] = RunHandle(canonical_run_id)
         from runtime.executor import get_default_executor
@@ -2424,6 +2480,7 @@ class Workflow:
                 context=context,
                 run_id=canonical_run_id,
                 rerun=rerun,
+                planned_rerun=planned_rerun,
                 execution_services=execution_services,
                 receipt_sink=handle._set_execution_receipts,
                 local_waits=handle.waits,
@@ -2482,6 +2539,7 @@ class Workflow:
         context: Any = None,
         run_id: str | None = None,
         rerun: Any = None,
+        planned_rerun: "PlannedRerun | None" = None,
         execution_services: "ExecutionServicesSpec | None" = None,
         receipt_sink: Callable[[tuple[Any, ...]], None] | None = None,
         local_waits: LocalWaits | None = None,
@@ -2511,9 +2569,16 @@ class Workflow:
 
         # Topological sort
         execution_order = self._topological_sort()
-        rerun_spec = _coerce_rerun(rerun)
-        if rerun_spec is not None:
-            execution_order = self._plan_rerun_execution(rerun_spec, execution_order)
+        if planned_rerun is not None:
+            rerun_spec = planned_rerun.plan.rerun_spec()
+            run_slugs = set(planned_rerun.plan.run)
+            execution_order = [
+                node_id for node_id in execution_order if node_slugs[node_id] in run_slugs
+            ]
+        else:
+            rerun_spec = _coerce_rerun(rerun)
+            if rerun_spec is not None:
+                execution_order = self._plan_rerun_execution(rerun_spec, execution_order)
         scheduled_node_ids = set(execution_order)
 
         if run_id is None:
@@ -2543,6 +2608,7 @@ class Workflow:
         )
 
         result_refs: dict[str, Any] = {}
+        reused_node_ids: set[str] = set()
         # Service receipts are a separate control channel. They are never
         # stored in result_refs or exposed to workflow arguments/context.
         receipt_refs: dict[str, Any] = {}
@@ -2647,7 +2713,11 @@ class Workflow:
                 from .types import ParamContext
 
                 original_parent_ids = original_dependencies_map.get(node_id, [])
-                provider_parent_results = [result_refs.get(pid) for pid in original_parent_ids]
+                # Saved outputs never stand in for rows: Stream reads replay the source run.
+                provider_parent_results = [
+                    None if pid in reused_node_ids else result_refs.get(pid)
+                    for pid in original_parent_ids
+                ]
                 upstream_node_slugs = [
                     node_slugs[parent_id]
                     for parent_id in original_parent_ids
@@ -2660,7 +2730,11 @@ class Workflow:
                         continue
                     selector = binding_plan.provider_selectors.get(param_name)
                     if selector is not None:
-                        selected_result = result_refs.get(selector.future_id)
+                        selected_result = (
+                            None
+                            if selector.future_id in reused_node_ids
+                            else result_refs.get(selector.future_id)
+                        )
                         if selected_result is not None and selector.tuple_index is not None:
                             selected_result = _indexed_parent_result(
                                 selected_result,
@@ -3039,8 +3113,22 @@ class Workflow:
                         )
                     )
 
+        if planned_rerun is not None:
+            from .reruns import load_reused_step
+
+            slug_to_node_id = {slug: node_id for node_id, slug in node_slugs.items()}
+            for step in planned_rerun.plan.reused:
+                node_id = slug_to_node_id[step.slug]
+                reused_node_ids.add(node_id)
+                if step.output_read:
+                    result_refs[node_id] = load_reused_step(
+                        nodes[node_id], step, planned_rerun.provider
+                    )
+                if hooks and hooks.on_node_reused:
+                    hooks.on_node_reused(node_id, step.source_run_id)
+
         has_maps = any(isinstance(node, MapFuture) for node in nodes.values())
-        if has_maps and rerun_spec is not None:
+        if has_maps and rerun_spec is not None and planned_rerun is None:
             raise ValueError("runtime map reruns are not supported by the local driver")
         if has_maps and not is_local_executor:
             raise TypeError("runtime maps require LocalExecutor")

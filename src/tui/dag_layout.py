@@ -698,6 +698,8 @@ def _duration_label(elapsed: float | None, status: NodeStatus) -> str:
     if not isinstance(status, NodeStatus):
         label = status_label(status)
         return f"{label} · {_fmt_elapsed(elapsed)}" if elapsed is not None else label
+    if status is NodeStatus.REUSED:
+        return "reused"
     if elapsed is not None:
         return _fmt_elapsed(elapsed)
     if status == NodeStatus.PENDING:

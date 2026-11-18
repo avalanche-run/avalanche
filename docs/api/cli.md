@@ -76,10 +76,12 @@ shutdown failure returns a nonzero status.
 
 ### What the operator keeps across restarts
 
-`ava operator` and `ava dev` keep their state in the `--state-db` file and three
+`ava operator` and `ava dev` keep their state in the `--state-db` file and four
 folders next to it: `results/` (result bundles), `input-files/` (uploaded run input
-files; the ones a run used are kept with it) and `schedule-inputs/` (copies of files
-a schedule's input uses). After a restart, including a crash or `kill -9`, the run
+files; the ones a run used are kept with it), `schedule-inputs/` (copies of files
+a schedule's input uses) and `step-outputs/` (each successful step's saved return
+value and copies of its files). A step whose files cannot be copied, such as more than
+2 GiB of file content, is marked not reusable and its run carries on. After a restart, including a crash or `kill -9`, the run
 list, each run's step states, logs, agent and classifier events, traces and
 evaluations, `ava result RUN_ID`, each schedule's on/off state, input and last
 trigger, and the accounts connected with [`ava connect`](#ava-connect-name-options)
@@ -131,6 +133,9 @@ the operator's canonical selector when names are ambiguous.
 | `--context JSON` | Omitted | JSON **object** for declared run context. |
 | `--file FIELD=PATH` | None; repeatable | Read local bytes and attach a top-level `File` input. |
 | `--workspace FIELD=DIR` | None; repeatable | Send a local directory to the operator, which keeps a copy in its own store, and pass that copy as a top-level `Workspace` input. Symbolic links and special files are refused. |
+| `--rerun-of RUN_ID` | Omitted | Rerun this finished, failed or cancelled run. Needs `--from`. |
+| `--from SLUG` | None; repeatable | With `--rerun-of`, a step to run again. Steps after it run too. |
+| `--only` | Off | With `--rerun-of`, run only the `--from` steps. |
 
 The same field cannot be supplied by JSON, a file attachment, and/or a workspace.
 Invalid JSON, assignment syntax, duplicate fields, or an operator submission error
@@ -141,6 +146,12 @@ workflow has succeeded. Syntactically valid object JSON with missing required
 fields or invalid model values can receive a run ID and exit status `0`, then fail
 the asynchronous run. Inspect the run outcome, for example with
 `ava result RUN_ID --wait --output-dir PATH`, before treating it as successful.
+
+With `--rerun-of`, earlier steps reuse their saved outputs and the source run's input,
+context and files are reused; `--input`, `--context` and `--file` replace only the fields
+they name. Unlike a normal start, the command waits for the checks. A rerun that cannot
+work starts nothing: the command returns `1` and prints every problem and the earliest step
+to rerun from. See [Reruns](reruns.md).
 
 ## `ava result RUN_ID --output-dir PATH [options]`
 
@@ -236,7 +247,7 @@ prints the operator error to stderr and returns `1`.
 ## `ava state COMMAND [options] [--state-db PATH]`
 
 Inspect and clear what the local operator keeps in its state database and the
-folders next to it (`results/`, `input-files/`, `schedule-inputs/`). The operator
+folders next to it (`results/`, `input-files/`, `schedule-inputs/`, `step-outputs/`). The operator
 never deletes any of it automatically. Every command takes `--state-db PATH`, with
 the same default as `ava operator` (`.avalanche/operator/state.db` under the
 current folder), and needs an existing database file. They do not run discovery,
@@ -250,8 +261,8 @@ command runs, no operator can start on that database.
 
 | Command | Effect |
 | --- | --- |
-| `ava state info` | Prints the database path and size, the number of runs by status, the number of schedules, and the number and size of stored results, staged input-file folders and schedule input-file folders. Also lists leftovers: files nothing refers to anymore, such as those left by an interrupted delete, and a stored result whose bundle is missing. |
-| `ava state delete RUN_ID...` | Deletes those runs with their steps, logs, agent and classifier events, traces, evaluations, result bundle, and the input files only they used. An unknown run ID, or a run that did not finish before its operator stopped, refuses the whole command before anything is deleted. |
+| `ava state info` | Prints the database path and size, the number of runs by status, the number of schedules, and the number and size of stored results, staged input-file folders, schedule input-file folders and saved step outputs. Also lists leftovers: files nothing refers to anymore, such as those left by an interrupted delete, and a stored result whose bundle is missing. |
+| `ava state delete RUN_ID...` | Deletes those runs with their steps, logs, agent and classifier events, traces, evaluations, result bundle, saved step outputs, and the input files only they used. An unknown run ID, or a run that did not finish before its operator stopped, refuses the whole command before anything is deleted. |
 | `ava state prune --before DATE` | Deletes finished runs triggered before `DATE`, an ISO 8601 date or date-time such as `2026-11-01` or `2026-11-01T09:30`, read as local time unless it names a time zone. |
 | `ava state prune --keep-last N` | Keeps the `N` most recent finished runs and deletes the other finished runs. |
 | `ava state clear [--yes] [--include-schedules]` | Asks for confirmation, then deletes every run with everything that belongs to it, and every leftover file. `--yes` skips the question. Schedules (on/off state, input and its files) are kept unless `--include-schedules` is given. |
@@ -289,6 +300,8 @@ and optionally a node.
 | `--tls` | `AVALANCHE_TUI_GRPC_TLS`, otherwise off | Enable TLS; environment values `1`, `true`, and `yes` enable it case-insensitively. |
 | `--insecure` | Off | Override `--tls` and the TLS environment setting to disable TLS, unless an explicit `--tls-ca-cert` is supplied. |
 | `--tls-ca-cert PATH` | `AVALANCHE_TUI_GRPC_TLS_CA_CERT`, otherwise omitted | CA certificate for verification. An explicit flag enables TLS even with `--insecure`, regardless of argument order. |
+
+With `--connect`, press `R` on a selected step to [rerun from it](reruns.md#from-the-tui).
 
 Connected operators expose workflow JSON input schemas with a catalog declaration
 version. Start opens JSON-valued fields, previews the exact input and requires

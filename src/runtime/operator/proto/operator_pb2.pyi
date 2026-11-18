@@ -7,6 +7,11 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 
 DESCRIPTOR: _descriptor.FileDescriptor
 
+class RunRerunModeV2(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    RUN_RERUN_MODE_V2_AUTORUN: _ClassVar[RunRerunModeV2]
+    RUN_RERUN_MODE_V2_LAZY: _ClassVar[RunRerunModeV2]
+
 class StartRunTriggerV2(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     START_RUN_TRIGGER_V2_API: _ClassVar[StartRunTriggerV2]
@@ -39,6 +44,8 @@ class PageOrderV2(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     __slots__ = ()
     PAGE_ORDER_V2_FORWARD: _ClassVar[PageOrderV2]
     PAGE_ORDER_V2_NEWEST_FIRST: _ClassVar[PageOrderV2]
+RUN_RERUN_MODE_V2_AUTORUN: RunRerunModeV2
+RUN_RERUN_MODE_V2_LAZY: RunRerunModeV2
 START_RUN_TRIGGER_V2_API: StartRunTriggerV2
 START_RUN_TRIGGER_V2_MANUAL: StartRunTriggerV2
 STEP_VALUE_PREVIEW_KIND_V2_UNSPECIFIED: StepValuePreviewKindV2
@@ -279,7 +286,7 @@ class WorkflowNodeSourceV2(_message.Message):
     def __init__(self, source_code: _Optional[str] = ...) -> None: ...
 
 class FlowInfoV2(_message.Message):
-    __slots__ = ("workflow_selector", "display_name", "manifest_digest", "node_ids", "workflow_id", "file_path", "topology", "agent_node_ids", "agent_declarations_json", "cron", "next_run_at", "last_run_at", "webhook_path", "webhook_url", "webhook_active", "classifier_metadata_json", "evaluation_metadata_json", "input_schema_json", "version", "schedule_enabled", "schedule_input_json", "node_policies_json", "node_waits_json", "machine_spec_json", "node_runs_json", "key_fields", "integration_declarations_json")
+    __slots__ = ("workflow_selector", "display_name", "manifest_digest", "node_ids", "workflow_id", "file_path", "topology", "agent_node_ids", "agent_declarations_json", "cron", "next_run_at", "last_run_at", "webhook_path", "webhook_url", "webhook_active", "classifier_metadata_json", "evaluation_metadata_json", "input_schema_json", "version", "schedule_enabled", "schedule_input_json", "node_policies_json", "node_waits_json", "machine_spec_json", "node_runs_json", "key_fields", "integration_declarations_json", "node_slugs")
     class AgentDeclarationsJsonEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -329,6 +336,13 @@ class FlowInfoV2(_message.Message):
         key: str
         value: str
         def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
+    class NodeSlugsEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: str
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[str] = ...) -> None: ...
     WORKFLOW_SELECTOR_FIELD_NUMBER: _ClassVar[int]
     DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
     MANIFEST_DIGEST_FIELD_NUMBER: _ClassVar[int]
@@ -356,6 +370,7 @@ class FlowInfoV2(_message.Message):
     NODE_RUNS_JSON_FIELD_NUMBER: _ClassVar[int]
     KEY_FIELDS_FIELD_NUMBER: _ClassVar[int]
     INTEGRATION_DECLARATIONS_JSON_FIELD_NUMBER: _ClassVar[int]
+    NODE_SLUGS_FIELD_NUMBER: _ClassVar[int]
     workflow_selector: str
     display_name: str
     manifest_digest: str
@@ -383,7 +398,8 @@ class FlowInfoV2(_message.Message):
     node_runs_json: _containers.ScalarMap[str, str]
     key_fields: _containers.RepeatedScalarFieldContainer[str]
     integration_declarations_json: _containers.ScalarMap[str, str]
-    def __init__(self, workflow_selector: _Optional[str] = ..., display_name: _Optional[str] = ..., manifest_digest: _Optional[str] = ..., node_ids: _Optional[_Iterable[str]] = ..., workflow_id: _Optional[str] = ..., file_path: _Optional[str] = ..., topology: _Optional[_Union[WorkflowTopologyV2, _Mapping]] = ..., agent_node_ids: _Optional[_Iterable[str]] = ..., agent_declarations_json: _Optional[_Mapping[str, str]] = ..., cron: _Optional[str] = ..., next_run_at: _Optional[float] = ..., last_run_at: _Optional[float] = ..., webhook_path: _Optional[str] = ..., webhook_url: _Optional[str] = ..., webhook_active: bool = ..., classifier_metadata_json: _Optional[_Mapping[str, str]] = ..., evaluation_metadata_json: _Optional[_Mapping[str, str]] = ..., input_schema_json: _Optional[str] = ..., version: _Optional[str] = ..., schedule_enabled: bool = ..., schedule_input_json: _Optional[str] = ..., node_policies_json: _Optional[_Mapping[str, str]] = ..., node_waits_json: _Optional[_Mapping[str, str]] = ..., machine_spec_json: _Optional[str] = ..., node_runs_json: _Optional[_Mapping[str, str]] = ..., key_fields: _Optional[_Iterable[str]] = ..., integration_declarations_json: _Optional[_Mapping[str, str]] = ...) -> None: ...
+    node_slugs: _containers.ScalarMap[str, str]
+    def __init__(self, workflow_selector: _Optional[str] = ..., display_name: _Optional[str] = ..., manifest_digest: _Optional[str] = ..., node_ids: _Optional[_Iterable[str]] = ..., workflow_id: _Optional[str] = ..., file_path: _Optional[str] = ..., topology: _Optional[_Union[WorkflowTopologyV2, _Mapping]] = ..., agent_node_ids: _Optional[_Iterable[str]] = ..., agent_declarations_json: _Optional[_Mapping[str, str]] = ..., cron: _Optional[str] = ..., next_run_at: _Optional[float] = ..., last_run_at: _Optional[float] = ..., webhook_path: _Optional[str] = ..., webhook_url: _Optional[str] = ..., webhook_active: bool = ..., classifier_metadata_json: _Optional[_Mapping[str, str]] = ..., evaluation_metadata_json: _Optional[_Mapping[str, str]] = ..., input_schema_json: _Optional[str] = ..., version: _Optional[str] = ..., schedule_enabled: bool = ..., schedule_input_json: _Optional[str] = ..., node_policies_json: _Optional[_Mapping[str, str]] = ..., node_waits_json: _Optional[_Mapping[str, str]] = ..., machine_spec_json: _Optional[str] = ..., node_runs_json: _Optional[_Mapping[str, str]] = ..., key_fields: _Optional[_Iterable[str]] = ..., integration_declarations_json: _Optional[_Mapping[str, str]] = ..., node_slugs: _Optional[_Mapping[str, str]] = ...) -> None: ...
 
 class DiscoveryDiagnosticV2(_message.Message):
     __slots__ = ("path", "kind", "message")
@@ -573,7 +589,7 @@ class FileAttachmentV2(_message.Message):
     def __init__(self, attachment_id: _Optional[str] = ..., field_name: _Optional[str] = ..., name: _Optional[str] = ..., media_type: _Optional[str] = ..., object_uri: _Optional[str] = ..., object_key: _Optional[str] = ..., sha256: _Optional[str] = ..., size_bytes: _Optional[int] = ..., inline_bytes: _Optional[bytes] = ...) -> None: ...
 
 class StartRunRequestV2(_message.Message):
-    __slots__ = ("run_id", "workflow_selector", "input_json", "context_json", "input_files", "expected_version", "trigger")
+    __slots__ = ("run_id", "workflow_selector", "input_json", "context_json", "input_files", "expected_version", "trigger", "rerun")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_SELECTOR_FIELD_NUMBER: _ClassVar[int]
     INPUT_JSON_FIELD_NUMBER: _ClassVar[int]
@@ -581,6 +597,7 @@ class StartRunRequestV2(_message.Message):
     INPUT_FILES_FIELD_NUMBER: _ClassVar[int]
     EXPECTED_VERSION_FIELD_NUMBER: _ClassVar[int]
     TRIGGER_FIELD_NUMBER: _ClassVar[int]
+    RERUN_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     workflow_selector: str
     input_json: str
@@ -588,7 +605,36 @@ class StartRunRequestV2(_message.Message):
     input_files: _containers.RepeatedCompositeFieldContainer[FileAttachmentV2]
     expected_version: str
     trigger: StartRunTriggerV2
-    def __init__(self, run_id: _Optional[str] = ..., workflow_selector: _Optional[str] = ..., input_json: _Optional[str] = ..., context_json: _Optional[str] = ..., input_files: _Optional[_Iterable[_Union[FileAttachmentV2, _Mapping]]] = ..., expected_version: _Optional[str] = ..., trigger: _Optional[_Union[StartRunTriggerV2, str]] = ...) -> None: ...
+    rerun: RunRerunV2
+    def __init__(self, run_id: _Optional[str] = ..., workflow_selector: _Optional[str] = ..., input_json: _Optional[str] = ..., context_json: _Optional[str] = ..., input_files: _Optional[_Iterable[_Union[FileAttachmentV2, _Mapping]]] = ..., expected_version: _Optional[str] = ..., trigger: _Optional[_Union[StartRunTriggerV2, str]] = ..., rerun: _Optional[_Union[RunRerunV2, _Mapping]] = ...) -> None: ...
+
+class RunRerunV2(_message.Message):
+    __slots__ = ("source_run_id", "start", "mode")
+    SOURCE_RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    START_FIELD_NUMBER: _ClassVar[int]
+    MODE_FIELD_NUMBER: _ClassVar[int]
+    source_run_id: str
+    start: _containers.RepeatedScalarFieldContainer[str]
+    mode: RunRerunModeV2
+    def __init__(self, source_run_id: _Optional[str] = ..., start: _Optional[_Iterable[str]] = ..., mode: _Optional[_Union[RunRerunModeV2, str]] = ...) -> None: ...
+
+class RerunRefusalV2(_message.Message):
+    __slots__ = ("problems", "earliest_start")
+    PROBLEMS_FIELD_NUMBER: _ClassVar[int]
+    EARLIEST_START_FIELD_NUMBER: _ClassVar[int]
+    problems: _containers.RepeatedCompositeFieldContainer[RerunProblemV2]
+    earliest_start: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, problems: _Optional[_Iterable[_Union[RerunProblemV2, _Mapping]]] = ..., earliest_start: _Optional[_Iterable[str]] = ...) -> None: ...
+
+class RerunProblemV2(_message.Message):
+    __slots__ = ("step", "reason", "detail")
+    STEP_FIELD_NUMBER: _ClassVar[int]
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    DETAIL_FIELD_NUMBER: _ClassVar[int]
+    step: str
+    reason: str
+    detail: str
+    def __init__(self, step: _Optional[str] = ..., reason: _Optional[str] = ..., detail: _Optional[str] = ...) -> None: ...
 
 class SetScheduleEnabledRequestV2(_message.Message):
     __slots__ = ("workflow_selector", "enabled", "input_json", "input_files")
@@ -707,7 +753,7 @@ class EvaluationListV2(_message.Message):
     def __init__(self, records: _Optional[_Iterable[_Union[EvaluationRecordV2, _Mapping]]] = ...) -> None: ...
 
 class RunSummaryV2(_message.Message):
-    __slots__ = ("run_id", "workflow_selector", "workflow_display_name", "status", "started_at", "ended_at", "created_sequence", "revision", "triggered_by", "triggered_at", "key_json", "read_state", "kind", "lifecycle", "waiting_on", "error_code", "error_step", "error_message")
+    __slots__ = ("run_id", "workflow_selector", "workflow_display_name", "status", "started_at", "ended_at", "created_sequence", "revision", "triggered_by", "triggered_at", "key_json", "read_state", "kind", "lifecycle", "waiting_on", "error_code", "error_step", "error_message", "rerun_of_run_id")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_SELECTOR_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
@@ -726,6 +772,7 @@ class RunSummaryV2(_message.Message):
     ERROR_CODE_FIELD_NUMBER: _ClassVar[int]
     ERROR_STEP_FIELD_NUMBER: _ClassVar[int]
     ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    RERUN_OF_RUN_ID_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     workflow_selector: str
     workflow_display_name: str
@@ -744,7 +791,8 @@ class RunSummaryV2(_message.Message):
     error_code: str
     error_step: str
     error_message: str
-    def __init__(self, run_id: _Optional[str] = ..., workflow_selector: _Optional[str] = ..., workflow_display_name: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., created_sequence: _Optional[int] = ..., revision: _Optional[int] = ..., triggered_by: _Optional[str] = ..., triggered_at: _Optional[float] = ..., key_json: _Optional[str] = ..., read_state: _Optional[str] = ..., kind: _Optional[str] = ..., lifecycle: _Optional[str] = ..., waiting_on: _Optional[_Union[RunWaitingOnV2, _Mapping]] = ..., error_code: _Optional[str] = ..., error_step: _Optional[str] = ..., error_message: _Optional[str] = ...) -> None: ...
+    rerun_of_run_id: str
+    def __init__(self, run_id: _Optional[str] = ..., workflow_selector: _Optional[str] = ..., workflow_display_name: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., created_sequence: _Optional[int] = ..., revision: _Optional[int] = ..., triggered_by: _Optional[str] = ..., triggered_at: _Optional[float] = ..., key_json: _Optional[str] = ..., read_state: _Optional[str] = ..., kind: _Optional[str] = ..., lifecycle: _Optional[str] = ..., waiting_on: _Optional[_Union[RunWaitingOnV2, _Mapping]] = ..., error_code: _Optional[str] = ..., error_step: _Optional[str] = ..., error_message: _Optional[str] = ..., rerun_of_run_id: _Optional[str] = ...) -> None: ...
 
 class RunWaitingOnV2(_message.Message):
     __slots__ = ("operator", "decision", "event", "run", "sleep")
@@ -805,7 +853,7 @@ class GetRunSnapshotRequestV2(_message.Message):
     def __init__(self, run_id: _Optional[str] = ...) -> None: ...
 
 class NodeSnapshotV2(_message.Message):
-    __slots__ = ("node_id", "name", "node_type", "status", "started_at", "ended_at", "revision", "error", "running_elapsed_seconds", "trace", "activity_continuation", "step_io", "map_parent", "map_index")
+    __slots__ = ("node_id", "name", "node_type", "status", "started_at", "ended_at", "revision", "error", "running_elapsed_seconds", "trace", "activity_continuation", "step_io", "map_parent", "map_index", "reused_from_run_id")
     NODE_ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     NODE_TYPE_FIELD_NUMBER: _ClassVar[int]
@@ -820,6 +868,7 @@ class NodeSnapshotV2(_message.Message):
     STEP_IO_FIELD_NUMBER: _ClassVar[int]
     MAP_PARENT_FIELD_NUMBER: _ClassVar[int]
     MAP_INDEX_FIELD_NUMBER: _ClassVar[int]
+    REUSED_FROM_RUN_ID_FIELD_NUMBER: _ClassVar[int]
     node_id: str
     name: str
     node_type: str
@@ -834,7 +883,8 @@ class NodeSnapshotV2(_message.Message):
     step_io: StepIoV2
     map_parent: str
     map_index: int
-    def __init__(self, node_id: _Optional[str] = ..., name: _Optional[str] = ..., node_type: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., revision: _Optional[int] = ..., error: _Optional[str] = ..., running_elapsed_seconds: _Optional[float] = ..., trace: _Optional[_Union[TraceDescriptorV2, _Mapping]] = ..., activity_continuation: _Optional[_Union[ContinuationRefV2, _Mapping]] = ..., step_io: _Optional[_Union[StepIoV2, _Mapping]] = ..., map_parent: _Optional[str] = ..., map_index: _Optional[int] = ...) -> None: ...
+    reused_from_run_id: str
+    def __init__(self, node_id: _Optional[str] = ..., name: _Optional[str] = ..., node_type: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., revision: _Optional[int] = ..., error: _Optional[str] = ..., running_elapsed_seconds: _Optional[float] = ..., trace: _Optional[_Union[TraceDescriptorV2, _Mapping]] = ..., activity_continuation: _Optional[_Union[ContinuationRefV2, _Mapping]] = ..., step_io: _Optional[_Union[StepIoV2, _Mapping]] = ..., map_parent: _Optional[str] = ..., map_index: _Optional[int] = ..., reused_from_run_id: _Optional[str] = ...) -> None: ...
 
 class StepValuePreviewV2(_message.Message):
     __slots__ = ("kind", "type_name", "preview_json", "truncated")

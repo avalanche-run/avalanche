@@ -180,7 +180,7 @@ class LogWidget(ScrollView, can_focus=False):
             text = Text(self._marker, DIM_STYLE)
         else:
             index = y - bool(self._marker)
-            if not self._rows:
+            if not self._rows and index == 0:
                 text = Text(self._placeholder, DIM_STYLE)
             elif index < 0 or index >= len(self._rows):
                 return Strip.blank(self.size.width)

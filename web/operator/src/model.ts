@@ -142,6 +142,8 @@ export interface FlowInfoMsg {
   scheduleInput?: Record<string, unknown>;
   /** JSON Schema of the workflow's declared input. */
   inputSchemaJson: string;
+  /** Each step's slug by node ID: what a rerun's start names. Map items are not listed. */
+  nodeSlugs: Record<string, string>;
   /**
    * @generated from protobuf field: string workflow_id = 10
    */
@@ -218,6 +220,7 @@ export const FlowInfoMsg = {
       lastRunAt: 0,
       scheduleEnabled: false,
       inputSchemaJson: "",
+      nodeSlugs: {},
       workflowId: "",
       displayName: "",
       rootAlias: "",
@@ -341,6 +344,8 @@ export interface RunSummaryMsg {
    * @generated from protobuf field: double triggered_at = 11
    */
   triggeredAt: number;
+  /** The run this one reruns; absent for a run that is not a rerun. */
+  rerunOfRunId?: string;
 }
 
 export const RunSummaryMsg = {
@@ -414,6 +419,10 @@ export interface NodeSnapshotMsg {
   runningElapsedSeconds?: number;
   /** Standard steps only: previews of the latest call's arguments and return value. */
   stepIo?: StepIo;
+  /** Status "reused" only: the run holding the saved output this step reuses. */
+  reusedFromRunId?: string;
+  /** Status "reused" only: the step in that run, when the host knows it differs by name. */
+  reusedFromNodeId?: string;
 }
 
 export const NodeSnapshotMsg = {
@@ -1106,6 +1115,8 @@ export interface NodeStatusChanged {
   runningElapsedSeconds?: number;
   /** Standard steps only: previews of the latest call's arguments and return value. */
   stepIo?: StepIo;
+  /** Status "reused" only: the run holding the saved output this step reuses. */
+  reusedFromRunId?: string;
 }
 
 export const NodeStatusChanged = {

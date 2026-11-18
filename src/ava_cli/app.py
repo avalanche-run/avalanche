@@ -39,6 +39,8 @@ from runtime.operator.workspace_config import format_scan_targets, select_workfl
 if TYPE_CHECKING:
     from pydantic import JsonValue
 
+    from avalanche.reruns import RerunRefusal
+    from avalanche.runtime import Rerun
     from runtime.operator.client import GrpcStateProvider
     from runtime.operator.models import WorkflowInfo
 
@@ -291,6 +293,27 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="FIELD=DIR",
         help="send a local directory to the operator, which keeps a copy, and pass "
         "that copy as a top-level Workspace input field",
+    )
+    run.add_argument(
+        "--rerun-of",
+        metavar="RUN_ID",
+        help=(
+            "rerun this finished, failed or cancelled run, reusing the saved outputs of the "
+            "steps it skips and its input; --input and --file replace the fields they name"
+        ),
+    )
+    run.add_argument(
+        "--from",
+        dest="rerun_from",
+        action="append",
+        default=[],
+        metavar="SLUG",
+        help="with --rerun-of, a step to run again along with everything after it; repeatable",
+    )
+    run.add_argument(
+        "--only",
+        action="store_true",
+        help="with --rerun-of, run only the --from steps and nothing after them",
     )
     run.set_defaults(handler=_run_flow)
 
@@ -600,8 +623,37 @@ def _operator_main(argv: list[str]) -> int:
     return operator_main(argv)
 
 
+def _rerun_request(args: argparse.Namespace) -> Rerun | None:
+    from avalanche.runtime import Rerun
+
+    if args.rerun_of is None:
+        if args.rerun_from or args.only:
+            raise ValueError("--from and --only need --rerun-of")
+        return None
+    if not args.rerun_from:
+        raise ValueError("--rerun-of needs at least one --from step")
+    return Rerun(
+        run_id=args.rerun_of,
+        start=tuple(args.rerun_from),
+        mode="lazy" if args.only else "autorun",
+    )
+
+
+def _print_rerun_refusal(refusal: RerunRefusal) -> None:
+    print("Rerun refused, nothing was started:", file=sys.stderr)
+    for problem in refusal.problems:
+        step = problem.step or "source run"
+        print(f"  {step}: {problem.reason.value}: {problem.detail}", file=sys.stderr)
+    if refusal.earliest_start:
+        print(
+            f"Earliest step to rerun from: {', '.join(refusal.earliest_start)}",
+            file=sys.stderr,
+        )
+
+
 def _run_flow(args: argparse.Namespace) -> int:
     provider = _make_provider(args.connect)
+    from avalanche.reruns import RerunRefusedError
     from runtime.operator.client import OperatorCallError
 
     try:
@@ -619,6 +671,7 @@ def _run_flow(args: argparse.Namespace) -> int:
                 )
                 if duplicate_fields:
                     raise ValueError(f"Duplicate input field '{sorted(duplicate_fields)[0]}'")
+            rerun = _rerun_request(args)
         except ValueError as exc:
             print(str(exc), file=sys.stderr)
             return 1
@@ -635,7 +688,11 @@ def _run_flow(args: argparse.Namespace) -> int:
                 input=input_payload,
                 context=context_payload,
                 files=file_payloads,
+                rerun=rerun,
             )
+        except RerunRefusedError as exc:
+            _print_rerun_refusal(exc.refusal)
+            return 1
         except (OperatorCallError, ValueError) as exc:
             print(str(exc), file=sys.stderr)
             return 1

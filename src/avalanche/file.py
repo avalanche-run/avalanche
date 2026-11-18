@@ -13,10 +13,13 @@ from pydantic import (
     ConfigDict,
     Field,
     PrivateAttr,
+    SerializationInfo,
     field_validator,
     model_serializer,
     model_validator,
 )
+
+_FILE_SERIALIZER_CONTEXT_KEY = "__avalanche_operator_file_serializer__"
 
 
 class WorkspaceFileRef(BaseModel):
@@ -190,11 +193,15 @@ class File(BaseModel):
         return self
 
     @model_serializer(mode="plain")
-    def _serialize(self):
+    def _serialize(self, info: SerializationInfo):
         if self._host_path is not None:
             self.snapshot()
         if self.sha256 is None:
             raise ValueError("Unbound file reference requires sha256 before serialization")
+        if isinstance(info.context, dict):
+            observer = info.context.get(_FILE_SERIALIZER_CONTEXT_KEY)
+            if observer is not None:
+                observer(self)
         return {
             "kind": "file",
             "version": 1,

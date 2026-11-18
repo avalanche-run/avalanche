@@ -20,9 +20,11 @@ from .extensions import ExtensionSession
 from .mock import MockStateProvider
 from .models import RunState, RunStatus, TraceDetail, WorkflowInfo
 from .screens.input_form import InputForm
+from .screens.rerun import RerunScreen
 from .screens.tools import InspectionScreen, LogFilterScreen, ResourceScreen
 from .screens.workflow_detail import WorkflowDetailScreen
 from .state import (
+    RERUN_ACTION_ID,
     ActionDescriptor,
     ActionResult,
     Object,
@@ -89,6 +91,7 @@ class AvalancheApp(App):
         Binding("tab", "workflow_next", "Tab", priority=True),
         Binding("shift+tab", "workflow_prev", "Shift+Tab", priority=True),
         Binding("r", "start_run", "Run", priority=True),
+        Binding("R", "rerun_step", "Rerun step", priority=True),
         Binding("x", "cancel_run", "Stop", priority=True),
         Binding("a", "toggle_run_actions_menu", "Actions", priority=True),
         Binding("left", "nav_left", "←", priority=True),
@@ -202,13 +205,14 @@ class AvalancheApp(App):
             run_id = self._deep_link_run
             self._deep_link_run_in_flight = True
             epoch = self.store._workflow_context_epoch
+            flow = self.store.current_workflow
 
             def load_link() -> None:
                 try:
                     run = self.store.provider.get_run(run_id)
                 except Exception:
                     run = None
-                self.call_later(self._complete_run_link, run_id, epoch, run)
+                self.call_later(self._complete_run_link, run_id, epoch, flow, run)
 
             self._run_control_executor.submit(load_link)
             return
@@ -220,11 +224,20 @@ class AvalancheApp(App):
                 self.store.select_node(match)
                 self._deep_link_node = None
 
-    def _complete_run_link(self, run_id: str, epoch: int, run: RunState | None) -> None:
+    def _complete_run_link(
+        self, run_id: str, epoch: int, flow: WorkflowInfo | None, run: RunState | None
+    ) -> None:
         self._deep_link_run_in_flight = False
-        self._deep_link_run = None
         if epoch != self.store._workflow_context_epoch:
+            current = self.store.current_workflow
+            if (current.selector if current else None) == (flow.selector if flow else None):
+                # A stream reset moved the epoch and made this answer stale, but the
+                # link still applies to this flow, so load it again.
+                self._apply_deep_link()
+            else:
+                self._deep_link_run = None
             return
+        self._deep_link_run = None
         if run is None:
             self.store.run_error = f"Linked run {run_id} is unavailable"
             return
@@ -348,7 +361,9 @@ class AvalancheApp(App):
                     "L / D  logs / DAG\nS  follow / pause logs\nF  filters\n"
                     "/  loaded-window search\n"
                     "N / Shift+N  search matches\nE / Z  expand / collapse\n"
-                    "Ctrl+S  schedules\n\n"
+                    "Ctrl+S  schedules\n"
+                    "Shift+R  rerun from the selected step\n"
+                    "Enter on a reused step  open the run holding its output\n\n"
                     "Provider actions and optional panels appear only when described.\n"
                     "Missing attempts, timestamps or channels are not exposed, never invented."
                 ),
@@ -388,6 +403,7 @@ class AvalancheApp(App):
                     "revision": node.revision,
                     "elapsed_seconds": node.elapsed,
                     "error": node.error,
+                    "reused_from_run": node.reused_from_run_id,
                     "trace_available": node.trace.available if node.trace else None,
                 },
                 indent=2,
@@ -425,6 +441,9 @@ class AvalancheApp(App):
         self._refresh_widgets()
 
     def invoke_extension_action(self, action: ActionDescriptor) -> None:
+        if action.id == RERUN_ACTION_ID:
+            self.action_rerun_step()
+            return
         session = self.extension_session
         if (self.read_only and action.mutates) or not action.available:
             self.notify(
@@ -1333,6 +1352,8 @@ class AvalancheApp(App):
             self.store.toggle_trace_turn()
             self._refresh_widgets()
             self._scroll_trace_selection_into_view()
+        elif self.store.focused_pane == "dag" and self._open_reused_source():
+            return
         elif self.store.focused_pane == "dag" and self._open_map_group():
             return
         elif self.store.focused_pane == "dag" and self.store.open_trace_inspector():
@@ -1342,6 +1363,20 @@ class AvalancheApp(App):
                 self._screen.query_one("#agent-trace-inspector").scroll_end(animate=False)
             except Exception:
                 pass
+
+    def _open_reused_source(self) -> bool:
+        node = self.store.selected_node
+        run = self.store.current_run
+        state = run.nodes.get(node.name) if node is not None and run is not None else None
+        if state is None or state.reused_from_run_id is None:
+            return False
+        self._open_run(state.reused_from_run_id)
+        return True
+
+    def _open_run(self, run_id: str) -> None:
+        """Load a run the dashboard may not have yet and show it, keeping the step."""
+        self._deep_link_run = run_id
+        self._apply_deep_link()
 
     def _open_map_group(self) -> bool:
         from .widgets.map_items import MapItemsScreen
@@ -1441,6 +1476,42 @@ class AvalancheApp(App):
             and description is not None
             and any(a.id == "run.start" and a.available for a in description.actions)
         )
+
+    def _rerun_descriptor(self) -> ActionDescriptor | None:
+        session = self.extension_session
+        if session.description is None or session.context != self.extension_context:
+            return None
+        return next(
+            (a for a in session.description.actions if a.id == RERUN_ACTION_ID), None
+        )
+
+    def can_rerun_selected_step(self) -> bool:
+        action = self._rerun_descriptor()
+        return not self.read_only and action is not None and action.available
+
+    def action_rerun_step(self) -> None:
+        """Shift+R: open the rerun dialog for the selected step of the selected run."""
+        self._run_actions_menu_open = False
+        action = self._rerun_descriptor()
+        store = self.store
+        if self.read_only:
+            self.notify("Read-only", severity="warning")
+        elif store.current_run is None or store.selected_node is None:
+            self.notify("Select a run and a step to rerun", severity="warning")
+        elif action is None:
+            self.notify("Rerun is not available here yet", severity="warning")
+        elif not action.available:
+            self.notify(action.reason or "Rerun unavailable", severity="warning")
+        else:
+            self.push_screen(
+                RerunScreen(
+                    self.extension_session,
+                    action,
+                    self.extension_context,
+                    store.selected_node.display_name,
+                    self._open_run,
+                )
+            )
 
     def can_cancel_selected_run(self) -> bool:
         description = self.extension_session.description

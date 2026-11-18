@@ -24,16 +24,20 @@ from pydantic import BaseModel, JsonValue
 from ulid import ULID
 
 from avalanche.references import reading_workspace_store
-from avalanche.runtime import File
+from avalanche.reruns import RerunRefusal, RerunRefusedError
+from avalanche.runtime import File, Rerun
 from avalanche.workspace import Workspace
 
 from ._grpc import _BOUNDED_MESSAGE_OPTIONS
 from .convert_v2 import (
+    RERUN_MODES,
+    RERUN_REFUSAL_TRAILER,
     START_RUN_TRIGGERS,
     agent_event_descriptor_from_v2,
     catalog_snapshot_from_v2,
     log_record_descriptor_from_v2,
     operator_update_envelope_from_v2,
+    rerun_refusal_from_v2,
     run_snapshot_from_v2,
     run_summary_from_v2,
     schedule_input_to_json,
@@ -99,6 +103,7 @@ if TYPE_CHECKING:
     from .wait_control import WaitControlRequest, WaitControlResponse
 
 DEFAULT_UNARY_TIMEOUT_SECONDS = 10.0
+_RERUN_START_TIMEOUT_SECONDS = 60.0
 DETAIL_HYDRATION_PAGE_SIZE = 100
 GET_RUN_SNAPSHOT_MAX_ATTEMPTS = 3
 STREAM_THREAD_JOIN_TIMEOUT_SECONDS = 2.0
@@ -1970,6 +1975,7 @@ class GrpcStateProvider:
         files: Mapping[str, File | bytes] | None = None,
         expected_version: str = "",
         trigger: Literal[TriggerKind.API, TriggerKind.MANUAL] = TriggerKind.API,
+        rerun: Rerun | None = None,
     ) -> str:
         """Start a run, recorded as an API call unless a person asked for it."""
         if self._read_only:
@@ -2000,9 +2006,20 @@ class GrpcStateProvider:
             input_files=[],
             expected_version=expected_version,
             trigger=START_RUN_TRIGGERS[trigger],
+            rerun=_rerun_message(rerun),
         )
-        resp = self._call(self._stub.StartRun, request)
-        return resp.run_id
+        if rerun is None:
+            return self._call(self._stub.StartRun, request).run_id
+        try:
+            # The operator answers once it has run the rerun checks.
+            return self._call(
+                self._stub.StartRun, request, timeout=_RERUN_START_TIMEOUT_SECONDS
+            ).run_id
+        except OperatorCallError as error:
+            refusal = _rerun_refusal(error.__cause__)
+            if refusal is None:
+                raise
+            raise RerunRefusedError(refusal) from error
 
     def stage_input_workspace(
         self, workflow_selector: str, field_name: str, directory: Path
@@ -3042,6 +3059,7 @@ class GrpcStateProvider:
                     node.ended_at = change.ended_at
                     node.error = change.error
                     node.step_io = change.step_io
+                    node.reused_from_run_id = change.reused_from_run_id
                     node.revision = change.revision
                     run.nodes = dict(current.nodes)
                     run.nodes[change.node_id] = node
@@ -3365,6 +3383,7 @@ def _run_from_created(operator_instance_id: str, created: RunCreated) -> RunStat
         created_sequence=summary.created_sequence,
         revision=summary.revision,
         details_hydrated=False,
+        rerun_of_run_id=summary.rerun_of_run_id,
     )
     run.nodes = {
         item.node_id: NodeState(
@@ -3381,6 +3400,7 @@ def _run_from_created(operator_instance_id: str, created: RunCreated) -> RunStat
             trace=item.trace,
             revision=item.revision,
             event_page_token=item.event_page_token,
+            reused_from_run_id=item.reused_from_run_id,
         )
         for item in created.nodes
     }
@@ -3449,6 +3469,28 @@ def _materialize_agent_trace_json(
         error=None,
     )
     return envelope.model_dump_json()
+
+
+def _rerun_refusal(error: BaseException | None) -> RerunRefusal | None:
+    """The refusal a failed StartRun carries, if it was refused by the rerun checks."""
+    if not isinstance(error, grpc.Call):
+        return None
+    for key, value in error.trailing_metadata() or ():
+        if key == RERUN_REFUSAL_TRAILER:
+            return rerun_refusal_from_v2(pb.RerunRefusalV2.FromString(value))
+    return None
+
+
+def _rerun_message(rerun: Rerun | None) -> pb.RunRerunV2 | None:
+    if rerun is None:
+        return None
+    if rerun.deployment_id is not None:
+        raise ValueError("The operator runs the code in its folder; omit deployment_id")
+    return pb.RunRerunV2(
+        source_run_id=rerun.run_id,
+        start=rerun.start,
+        mode=RERUN_MODES[rerun.mode],
+    )
 
 
 def _json_payload(payload: Mapping[str, Any] | BaseModel | None) -> str:

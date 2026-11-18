@@ -23,8 +23,8 @@ def _tmux(*args: str) -> str:
     ).stdout
 
 
-def _wait_for(session: str, predicate, *, stable: bool = False) -> str:
-    deadline = time.monotonic() + 15
+def _wait_for(session: str, predicate, timeout: float = 15, *, stable: bool = False) -> str:
+    deadline = time.monotonic() + timeout
     previous = None
     while True:
         screen = _tmux("capture-pane", "-t", session, "-p")
@@ -135,6 +135,154 @@ def test_terminal_runtime_map_group_strip(tmp_path):
         _wait_for(session, lambda text: "Map items" in text)
         _tmux("send-keys", "-t", session, "Enter")
         _wait_for(session, lambda text: "AGENT TURN" in text)
+    finally:
+        if session in _tmux("list-sessions", "-F", "#{session_name}").splitlines():
+            _tmux("kill-session", "-t", session)
+        if server is not None:
+            server.stop(grace=0).wait()
+        operator.close()
+
+
+# `c` has its own slug, so a rerun from it only works if the TUI sends the slug.
+_RERUN_FLOW = """
+import os
+from pathlib import Path
+
+import avalanche as ava
+
+
+def ran(name):
+    with Path(os.environ["RERUN_TEST_LOG"]).open("a") as log:
+        log.write(name + "\\n")
+
+
+@ava.step
+def a() -> str:
+    ran("a")
+    return "from a"
+
+
+@ava.step
+def b(text: str) -> dict[str, str]:
+    ran("b")
+    return {"text": text}
+
+
+@ava.step(slug="the_c_step")
+def c(saved: dict[str, str]) -> str:
+    ran("c")
+    C_BODY
+
+
+@ava.workflow
+def rerun_chain():
+    return c(b(a()))
+"""
+_BROKEN_C = _RERUN_FLOW.replace("C_BODY", 'raise RuntimeError("c is broken")')
+_FIXED_C = _RERUN_FLOW.replace("C_BODY", 'return saved["text"]')
+_RENAMED_B = _FIXED_C.replace("def b(", "def b_renamed(").replace(
+    "c(b(a()))", "c(b_renamed(a()))"
+)
+# The Python client's deadline for a rerun, whose checks run before StartRun answers.
+_RERUN_ANSWER_SECONDS = 60
+
+
+def test_terminal_rerun_from_a_step_shows_reused_steps_and_refusals(tmp_path, monkeypatch):
+    import socket
+
+    from runtime.operator.models import RunStatus
+    from runtime.operator.operator import Operator
+    from runtime.operator.server import serve as serve_operator
+
+    if not shutil.which("tmux"):
+        pytest.skip("tmux not installed")
+    executed = tmp_path / "executed.log"
+    monkeypatch.setenv("RERUN_TEST_LOG", str(executed))
+    flow = tmp_path / "rerun_chain.py"
+    flow.write_text(_BROKEN_C)
+    operator = Operator(
+        [str(flow)],
+        watch=False,
+        schedule=False,
+        webhook_port=0,
+        state_db=tmp_path / "state.db",
+        prepare_timeout=120,
+    )
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    server = None
+    session = f"pytest-rerun-{uuid4().hex[:8]}"
+    try:
+        server = serve_operator(operator, port=port, block=False)
+        failed = operator.start_run("rerun_chain")
+        deadline = time.monotonic() + 60
+        while operator.get_run(failed).status is not RunStatus.FAILED:
+            assert time.monotonic() < deadline
+            time.sleep(0.05)
+        _tmux(
+            "new-session",
+            "-d",
+            "-s",
+            session,
+            "-c",
+            str(Path(__file__).resolve().parents[1]),
+            "-x",
+            "180",
+            "-y",
+            "45",
+            f"COLUMNS=180 LINES=45 uv run ava tui --connect localhost:{port} "
+            "--flow rerun_chain",
+        )
+        _wait_for(session, lambda text: failed in text and "[R] Rerun step" in text, 60)
+
+        # Fix `c`, select it in the graph, and rerun it with what follows it.
+        flow.write_text(_FIXED_C)
+        executed.write_text("")
+        _tmux("send-keys", "-t", session, "Right", "Right", "Right")
+        _wait_for(session, lambda text: re.search(r"› c\b", text))
+        _tmux("send-keys", "-t", session, "R")
+        _wait_for(session, lambda text: "Only this step" in text)
+        _tmux("send-keys", "-t", session, "Enter")
+        screen = _wait_for(
+            session,
+            lambda text: f"rerun of {failed}" in text and "↺" in text,
+            _RERUN_ANSWER_SECONDS,
+        )
+        assert "Only this step" not in screen
+        deadline = time.monotonic() + 60
+        while executed.read_text().split() != ["c"]:
+            assert time.monotonic() < deadline, executed.read_text()
+            time.sleep(0.05)
+        screen = _wait_for(session, lambda text: "(reused)" in text)
+        assert screen.count("(reused)") == 2
+
+        # Following the link from a reused step opens the run that holds its output.
+        _tmux("send-keys", "-t", session, "Left")
+        _wait_for(session, lambda text: f"reused from {failed}" in text)
+        _tmux("send-keys", "-t", session, "Enter")
+        _wait_for(
+            session,
+            lambda text: f"› {failed}" in text and f"reused from {failed}" not in text,
+        )
+
+        # A needed step was renamed: the dialog lists the problem and where to start.
+        flow.write_text(_RENAMED_B)
+        executed.write_text("")
+        _tmux("send-keys", "-t", session, "Right")
+        _wait_for(session, lambda text: re.search(r"› c\b", text))
+        _tmux("send-keys", "-t", session, "R")
+        _wait_for(session, lambda text: "Only this step" in text)
+        _tmux("send-keys", "-t", session, "Enter")
+        screen = _wait_for(session, lambda text: "missing_from_source" in text, 60)
+        assert "b_renamed" in screen
+        assert "Earliest step to rerun from" in screen
+        assert executed.read_text() == ""
+        assert len(operator.list_runs("rerun_chain")) == 2
+
+        # Escape closes the dialog and leaves the dashboard usable.
+        _tmux("send-keys", "-t", session, "Escape")
+        _wait_for(session, lambda text: "Only this step" not in text)
     finally:
         if session in _tmux("list-sessions", "-F", "#{session_name}").splitlines():
             _tmux("kill-session", "-t", session)

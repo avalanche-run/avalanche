@@ -129,6 +129,7 @@ class _RunRow(BaseModel):
     expansions_json: str
     input_json: str | None
     terminal_seal_json: str | None
+    rerun_of_run_id: str | None
     created_sequence: PositiveInt
     revision: PositiveInt
     activity_sequence: NonNegativeInt
@@ -170,6 +171,7 @@ class _NodeRow(BaseModel):
     step_io_json: str | None
     map_parent: str | None
     map_index: NonNegativeInt | None
+    reused_from_run_id: str | None
     revision: PositiveInt
 
 
@@ -197,6 +199,7 @@ _STATE_COLUMNS = (
     "expansions_json",
     "input_json",
     "terminal_seal_json",
+    "rerun_of_run_id",
     "created_sequence",
     "revision",
     "activity_sequence",
@@ -219,6 +222,7 @@ _NODE_COLUMNS = (
     "step_io_json",
     "map_parent",
     "map_index",
+    "reused_from_run_id",
     "revision",
 )
 _INSERT_RUN = (
@@ -383,7 +387,8 @@ class RunsTable:
         nodes: dict[str, list[_NodeRow]] = {}
         for row in connection.execute(
             "SELECT run_id, node_id, name, node_type, status, started_at, ended_at, error, "
-            f"step_io_json, map_parent, map_index, revision FROM {_NODES} "
+            "step_io_json, map_parent, map_index, reused_from_run_id, revision "
+            f"FROM {_NODES} "
             "ORDER BY run_id, position"
         ):
             node = row_model(_NodeRow, row, table=_NODES)
@@ -460,6 +465,7 @@ def _state_values(stored: StoredRun) -> tuple[str | float | int | None, ...]:
         None
         if run.terminal_seal is None
         else _TERMINAL_SEAL.dump_json(run.terminal_seal).decode(),
+        run.rerun_of_run_id,
         stored.created_sequence,
         stored.revision,
         stored.activity_sequence,
@@ -496,6 +502,7 @@ def _node_values(
             None if node.step_io is None else node.step_io.model_dump_json(),
             node.map_parent,
             node.map_index,
+            node.reused_from_run_id,
             stored.node_revisions[node.node_id],
         )
 
@@ -529,6 +536,7 @@ def _loaded_run(row: _RunRow, node_rows: Collection[_NodeRow]) -> LoadedRun:
         else json_value(
             _TERMINAL_SEAL, row.terminal_seal_json, table=_RUNS, column="terminal_seal_json"
         ),
+        rerun_of_run_id=row.rerun_of_run_id,
     )
     node_revisions = {}
     for node in node_rows:
@@ -538,6 +546,7 @@ def _loaded_run(row: _RunRow, node_rows: Collection[_NodeRow]) -> LoadedRun:
             node_type=node.node_type,
             map_parent=node.map_parent,
             map_index=node.map_index,
+            reused_from_run_id=node.reused_from_run_id,
             status=node.status,
             started_at=node.started_at,
             ended_at=node.ended_at,
