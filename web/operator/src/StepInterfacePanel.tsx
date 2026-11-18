@@ -300,6 +300,7 @@ function SchemaNode({
   ancestors,
   required,
   typeName,
+  declaredType = false,
 }: {
   label: string;
   schema: Schema;
@@ -308,6 +309,8 @@ function SchemaNode({
   required?: boolean;
   /** The declared type, where the schema alone does not name it. */
   typeName?: string;
+  /** The schema is a declared type, so its title names the model even when it restates the label. */
+  declaredType?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const detailsId = useId();
@@ -327,7 +330,7 @@ function SchemaNode({
   }
   // A type name that is the label itself says nothing; show the schema's own type.
   const named = typeName !== undefined && typeName !== label;
-  const own = schemaTypeLabel(schema, label);
+  const own = schemaTypeLabel(schema, declaredType ? undefined : label);
   // Alone on a row, "any" and "never" are spelled out.
   const type = named
     ? typeName
@@ -396,12 +399,13 @@ export function DeclaredSchema({
   label,
   schema,
   required,
-  typeName,
+  declaredType,
 }: {
   label: string;
   schema: JsonSchema;
   required?: boolean;
-  typeName?: string;
+  /** A step's declared input or output type: its title is the model name, not one derived from the label. */
+  declaredType?: boolean;
 }) {
   const index = useMemo(() => schemaIndex(schema), [schema]);
   return (
@@ -411,7 +415,7 @@ export function DeclaredSchema({
       index={index}
       ancestors={[]}
       required={required}
-      typeName={typeName}
+      declaredType={declaredType}
     />
   );
 }
@@ -430,7 +434,7 @@ function SignatureType({
       <DeclaredSchema
         label={label}
         schema={definition.json_schema}
-        typeName={definition.type_name}
+        declaredType
         required={required}
       />
     );
