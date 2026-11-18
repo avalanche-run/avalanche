@@ -63,7 +63,7 @@ Bare `@ava.workflow` is also supported. It returns a builder; calling the builde
 | `key: tuple[str, ...] \| None` | `None`; opt into a permanent run identity derived from ordered input fields. Fields must exist and be unique; empty keys are invalid. `workflow.key(input)` validates those fields only. Hosts resolve the same run by ID or typed `--key field=value`, ignoring replacement non-key input/files on existing keys. Durable storage and CLI integration belong to the host; the embedded runner refuses keyed workflows. |
 | `context: type \| None` | `None`; optional `BaseContext` subclass for caller context validation. Other types raise `TypeError` on construction. |
 | `agent_defaults: Mapping[str, object] \| ava.agent.AgentDefaults \| None` | `None`; `{"runtime": ava.runtimes.PredictRLM(...)}`, the shared runtime each agent step's runtime is merged over. See [agent defaults](agents.md#workflow-defaults). |
-| `classifier_defaults: dict[str, JsonValue] \| None` | `None`; validated workflow-level [classifier defaults](classifiers.md). |
+| `classifier_defaults: dict \| None` | `None`; validated workflow-level [classifier defaults](classifiers.md): `classifier`, `model` and `timeout`. |
 
 Cycles raise `ValueError` during construction. Start execution with [workflow.run](runs.md#workflow-run); input and context declarations are detailed in [Inputs and context](inputs-context.md).
 

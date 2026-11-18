@@ -515,10 +515,10 @@ They make no extra model calls and do not depend on other composites; never
 invent `.normalized` or `.probability` aliases.
 
 Set `TYPESAFE_API_KEY` in the operator environment, in addition to credentials
-for the agent's provider. `ava.Evaluations(model=..., timeout=...)` overrides
-workflow `classifier_defaults`; `None` inherits. Defaults are `jev-latest` and
-a 10-second SDK request timeout. Agent `lm`/`sub_lm` settings do not configure
-Jev. Declarations validate questions but make no model calls during discovery.
+for the agent's provider. `ava.Evaluations(classifier=..., model=..., timeout=...)` overrides
+workflow `classifier_defaults`; `None` inherits. Defaults are
+`ava.classifiers.TypeSafe()`, `jev-latest` and a 10-second SDK request timeout.
+Agent `lm`/`sub_lm` settings do not configure the classifier. Declarations validate questions but make no model calls during discovery.
 
 TypeSafe HTTP 401 indicates rejected authentication, not a quality judgment.
 Verify `TYPESAFE_API_KEY`, including exported values that override `.env`; restart

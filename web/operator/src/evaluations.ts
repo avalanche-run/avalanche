@@ -1,7 +1,9 @@
-import type { ClassificationResult } from "./classifier";
+import type { ClassificationResult, ClassifierProvider } from "./classifier";
 import type { EvaluationRecordV2 } from "./generated/operator";
 
 export interface EvaluationResult {
+  /** The decision service that answered; absent on results recorded before it was named. */
+  classifier?: ClassifierProvider;
   classification: ClassificationResult;
   composites: Record<string, number>;
 }

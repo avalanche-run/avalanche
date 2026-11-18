@@ -352,7 +352,7 @@ page for the sandbox.
 Attach observation-only quality judgments to an agent with `evaluations=`, on either
 a decorated agent step or an inline `ava.agent.step(...)` call.
 Keep each metric's **evidence selector** separate from its **question**: `state` is a
-synchronous Python callable; `question` is one existing TypeSafe Noul, Score,
+synchronous Python callable; `question` is one existing classifier Noul, Score,
 or Choice question, using the same format as
 [`classifier_step(questions=...)`](classifier-steps.md).
 
@@ -477,7 +477,7 @@ even if subsequent step postprocessing fails or is cancelled.
 
 Each metric has a collapsed **Input** section listing qualified source paths,
 such as `input.document`, `output.review.summary`, `output`, or `trace`. **Input**
-refers to Jev's input; path roots refer to the captured agent call's arguments,
+refers to the classifier's input; path roots refer to the captured agent call's arguments,
 validated outputs, or execution trace. Bare source names have no selected field path.
 Trace source paths use the agent accent color; input and output paths stay neutral.
 In run views, trace labels underline only on hover: click or press Enter/Space
@@ -485,7 +485,7 @@ to open the same node's **Trace** tab and focus it. Current definitions without
 execution data keep trace paths read-only.
 Python inspects selector syntax without executing it. Opaque or uninspectable
 callables show `custom: qualified_name` rather than inferred fields. These paths
-describe selection metadata, not the serialized state sent to TypeSafe.
+describe selection metadata, not the serialized state sent to the provider.
 Run views use captured declarations; older declarations without this metadata
 do not invent input paths.
 
@@ -493,14 +493,15 @@ Reuse the agent signature's existing input and output types. There is no mandato
 second context schema, `input_type`, or `output_type`. Optional selector annotations
 can use `ava.EvalContext[pydantic.BaseModel, pydantic.BaseModel]`; they do not change runtime validation.
 
-Only selected text, JSON objects, or JSON arrays are sent to Jev. Nested numbers
+Only selected text, JSON objects, or JSON arrays are sent to the classifier. Nested numbers
 must be finite. Convert Python-only values explicitly; arbitrary objects are
 not stringified. Evaluation does not open files, extract document content, or
 evaluate images/media: a path is only text, not file evidence. Select already
 available text/JSON when evaluating a file-producing agent.
 
 Every turn of `ctx.trace` carries the code the agent ran and that code's output, so
-large traces can exceed [Jev's context budget](https://docs.typesafe.ai/models).
+large traces can exceed the model's context budget (for TypeSafe, see
+[Jev's context budget](https://docs.typesafe.ai/models)).
 Select the source facts and observable actions needed for your question instead of
 sending the whole trace or silently truncating evidence.
 
@@ -533,19 +534,26 @@ heuristic; ordinary service request limits still apply.
 
 ### Configure and run
 
-Set `TYPESAFE_API_KEY` in the operator environment, in addition to credentials
-for the PredictRLM agent's model provider. Evaluation configuration follows
-classifier conventions:
+Set the key of the classifier provider in use (`TYPESAFE_API_KEY` for TypeSafe,
+the default) in the operator environment, in addition to credentials for the
+PredictRLM agent's model provider. Evaluation configuration follows
+[classifier conventions](classifier-steps.md#choosing-the-provider):
 
 ```text
-ava.Evaluations(model=..., timeout=...)
+ava.Evaluations(classifier=..., model=..., timeout=...)
     > @ava.workflow(classifier_defaults={...})
-    > model="jev-latest", timeout=10.0
+    > classifier=ava.classifiers.TypeSafe(), model="jev-latest", timeout=10.0
 ```
 
+`classifier=` picks the provider. An `Evaluations` declaration that sets it
+takes its model from its own `model=`, else from that provider's default model,
+never from the workflow defaults. `model=` and `timeout=` without `classifier=`
+keep meaning TypeSafe. Only the key of the provider in use is required; the
+operator hands that provider's key to the evaluation process.
+
 `timeout` is the positive, finite SDK request timeout in seconds, not a workflow
-deadline. `model=None` and `timeout=None` inherit defaults. Agent runtimes
-and `agent_defaults` do not configure Jev. Declarations and discovery make no
+deadline. `classifier=None`, `model=None` and `timeout=None` inherit defaults.
+Agent runtimes and `agent_defaults` do not configure the classifier. Declarations and discovery make no
 model calls and need no credentials; malformed questions fail at declaration.
 
 A TypeSafe HTTP 401 means authentication was rejected, not that the output failed
@@ -571,7 +579,7 @@ Before running, the agent node shows an **Evaluations** badge with its metric
 count. When zoomed out, the badge shows only its icon and count. Select the node
 in **Current**, then **Evals**, to inspect named metrics, question types,
 expandable criteria, composite names,
-and effective Jev model and timeout. **Agent definition** contains instructions,
+and effective classifier model and timeout. **Agent definition** contains instructions,
 agent inputs/outputs, models, and resources; **Step interface** contains only the
 step's declared inputs and output. These tabs describe configuration, not completed judgments.
 Historical run graphs retain their captured declarations after source edits.
@@ -606,7 +614,7 @@ failure. Evaluation errors never fail, retry, route, or otherwise gate the workf
 
 Each execution has a separate record with `pending`, `completed`, or `failed`
 status. A successful workflow can still have pending or failed evaluations.
-Selectors, invalid selected state, Jev requests, and invalid composites report
+Selectors, invalid selected state, classifier requests, and invalid composites report
 evaluation errors, not fabricated scores. Late results do not reopen or change
 the workflow's terminal status. Reruns retain separate records rather than
 overwriting earlier judgments.
@@ -620,7 +628,8 @@ operator stops are not resumed: the next start marks them `failed` with an
 Clients can query `ListEvaluations` with `runId` and optional `nodeId`, or use
 `GET /api/v1/runs/{run_id}/evaluations?node_id=...` on the development REST API.
 The RPC returns separate records; completed records carry `resultJson` with
-`classification` (raw TypeSafe answers) and `composites`. Evaluation records
+`classifier` (the provider that answered), `classification` (its raw answers)
+and `composites`. Evaluation records
 are not structural workflow status updates.
 
 Python validates classification answers and composites before publishing results.

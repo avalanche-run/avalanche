@@ -181,7 +181,7 @@ remains separate. Evidence is snapshotted before the result returns to the step 
 A step may call its agent only once, so there is at most one evaluation per step
 execution; step postprocessing failure does not cancel an already-submitted evaluation.
 
-Selectors, Jev calls, and composites run independently of workflow scheduling.
+Selectors, classifier calls, and composites run independently of workflow scheduling.
 Their pending/results/errors neither gate downstream work nor change workflow
 status. Records remain available after the coordinator completes and after an
 operator restart, from the operator's local state database; an evaluation still

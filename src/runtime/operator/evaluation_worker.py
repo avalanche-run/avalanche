@@ -24,6 +24,7 @@ from dotenv import find_dotenv
 from dotenv.main import DotEnv
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from avalanche.classifier.adapter import adapter_for
 from avalanche.dag import Workflow
 from avalanche.evaluation_capture import EvaluationSubmission
 from avalanche.evaluations import EvalContext, EvaluationResult, Evaluations
@@ -107,20 +108,21 @@ def _local_modules(root: Path) -> list[ModuleType]:
     return list(modules.values())
 
 
-def _evaluation_environment() -> dict[str, str]:
+def _evaluation_environment(key_variable: str) -> dict[str, str]:
     environment = dict(os.environ)
-    # Match classifier loading: only load dotenv when the key is absent, preserve
-    # existing environment values, and interpolate with override=False. Snapshot
-    # now so evaluation does not depend on the coordinator's cwd or later edits.
-    if "TYPESAFE_API_KEY" not in environment:
+    # Match classifier loading for the provider in use: only load dotenv when its
+    # key is absent, preserve existing environment values, and interpolate with
+    # override=False. Snapshot now so evaluation does not depend on the
+    # coordinator's cwd or later edits.
+    if key_variable not in environment:
         disabled = environment.get("PYTHON_DOTENV_DISABLED", "").lower()
         if disabled not in {"1", "true", "t", "yes", "y"}:
             values = DotEnv(find_dotenv(usecwd=True), override=False, encoding="utf-8").dict()
             for name, value in values.items():
                 if value is not None:
                     environment.setdefault(name, value)
-        # Do not let the SDK discover an unrelated operator-directory dotenv.
-        environment.setdefault("TYPESAFE_API_KEY", "")
+        # Do not let the evaluator discover an unrelated operator-directory dotenv.
+        environment.setdefault(key_variable, "")
     return environment
 
 
@@ -133,7 +135,9 @@ def snapshot_evaluation(submission: EvaluationSubmission) -> EvaluationRequest:
             evaluation_id=evaluation_id, created_at=created_at, error=submission.error
         )
     try:
-        value = _EvaluationInput(submission, _evaluation_environment())
+        runtime = submission.evaluations.runtime(submission.runtime_defaults)
+        key_variable = adapter_for(runtime.classifier).key_variable
+        value = _EvaluationInput(submission, _evaluation_environment(key_variable))
         with _SNAPSHOT_LOCK:
             registered = cloudpickle.list_registry_pickle_by_value()
             modules = [m for m in _local_modules(Path.cwd()) if m.__name__ not in registered]

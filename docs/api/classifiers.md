@@ -1,6 +1,6 @@
 # Classifiers
 
-Avalanche 0.7.0's workflow-author classification API, backed by TypeSafe. See [workflows](workflows.md) for node calls, composition, and workflow defaults, and [inputs and context](inputs-context.md) for ordinary step injection. Classifier state and questions are JSON data; they are distinct from [agent signatures](agents.md#signature-declarations).
+Avalanche's workflow-author classification API. A classifier sends a state and typed questions to a decision service, its **provider**, and gets probabilities back. TypeSafe is the default; [OpenAI Decisions](#openai-decisions) and [Gemini Decision](#gemini-decision) are the other providers. See [workflows](workflows.md) for node calls, composition, and workflow defaults, and [inputs and context](inputs-context.md) for ordinary step injection. Classifier state and questions are JSON data; they are distinct from [agent signatures](agents.md#signature-declarations).
 
 ## Classifier step
 
@@ -9,6 +9,12 @@ ava.classifier_step(
     *,
     questions: dict[str, JsonValue] | None = None,
     input_model: type[pydantic.BaseModel] | None = None,
+    classifier: (
+        ava.classifiers.TypeSafe
+        | ava.classifiers.OpenAIDecisions
+        | ava.classifiers.GeminiDecision
+        | None
+    ) = None,
     model: str | None = None,
     timeout: float | None = None,
     slug: str | None = None,
@@ -21,7 +27,8 @@ Returns a decorator that turns a function into a single-output workflow step. Us
 | --- | --- |
 | `questions` | `None`; optional nonempty question mapping in the [shapes below](#question-shapes). Validated and snapshotted at decoration. If absent, supply questions on calls. |
 | `input_model` | `None`; optional Pydantic model **class**, including `RootModel`, used to validate each call's state. Not a model instance. Its serialization schema must be constructible at decoration. |
-| `model` | `None` inherits workflow/default configuration; otherwise a nonblank TypeSafe model name. |
+| `classifier` | `None` inherits the workflow default, else TypeSafe; otherwise a [provider](#classifier-providers) such as `ava.classifiers.TypeSafe()`. |
+| `model` | `None` inherits (see [resolution](#workflow-defaults-and-credentials)); otherwise a nonblank model name of the provider in use. |
 | `timeout` | `None` inherits; otherwise positive finite seconds per HTTP operation, not a whole-step deadline. |
 | `slug` | `None`; optional node identifier, following [ordinary node rules](workflows.md). |
 
@@ -47,16 +54,85 @@ Python step annotations describe workflow inputs/results; `input_model` separate
 
 ### Workflow defaults and credentials
 
-Declare `classifier_defaults={"model": ..., "timeout": ...}` on [the workflow decorator](workflows.md). Only these two keys are allowed. Each resolves from a non-`None` decorator value, then workflow defaults, then:
+Declare `classifier_defaults={"classifier": ..., "model": ..., "timeout": ...}` on [the workflow decorator](workflows.md). Only these three keys are allowed, and each is optional.
 
 | Key | Default | Constraint |
 | --- | --- | --- |
-| `model` | `"jev-latest"` | Nonempty, non-whitespace-only string. |
+| `classifier` | `ava.classifiers.TypeSafe()` | A [provider](#classifier-providers). |
+| `model` | The provider's default model (`"jev-latest"` for TypeSafe) | Nonempty, non-whitespace-only string. |
 | `timeout` | `10.0` | Positive finite seconds per HTTP operation. |
 
-`None` values and extra keys are invalid in workflow defaults. `agent_defaults` does not configure classifiers. Avalanche supplies the resolved model explicitly, so the SDK's `TYPESAFE_DEFAULT_MODEL` environment variable does not replace it. Calls have no per-call model or timeout override. The SDK retains its default retry behavior; Avalanche does not add another retry layer.
+The step wins over the workflow default:
 
-Runtime calls require `TYPESAFE_API_KEY`. If the variable is absent, the executing process loads the nearest `.env` from its working directory upward without overriding existing variables. An existing blank variable does not trigger that lookup and fails the credential check. Declaration/import does not require credentials; distributed workers need their own accessible credentials.
+- **Classifier:** the step's `classifier=`, else the workflow's, else TypeSafe.
+- **Model:** a level that sets `classifier=` takes its model from that same level, else from that provider's default model. A model set in the workflow defaults is never applied to a classifier chosen on the step. A step that sets only `model=` keeps the workflow's classifier.
+- **Timeout:** the step's, else the workflow's, else `10.0`.
+
+`model=` and `timeout=` without any `classifier=` mean TypeSafe, as they always have. The provider is set in code only: no environment variable selects it, and Avalanche never falls back to another provider.
+
+`None` values and extra keys are invalid in workflow defaults. `agent_defaults` does not configure classifiers. Avalanche supplies the resolved model explicitly, so the TypeSafe SDK's `TYPESAFE_DEFAULT_MODEL` environment variable does not replace it. Calls have no per-call classifier, model or timeout override. The vendor SDK retains its default retry behavior; Avalanche does not add another retry layer.
+
+Runtime calls require the key of the provider in use, and only that key: `TYPESAFE_API_KEY` for TypeSafe, `OPENAI_API_KEY` for OpenAI Decisions, `GEMINI_API_KEY` for Gemini Decision. If the variable is absent, the executing process loads the nearest `.env` from its working directory upward without overriding existing variables. An existing blank variable does not trigger that lookup and fails the credential check with an error naming the variable. Declaration/import does not require credentials; distributed workers need their own accessible credentials.
+
+## Classifier providers
+
+`ava.classifiers` holds the providers, the way `ava.runtimes` holds agent runtimes. The set is closed: you cannot plug in your own provider.
+
+| Provider | Default model | Key | Package |
+| --- | --- | --- | --- |
+| `ava.classifiers.TypeSafe()` | `jev-latest` | `TYPESAFE_API_KEY` | `typesafe-sdk`, in the base install |
+| `ava.classifiers.OpenAIDecisions()` | `gpt-6-luna` | `OPENAI_API_KEY` | `openai` 3.37 or later, from the `openai` extra |
+| `ava.classifiers.GeminiDecision()` | `gemini-decision-1` | `GEMINI_API_KEY` | `google-genai` 3.2.0 or later, from the `gemini` extra |
+
+```python
+@ava.classifier_step(
+    questions=QUESTIONS, classifier=ava.classifiers.TypeSafe(), model="jev-1.14.0"
+)
+async def classify_ticket(ticket: dict, *, classifier: ava.Classifier) -> str: ...
+```
+
+A provider value is frozen and JSON-serializable. It is recorded with the model and timeout in the step's declaration (`runtime.classifier`, for example `{"kind": "typesafe"}`), so each recorded classifier call shows which provider and model answered. Declarations recorded before providers were named carry no `classifier` and read as TypeSafe.
+
+A question the provider cannot take is refused with `ClassifierStepError` naming the question and the limit: when the step is declared if its questions and provider are known then, otherwise at the call, before any request. TypeSafe takes every valid [question shape](#question-shapes).
+
+### OpenAI Decisions
+
+`ava.classifiers.OpenAIDecisions()` calls OpenAI's Decisions API (`POST /v1/decisions`) through the `openai` package. Install it with `avalanche-ai[openai]`; without it the call fails with an error naming the extra. Set `OPENAI_API_KEY`. The only model OpenAI serves today is `gpt-6-luna`, the default.
+
+```python
+@ava.classifier_step(questions=QUESTIONS, classifier=ava.classifiers.OpenAIDecisions())
+async def classify_ticket(ticket: dict, *, classifier: ava.Classifier) -> str: ...
+```
+
+The result is the same `ava.ClassificationResult`. A noul is sent as a predicate, a choice with each option's criteria as its description, and a score with its criteria as level labels. Questions are sent in order without their names and answers are matched back by position, so any question name works. Missing instructions are sent as empty text. The score legend is the declared criteria. Probabilities and scores come back with two decimal places.
+
+Refused before any request, with the question named:
+
+| Shape | Limit |
+| --- | --- |
+| Choice | 2 to 255 options; an option's criteria is text or `None` |
+| Score | 2 to 10 levels; each level is text |
+| Noul | no `true`/`false` criteria; put them in the instructions |
+| Instructions | text, a JSON object or a list of JSON objects |
+| Questions per call | at most 400 |
+| State | text, a JSON object or a list of JSON objects (refused at the call) |
+
+If OpenAI refuses to answer one question, the whole call fails with `ClassifierStepExecutionError` naming that question; no partial result is returned. API errors name the error class and HTTP status only, for example `OpenAI RateLimitError (HTTP 429)`. `timeout` applies to each HTTP attempt; the `openai` package retries connection errors, timeouts, 408, 409, 429 and 5xx responses twice by default.
+
+### Gemini Decision
+
+`ava.classifiers.GeminiDecision()` calls Google's Gemini Decision service, in beta on the `v1beta` Gemini Developer API (not Vertex AI); its limits and response may still change. It needs the `gemini` extra (`uv add 'avalanche-ai[gemini]'`, `google-genai` 3.2.0 or later) in the process that makes the call; without it the call fails with `ClassifierStepExecutionError` naming the extra. Avalanche passes `GEMINI_API_KEY` to the SDK itself, so `GOOGLE_API_KEY` is never used. `timeout` is the SDK's per-request timeout, and the SDK keeps its default retries.
+
+| Limit | Rule |
+| --- | --- |
+| `instructions` | Required, non-empty text on every question. Structured JSON is refused. |
+| Noul `criteria` | Text descriptions, sent as Gemini's `true_description` and `false_description`. |
+| Choice `criteria` | 2 to 255 options with text descriptions; `None` is sent as an empty description. An option name takes at most 128 characters and 512 UTF-8 bytes, without leading or trailing whitespace, control characters or non-ASCII spaces. |
+| Score `criteria` | 2 to 255 non-empty text levels. |
+| Questions per call | At most 1,000. |
+| State | Sent as text; a JSON object or array is serialized to a JSON string. No images, audio, video or PDF. |
+
+Question names are not limited: Avalanche sends Gemini positional question IDs and maps the answers back. In the result, Choice probabilities keep the declared option order, Noul lies in `[0.01, 0.99]` and Gemini's extra Noul confidence is dropped, probabilities are unrounded (totals must sum to 1 within `5e-10` per option), `model` is the requested model because Gemini reports none, and `usage.output_tokens` is `0`. An input blocked by Gemini's safety filters fails the call with `ClassifierStepExecutionError` carrying only Gemini's reason code.
 
 ## Injected Classifier call
 
@@ -156,7 +232,7 @@ Every field below is required. A probability is a finite number in `[0, 1]`.
 | | `probabilities` | Mapping of those same indices to probabilities. |
 | | `confidence` | Service confidence in `[0, 1]`. |
 
-Choice must identify an option with the highest probability (ties allowed). Score must lie in `[0, n-1]` and equal `sum(index * probability)`. These comparisons use relative and absolute tolerance `1e-5`. Choice/Score probability totals must be positive and within `0.005 * number_of_options + 1e-12` of 1 to accommodate rounded service probabilities; Avalanche does not renormalize them.
+Choice must identify an option with the highest probability (ties allowed, within tolerance `1e-5`). Score must lie in `[0, n-1]`. When a call returns, Avalanche also checks the numbers against the provider's own rounding: Choice/Score probability totals must be positive and sum to 1, and Score must equal `sum(index * probability)`, within what that provider's rounding can explain. TypeSafe rounds to two decimals, so a total may differ from 1 by `0.005 * number_of_options + 1e-12`. Gemini Decision does not round; Avalanche allows `5e-10 * number_of_options + 1e-12`. Avalanche does not renormalize.
 
 Before returning, Avalanche checks the raw response against the supplied questions: answer IDs and types must match exactly, Choice option sets must match, and Score legends must preserve every declared level. Malformed responses fail rather than silently losing unknown answers or options.
 
@@ -175,8 +251,8 @@ Unknown usage is `None`, not zero.
 
 | Error | Caller-visible condition |
 | --- | --- |
-| `ClassifierStepError` | Invalid decorator options, invalid injected `classifier` parameter, an attempt to override the injected classifier, or use after the step has finished. |
-| `ClassifierStepExecutionError` | Invalid call state/questions (including missing questions), `input_model` validation failure, missing credentials, SDK/network failure, invalid service response, or resource cleanup failure without an earlier body error. |
+| `ClassifierStepError` | Invalid decorator options, a declared question the provider cannot take, invalid injected `classifier` parameter, an attempt to override the injected classifier, or use after the step has finished. |
+| `ClassifierStepExecutionError` | Invalid call state/questions (including missing questions), `input_model` validation failure, a call question the provider cannot take, a missing key (the message names the variable), a missing provider package (the message names the extra), SDK/network failure, invalid service response, or resource cleanup failure without an earlier body error. |
 | `asyncio.CancelledError` | Cancellation propagates without conversion. |
 
 Declaration errors are raised while decorating; invalid call inputs fail before a request. Execution messages include the step name and a sanitized error description rather than raw state, credentials, or server-echoed text. Exceptions from the surrounding user-written step body propagate as body errors.

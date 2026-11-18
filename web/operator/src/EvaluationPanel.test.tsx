@@ -2,12 +2,13 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { OperatorApi } from "./api";
+import { EvaluationDefinition } from "./EvaluationDefinition";
 import { EvaluationPanel } from "./EvaluationPanel";
 import { mapEvaluationRecord, type EvaluationRecord } from "./evaluations";
 import { Inspector } from "./Inspector";
 import { RunSnapshotMsg } from "./model";
 import { EvaluationRecordV2 } from "./generated/operator";
-import { createApi, node, snapshotFor } from "./test/fixtures";
+import { createApi, evaluationDeclaration, node, snapshotFor } from "./test/fixtures";
 import { useRunEvaluations } from "./useRunEvaluations";
 
 function PollingPanel(props: {
@@ -217,4 +218,39 @@ describe("execution evaluations", () => {
       expect(screen.queryByRole("article")).not.toBeInTheDocument();
     },
   );
+});
+
+it("names the provider beside the model on an evaluation's definition and result", () => {
+  const definition = () => screen.getByRole("region", { name: "Evaluation declaration" });
+  const named = {
+    ...evaluationDeclaration,
+    runtime: {
+      classifier: { kind: "gemini_decision" },
+      model: "gemini-decision-1",
+      timeout: 12,
+    },
+  };
+  const view = render(<EvaluationDefinition raw={JSON.stringify(named)} />);
+  expect(within(definition()).getByText("Gemini Decision")).toBeVisible();
+  expect(within(definition()).getByText("gemini-decision-1")).toBeVisible();
+
+  // A declaration recorded before providers were named is TypeSafe's.
+  view.rerender(<EvaluationDefinition raw={JSON.stringify(evaluationDeclaration)} />);
+  expect(within(definition()).getByText("TypeSafe")).toBeVisible();
+  view.unmount();
+
+  const result = () => screen.getByRole("region", { name: "Execution evaluations" });
+  const answered = render(
+    <EvaluationPanel
+      loading={false}
+      record={{
+        ...completed,
+        result: { ...completed.result, classifier: { kind: "openai_decisions" } },
+      }}
+    />,
+  );
+  expect(result()).toHaveTextContent("OpenAI Decisions");
+  expect(result()).toHaveTextContent("jev-latest");
+  answered.rerender(<EvaluationPanel loading={false} record={completed} />);
+  expect(result()).toHaveTextContent("TypeSafe");
 });

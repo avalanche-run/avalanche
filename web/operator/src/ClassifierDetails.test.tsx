@@ -157,6 +157,68 @@ it("keeps runtime-only definitions inspectable and distinguishes replaceable def
   expect(screen.getByRole("region", { name: "Question route" })).toBeVisible();
 });
 
+it("reads the classifier a declaration names, and declarations recorded before it was named", () => {
+  const named = { ...declaration.runtime, classifier: { kind: "typesafe" } };
+  expect(
+    decodeClassifierDeclaration(JSON.stringify({ ...declaration, runtime: named })).runtime,
+  ).toEqual(named);
+  expect(decodeClassifierDeclaration(JSON.stringify(declaration)).runtime).toEqual(
+    declaration.runtime,
+  );
+  expect(() =>
+    decodeClassifierDeclaration(
+      JSON.stringify({ ...declaration, runtime: { ...named, classifier: "typesafe" } }),
+    ),
+  ).toThrow();
+});
+
+it("names the provider beside the model on a definition and on each recorded call", () => {
+  const service = () => screen.getByRole("region", { name: "Decision service" });
+  const openai: ClassifierDeclaration = {
+    ...declaration,
+    runtime: { classifier: { kind: "openai_decisions" }, model: "gpt-6-luna", timeout: 10 },
+  };
+  const view = render(<ClassifierDefinition declaration={openai} />);
+  expect(service()).toHaveTextContent("OpenAI Decisions");
+  expect(service()).toHaveTextContent("gpt-6-luna");
+
+  // A declaration recorded before providers were named is TypeSafe's.
+  view.rerender(<ClassifierDefinition declaration={declaration} />);
+  expect(service()).toHaveTextContent("TypeSafe");
+  expect(service()).toHaveTextContent("jev-latest");
+
+  // A recorded call shows the provider it used and the model that answered.
+  const gemini: ClassifierDeclaration = {
+    ...declaration,
+    runtime: { classifier: { kind: "gemini_decision" }, model: "declared-model", timeout: 10 },
+  };
+  view.rerender(
+    <ClassifierInvocationDetails invocation={{ ...success(), declaration: gemini }} />,
+  );
+  expect(service()).toHaveTextContent("Gemini Decision");
+  expect(service()).toHaveTextContent("jev-1.13");
+  fireEvent.click(screen.getByRole("button", { name: "Expand invocation definition" }));
+  expect(screen.getAllByRole("region", { name: "Decision service" })).toHaveLength(1);
+
+  // Without an answer, the call shows the model it was declared with.
+  view.rerender(
+    <ClassifierInvocationDetails
+      invocation={{
+        ...success(),
+        declaration: {
+          ...gemini,
+          runtime: { ...gemini.runtime, classifier: { kind: "later" } },
+        },
+        status: "failed",
+        result: null,
+        error: "The provider refused the call",
+      }}
+    />,
+  );
+  expect(service()).toHaveTextContent("later");
+  expect(service()).toHaveTextContent("declared-model");
+});
+
 it("exposes nested serialized fields, nullable variants, constraints, and finite recursive references", () => {
   const decoded = parseClassifierDeclaration({
     ...declaration,

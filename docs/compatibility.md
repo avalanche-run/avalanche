@@ -42,6 +42,16 @@ items have no node records. Traces and evaluations retain their existing schema.
 Older clients may ignore the additive fields, but need the expansion event to
 render live map children. Delta's map scheduler integration is not included here.
 
+## Protocol 3.1: classifier providers
+
+Classifier steps and evaluations name their provider: `classifier=` beside
+`model=` and `timeout=`, the `avalanche.classifiers` namespace, and a
+`runtime.classifier` value in classifier and evaluation declarations. Protocol
+**3.1** extends 3.0. A deployment built on 3.0 runs unchanged on a 3.1 worker,
+and its declarations, which name no classifier, read as TypeSafe. A deployment
+built on 3.1 needs a 3.1 worker, because the worker's Avalanche must know the
+argument and the namespace.
+
 ## Avalanche 0.18.0
 
 Ray execution is removed: the `ray` extra, `RayExecutor` export, `--ray`

@@ -147,9 +147,14 @@ separate from the step return, including when later postprocessing fails.
 Set `TYPESAFE_API_KEY` in the executing process environment. Discovery needs
 neither credentials nor a client; execution without a key fails instead of
 substituting answers. Do not put keys in workflow definitions or metadata.
-Workflow `classifier_defaults` accepts `model` and `timeout` (seconds);
-step-level `model=` and `timeout=` override those defaults. Without either,
-the defaults are `jev-latest` and 10 seconds. Optional `slug=` names the node.
+Workflow `classifier_defaults` accepts `classifier`, `model` and `timeout`
+(seconds); step-level `classifier=`, `model=` and `timeout=` override those
+defaults. `classifier=ava.classifiers.TypeSafe()` is the default provider;
+`ava.classifiers.OpenAIDecisions()` (the `openai` extra, `OPENAI_API_KEY`) and
+`ava.classifiers.GeminiDecision()` (the `gemini` extra, `GEMINI_API_KEY`) are
+the others, and each needs only its own key; a level that sets `classifier=` takes its model from that same level,
+else the provider's default. Without any, the defaults are TypeSafe,
+`jev-latest` and 10 seconds. Optional `slug=` names the node.
 
 The repository's `examples/classifier_workflow.py` demonstrates all three answer
 types and returns the full typed result from `classifier_workflow()`:
@@ -395,8 +400,8 @@ combines metric answers with ordinary synchronous Python functions. Read
 Composite scores must be finite and within `[0, 1]`.
 
 Set `TYPESAFE_API_KEY` alongside agent provider credentials. Evaluation
-`model`/`timeout` overrides use workflow `classifier_defaults`, otherwise
-`jev-latest` and 10 seconds. Discovery makes no model calls. Automatic evaluation
+`classifier`/`model`/`timeout` overrides use workflow `classifier_defaults`,
+otherwise TypeSafe, `jev-latest` and 10 seconds. Discovery makes no model calls. Automatic evaluation
 requires operator-managed execution; embedded `.run()` reports **not evaluated**.
 The browser shows independent pending/completed/failed records per execution,
 including reruns. Errors never gate workflow progress or change its result.

@@ -14,6 +14,7 @@ import pytest
 import typesafe_sdk
 from pydantic import BaseModel, ValidationError
 
+import avalanche as ava
 from avalanche.agent.native.predict_rlm import (
     PredictRLMTokenUsage,
     PredictRLMTraceHeader,
@@ -24,6 +25,7 @@ from avalanche.evaluations import (
     EvalContext,
     EvaluationDeclaration,
     EvaluationError,
+    EvaluationResult,
     Evaluations,
     Metric,
     MetricInput,
@@ -277,9 +279,9 @@ async def test_evaluation_overrides_workflow_runtime_without_leaking(noul_servic
         context, runtime_defaults={"model": "workflow-model", "timeout": 9}
     )
     await evaluations.evaluate(context)
-    assert settings == [
-        {"model": "workflow-model", "timeout": 3.0},
-        {"model": "jev-latest", "timeout": 3.0},
+    assert [(used["model"], used["timeout"]) for used in settings] == [
+        ("workflow-model", 3.0),
+        ("jev-latest", 3.0),
     ]
 
 
@@ -369,6 +371,43 @@ def test_declaration_runtime_precedence_does_not_mutate_workflow_defaults():
         .runtime.timeout
         == 10
     )
+
+
+@pytest.mark.asyncio
+async def test_evaluation_classifier_takes_its_own_model_not_the_workflow_one(noul_service):
+    typesafe = ava.classifiers.TypeSafe()
+    defaults = {"classifier": typesafe, "model": "workflow-model", "timeout": 8}
+    context = EvalContext(inputs=NoInputs(), output="fact", trace=TRACE)
+    metrics = {"fact": noul(lambda ctx: ctx.output)}
+
+    inherited = Evaluations(metrics=metrics)
+    own_classifier = Evaluations(metrics=metrics, classifier=typesafe)
+    pinned = Evaluations(metrics=metrics, classifier=typesafe, model="jev-1.14.0")
+    declared = [
+        evaluations.declaration_metadata(defaults).runtime
+        for evaluations in (inherited, own_classifier, pinned)
+    ]
+    assert [(runtime.classifier, runtime.model) for runtime in declared] == [
+        (typesafe, "workflow-model"),
+        (typesafe, "jev-latest"),
+        (typesafe, "jev-1.14.0"),
+    ]
+    assert {runtime.timeout for runtime in declared} == {8}
+
+    results = [
+        await evaluations.evaluate(context, runtime_defaults=defaults)
+        for evaluations in (inherited, own_classifier, pinned)
+    ]
+    assert [json.loads(request.content)["model"] for request in noul_service.requests] == [
+        "workflow-model",
+        "jev-latest",
+        "jev-1.14.0",
+    ]
+    assert all(result.classifier == typesafe for result in results)
+    # Results recorded before classifiers were named were all TypeSafe calls.
+    historic = results[0].model_dump(mode="json")
+    del historic["classifier"]
+    assert EvaluationResult.model_validate_json(json.dumps(historic)).classifier == typesafe
 
 
 def test_declaration_metadata_owns_nested_questions_and_public_collections():
@@ -576,7 +615,7 @@ async def test_malformed_answers_use_existing_classifier_validation_and_close(se
         }
     )
     with pytest.raises(
-        EvaluationError, match="Jev evaluation for metrics 'fact'.*Invalid TypeSafe response"
+        EvaluationError, match="Evaluation for metrics 'fact'.*Invalid TypeSafe response"
     ):
         await evaluations.evaluate(EvalContext(inputs=NoInputs(), output="state", trace=TRACE))
     assert all(transport.closed for transport in service.transports)
@@ -591,7 +630,7 @@ async def test_service_failure_exposes_stage_not_credentials_or_echoed_state(nou
 
     noul_service.handler = fail
     with pytest.raises(
-        EvaluationError, match="Jev evaluation for metrics 'fact'.*HTTP 401"
+        EvaluationError, match="Evaluation for metrics 'fact'.*HTTP 401"
     ) as caught:
         await Evaluations(metrics={"fact": noul(lambda ctx: ctx.output)}).evaluate(
             EvalContext(inputs=NoInputs(), output=secret, trace=TRACE)

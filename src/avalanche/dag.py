@@ -90,6 +90,7 @@ if TYPE_CHECKING:
     from runtime.operator.hooks import RunHooks
 
     from .agent.defaults import AgentDefaults
+    from .classifier.models import ClassifierDefaults
     from .execution_services import ExecutionServicesSpec
     from .machine_test import WorkflowTest
     from .run_steps import RunTarget
@@ -2176,7 +2177,7 @@ class Workflow:
         input_type: type | None = None,
         context_type: type | None = None,
         agent_defaults: AgentDefaults | None = None,
-        classifier_defaults: dict[str, JsonValue] | None = None,
+        classifier_defaults: ClassifierDefaults | dict[str, JsonValue] | None = None,
         output_type: type[BaseModel] | None = None,
         emits: tuple[str, ...] = (),
         key: tuple[str, ...] = (),
@@ -3151,7 +3152,7 @@ def workflow(
     context: type | None = None,
     ctx: type | None = None,
     agent_defaults: AgentDefaults | Mapping[str, object] | None = None,
-    classifier_defaults: dict[str, JsonValue] | None = None,
+    classifier_defaults: ClassifierDefaults | dict[str, JsonValue] | None = None,
 ) -> Callable[[], Workflow] | Callable[[Callable[[], None]], Callable[[], Workflow]]:
     """
     Decorator for workflow definitions.

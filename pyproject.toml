@@ -48,6 +48,11 @@ claude = [
 ]
 openai = [
     "openai-agents>=0.24.0",
+    # Decisions with JSON input and question parts (ava.classifiers.OpenAIDecisions).
+    "openai>=3.37.0",
+]
+gemini = [
+    "google-genai>=3.2.0",
 ]
 
 [dependency-groups]

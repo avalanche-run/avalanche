@@ -3248,6 +3248,8 @@ describe("evaluation declarations before execution", () => {
     expect(screen.queryByRole("region", { name: "Step interface" })).not.toBeInTheDocument();
     const section = within(screen.getByRole("region", { name: "Evaluation declaration" }));
     expect(section.getByText(evaluationDeclaration.runtime.model)).toBeVisible();
+    // The fixture predates named providers, so it reads as TypeSafe.
+    expect(section.getByText("TypeSafe")).toBeVisible();
     expect(section.getByText("12s")).toBeVisible();
     expect(section.getByText("overall_quality")).toBeVisible();
     expect(section.getByRole("region", { name: "Question grounded" })).toHaveTextContent(

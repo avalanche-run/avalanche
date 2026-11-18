@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.13.*"
 
 [manifest]
@@ -145,7 +145,7 @@ wheels = [
 
 [[package]]
 name = "avalanche-ai"
-version = "0.17.3"
+version = "0.20.7"
 source = { editable = "." }
 dependencies = [
     { name = "cloudpickle" },
@@ -171,6 +171,9 @@ dependencies = [
 [package.optional-dependencies]
 claude = [
     { name = "claude-agent-sdk" },
+]
+gemini = [
+    { name = "google-genai" },
 ]
 lance = [
     { name = "pylance" },
@@ -212,6 +215,7 @@ requires-dist = [
     { name = "dataframely", specifier = ">=1.13.0,<2" },
     { name = "fastapi", specifier = ">=0.115,<1" },
     { name = "filelock", specifier = ">=4.2.1,<5" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=3.2.0" },
     { name = "grpcio", specifier = ">=1.75.1" },
     { name = "openai-agents", marker = "extra == 'openai'", specifier = ">=0.24.0" },
     { name = "polars", specifier = ">=1.34,<1.35" },
@@ -228,7 +232,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.30,<1" },
     { name = "watchfiles", specifier = ">=1.1.1" },
 ]
-provides-extras = ["lance", "claude", "openai"]
+provides-extras = ["lance", "claude", "openai", "gemini"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -589,6 +593,15 @@ wheels = [
 ]
 
 [[package]]
+name = "distro"
+version = "1.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/fc/f8/98eea607f65de6527f8a2e8885fc8015d3e6f5775df186e443e0964a11c3/distro-1.9.0.tar.gz", hash = "sha256:2fa77c6fd8940f116ee1d6b94a2f90b13b5ea8d019b98bc8bafdcabcdd9bdbed", size = 60722, upload-time = "2023-12-24T09:54:32.31Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/12/b3/231ffd4ab1fc9d679809f356cebee130ac7daa00d6d6f3206dd4fd137e9e/distro-1.9.0-py3-none-any.whl", hash = "sha256:7bffd925d65168f85027d8da9af6bddab658135b840670a223589bc0c8ef02b2", size = 20277, upload-time = "2023-12-24T09:54:30.421Z" },
+]
+
+[[package]]
 name = "docker"
 version = "7.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -750,6 +763,45 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/95/56/925779e5690971f1b022f7d107caf015c33ec09560261273ec137e23a8f2/gepa-0.1.4.tar.gz", hash = "sha256:6dd153a676ae5481764860d19286a9c0e8ddb5ef70d7f13044faf24978bdb6b8", size = 351343, upload-time = "2026-07-15T14:53:59.929Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fd/77/5b3a281cfd9caaa9e68349b434cf27f1ca448003ee0067a1ae2184dc52d1/gepa-0.1.4-py3-none-any.whl", hash = "sha256:12b971039599625c156d2231f6d72a29c31a22e9c237689459b5f1a3c353f532", size = 290167, upload-time = "2026-07-15T14:53:58.422Z" },
+]
+
+[[package]]
+name = "google-auth"
+version = "2.62.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "pyasn1-modules" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4a/d4/87353e950d653d87360176363d51f316e8e368e1ddbb7ba7aa5503c30c3e/google_auth-2.62.2.tar.gz", hash = "sha256:046c61a72d3a847d6df6417a7f0d5cf054e3b82bbcb54fb1e69d47880964049c", size = 404543, upload-time = "2026-11-10T15:50:55.102Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a0/d4/0f8481baa50f75db3bb19a0df79fe19615e66eccfc3afb0b946dcb8791b3/google_auth-2.62.2-py3-none-any.whl", hash = "sha256:e9bcdb0679b6a4369ac327c5c59f06d92f7b4cd2624e7100294c14632f55a36b", size = 270150, upload-time = "2026-11-10T15:50:53.408Z" },
+]
+
+[package.optional-dependencies]
+requests = [
+    { name = "requests" },
+]
+
+[[package]]
+name = "google-genai"
+version = "3.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+    { name = "distro" },
+    { name = "google-auth", extra = ["requests"] },
+    { name = "httpx2" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "sniffio" },
+    { name = "tenacity" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/6b/fa/041ef12c71d6e150d8fb99049847388aa0d349d98a7c67614746a7b6ef65/google_genai-3.2.0.tar.gz", hash = "sha256:b848937937b7b72594e75c57f01618ca201275afaedbfd717c004434ebf592f5", size = 826292, upload-time = "2026-11-11T17:49:09.168Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/23/28319604be07dfce63a2ed84453fb6528011fe20ed1fc2b14514c88ce285/google_genai-3.2.0-py3-none-any.whl", hash = "sha256:4d7289b050ae2fec5cf1e2b4775f59de1730a9bacd714b4b33a11075f929f0da", size = 1363836, upload-time = "2026-11-11T17:49:07.352Z" },
 ]
 
 [[package]]
@@ -1796,6 +1848,27 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/5f/eb/771f9ecb0c65e73fe9dccdd1717901b9594f08c4515d000c7c62df573811/pyarrow-24.0.0-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:641f795b361874ac9da5294f8f443dfdbee355cf2bd9e3b8d97aaac2306b9b37", size = 49451819, upload-time = "2026-04-21T10:49:21.474Z" },
     { url = "https://files.pythonhosted.org/packages/48/da/61ae89a88732f5a785646f3ec6125dbb640fa98a540eb2b9889caa561403/pyarrow-24.0.0-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:8adc8e6ce5fccf5dc707046ae4914fd537def529709cc0d285d37a7f9cd442ca", size = 51909252, upload-time = "2026-04-21T10:49:31.164Z" },
     { url = "https://files.pythonhosted.org/packages/cb/1a/8dd5cafab7b66573fa91c03d06d213356ad4edd71813aa75e08ce2b3a844/pyarrow-24.0.0-cp313-cp313t-win_amd64.whl", hash = "sha256:9b18371ad2f44044b81a8d23bc2d8a9b6a6226dca775e8e16cfee640473d6c5d", size = 27388127, upload-time = "2026-04-21T10:49:37.334Z" },
+]
+
+[[package]]
+name = "pyasn1"
+version = "0.6.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/88/7e/3c0da41061a2021cac7cd524fd57092adbe5b515e8bf9005702e366802e2/pyasn1-0.6.5.tar.gz", hash = "sha256:6b11616a6bcf3a40e635f082bb232fa57b5e0dd7f517bd7ddd69ec3794508a47", size = 155152, upload-time = "2026-10-27T06:32:49.125Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/19/1f/3eefd5c84c35cae44549ce1c7f7e58f7945b34f5a6bce07a135438522073/pyasn1-0.6.5-py3-none-any.whl", hash = "sha256:4017b0fce125096b8573b39c989fdb1a4b19cf761e683398184550fea0e66587", size = 84807, upload-time = "2026-10-27T06:32:48.045Z" },
+]
+
+[[package]]
+name = "pyasn1-modules"
+version = "0.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyasn1" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e9/e6/78ebbb10a8c8e4b61a59249394a4a594c1a7af95593dc933a349c8d00964/pyasn1_modules-0.4.2.tar.gz", hash = "sha256:677091de870a80aae844b1ca6134f54652fa2c8c5a52aa396440ac3106e941e6", size = 307892, upload-time = "2025-03-28T02:41:22.17Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/8d/d529b5d697919ba8c11ad626e835d4039be708a35b0d22de83a269a6682c/pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a", size = 181259, upload-time = "2025-03-28T02:41:19.028Z" },
 ]
 
 [[package]]

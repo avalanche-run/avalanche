@@ -728,7 +728,7 @@ def test_service_failure_is_an_evaluation_error(tmp_path, evaluation_service):
         assert run.status == RunStatus.SUCCESS
         record = wait_evaluation(operator, run.run_id)
         assert record.status == "failed"
-        assert "Jev evaluation" in record.error
+        assert "Evaluation for metrics" in record.error
         assert record.result is None
     finally:
         operator.close()

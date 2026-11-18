@@ -458,6 +458,7 @@ workflow; the rest are focused pattern demos.
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Customer feedback review](examples/customer_feedback_review/)      | End-to-end agentic workflow: parallel theme/risk analysis of a feedback workbook, deterministic reconciliation, and published Excel + Word review pack. |
 | [`classifier_workflow.py`](examples/classifier_workflow.py) | TypeSafe Choice, Noul, and Score questions, typed answers, and current/historical classifier inspection in the operator UI. |
+| [`classifier_provider_workflow.py`](examples/classifier_provider_workflow.py) | The same three question types answered by OpenAI Decisions or Gemini Decision when that key is set, else TypeSafe. |
 | [`complex_dag_pattern.py`](examples/complex_dag_pattern.py)       | Local DAG API with explicit data passing, fan-out, and fan-in on`ava.LocalExecutor`.                                                                  |
 | [`stream_pattern.py`](examples/stream_pattern.py)                 | Stream-based incremental processing with local Iceberg tables.                                                                                          |
 | [`cursor_pattern.py`](examples/cursor_pattern.py)                 | Manual checkpoint control with cursors for advanced incremental flows.                                                                                  |
@@ -504,11 +505,16 @@ A step's own `runtime=ava.runtimes.PredictRLM(...)` is merged over the workflow
 default field by field, so a step sets only what differs. `agent_defaults` holds
 only the runtime; signatures and tools remain defined on each agent step.
 
-Classifier steps use TypeSafe directly, not DSPy. Set `TYPESAFE_API_KEY` in the
+Classifier steps call a decision service directly, not DSPy: TypeSafe by default,
+chosen with `classifier=ava.classifiers.TypeSafe()`, or OpenAI's Decisions API with
+`classifier=ava.classifiers.OpenAIDecisions()` (the `openai` extra and `OPENAI_API_KEY`), or
+Google's Gemini Decision with `classifier=ava.classifiers.GeminiDecision()` (the `gemini` extra
+and `GEMINI_API_KEY`); see [choosing the provider](docs/classifier-steps.md#choosing-the-provider).
+Set the key of the provider in use (`TYPESAFE_API_KEY` by default) in the
 executing environment or your project's `.env` file; exported variables take precedence.
-Choose `model` and `timeout` on `@ava.classifier_step` or in
+Choose `classifier`, `model` and `timeout` on `@ava.classifier_step` or in
 `@ava.workflow(classifier_defaults={...})`. Step values override workflow values;
-otherwise the defaults are `jev-latest` and 10 seconds. No key is needed to
+otherwise the defaults are TypeSafe, `jev-latest` and 10 seconds. No key is needed to
 discover questions before running. Declare optional defaults with
 `@ava.classifier_step(questions=...)`, or supply a complete runtime mapping with
 `await classifier(state=..., questions=...)`; call questions replace, not merge
@@ -521,12 +527,13 @@ probability semantics, and local evidence retention limits.
 | --------- | ----------------------------- |
 | `lance`  | Lance storage backend         |
 | `claude` | `ava.runtimes.ClaudeAgent`, which runs agent steps with Claude through the Claude Agent SDK; also needs the Claude Code CLI |
-| `openai` | `ava.runtimes.OpenAIAgent`, which runs agent steps with OpenAI models through the OpenAI Agents SDK |
+| `openai` | `ava.runtimes.OpenAIAgent`, which runs agent steps with OpenAI models through the OpenAI Agents SDK, and `ava.classifiers.OpenAIDecisions`, which answers classifier steps and evaluations with OpenAI's Decisions API |
+| `gemini` | `ava.classifiers.GeminiDecision`, which answers classifier steps and evaluations with Google's Gemini Decision service through `google-genai`; needs `GEMINI_API_KEY` |
 
 The remaining extras can be combined:
 
 ```bash
-uv add "avalanche-ai[lance,claude,openai]"
+uv add "avalanche-ai[lance,claude,openai,gemini]"
 ```
 
 ## Documentation

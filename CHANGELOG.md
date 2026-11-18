@@ -2,6 +2,53 @@
 
 ## Unreleased
 
+- New classifier provider `ava.classifiers.GeminiDecision()`: classifier steps
+  and evaluations can be answered by Google's Gemini Decision service (default
+  model `gemini-decision-1`) and return the same `ClassificationResult`. Install
+  the new `gemini` extra (`avalanche-ai[gemini]`, `google-genai` 3.2.0 or later)
+  and set `GEMINI_API_KEY`. Gemini Decision is in beta. It needs text
+  instructions on every question and refuses structured JSON instructions or
+  criteria, a Choice with fewer than 2 options and more than 1,000 questions,
+  each with an error naming the question and the limit. See
+  [Classifier steps](docs/classifier-steps.md#gemini-decision).
+- Classifier steps and evaluations call their decision model through a
+  provider. `ava.classifiers.TypeSafe()` is the default. Set it with
+  `classifier=`, beside `model=` and `timeout=`, on
+  `@ava.classifier_step`, in `@ava.workflow(classifier_defaults={...})` and on
+  `ava.Evaluations`. A level that sets `classifier=` takes its model from that
+  same level, else from the provider's default model. Existing flows do not
+  change: `model=` and `timeout=` alone keep meaning TypeSafe.
+- New classifier provider `ava.classifiers.OpenAIDecisions()`: classifier steps
+  and evaluations can be answered by OpenAI's Decisions API (default model
+  `gpt-6-luna`, key `OPENAI_API_KEY`) and return the same
+  `ClassificationResult`. It needs the `openai` extra, which now requires
+  `openai>=3.37.0`. Questions OpenAI cannot take are refused before any request
+  with the question named (a score with more than 10 levels, a choice with fewer
+  than 2 or more than 255 options, JSON option criteria or score levels, noul
+  criteria, more than 400 questions), and a question OpenAI refuses to answer
+  fails the whole call.
+- Classifier and evaluation declarations, recorded classifier calls and
+  evaluation results now name the provider (`{"kind": "typesafe"}`). Records
+  written before this release name none and read as TypeSafe.
+- Web UI: the classifier definition, each recorded classifier call, the
+  evaluation definition and each evaluation result show the provider beside the
+  model. Records that name no provider show TypeSafe.
+- Only the key of the provider in use is required, and a missing key fails with
+  an error naming its variable. Evaluation errors say "Evaluation for metrics"
+  instead of "Jev evaluation".
+- Delta protocol 3.1 (`avalanche.PROTOCOL_VERSION`), an additive minor: a
+  deployment that uses `classifier=` needs a worker on 3.1; deployments built on
+  3.0 run unchanged.
+- Docs: [choosing the provider](docs/classifier-steps.md#choosing-the-provider)
+  compares TypeSafe, OpenAI Decisions and Gemini Decision side by side (service,
+  default model, key, extra, stability and question limits). New example
+  `examples/classifier_provider_workflow.py` names OpenAI Decisions or Gemini
+  Decision when that key is set, else TypeSafe, with questions every provider
+  takes.
+- Delta applies `@ava.workflow(classifier_defaults={...})` to classifier steps,
+  as the local operator does. Earlier Delta workers ignored a workflow-level
+  classifier `model` or `timeout` and used the step's own or the default values.
+
 ## 0.20.18
 
 ## 0.20.17

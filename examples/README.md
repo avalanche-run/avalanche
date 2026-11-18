@@ -135,6 +135,19 @@ model-specific cursors, and a multi-table sync checkpoint.
 Flow file for the local operator and connected UI path. It is discovered along
 with the other examples when `uv run ava dev` runs from this directory.
 
+### `classifier_provider_workflow.py`
+
+One classifier step with a choice, a noul and a score, answered by a provider other
+than the default. When the file loads it names OpenAI Decisions if `OPENAI_API_KEY`
+is set (with the `openai` extra installed), else Gemini Decision if `GEMINI_API_KEY`
+is set (with the `gemini` extra), else TypeSafe. The questions are written so every
+provider takes them. The operator UI shows the provider beside the model. See
+[choosing the provider](../docs/classifier-steps.md#choosing-the-provider).
+
+```bash
+uv run python examples/classifier_provider_workflow.py
+```
+
 ## Notes
 
 - `ava.Stream(table)` is a provider marker, not an object you call with
@@ -180,7 +193,8 @@ uv run codex-lm auth login NAME
 
 **Nothing set up.** Codex LM stays selected. The example still loads, so the operator
 can discover it, but the first agent call fails with Codex LM's login instructions.
-Classifier steps and evaluations separately need `TYPESAFE_API_KEY`.
+Classifier steps and evaluations separately need the key of their classifier
+provider: `TYPESAFE_API_KEY` unless the flow names another provider.
 
 **Overrides.** Per-example variables replace the automatic choice and are checked
 first; with both set, Codex LM and the API keys are not checked at all. Give any DSPy

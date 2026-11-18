@@ -24,9 +24,34 @@ export type ClassifierQuestion =
       criteria: Exclude<ClassifierEntry, null>[];
     };
 
+/** The vendor's decision service behind a classifier step or an evaluation. */
+export interface ClassifierProvider {
+  kind: string;
+}
+
+const PROVIDER_NAMES = new Map([
+  ["typesafe", "TypeSafe"],
+  ["openai_decisions", "OpenAI Decisions"],
+  ["gemini_decision", "Gemini Decision"],
+]);
+
+/**
+ * The provider's display name. Declarations and results recorded before the provider was
+ * named are TypeSafe's; a kind this UI does not know yet is shown as recorded.
+ */
+export function classifierProviderName(provider: ClassifierProvider | undefined): string {
+  if (provider === undefined) return "TypeSafe";
+  return PROVIDER_NAMES.get(provider.kind) ?? provider.kind;
+}
+
 export interface ClassifierDeclaration extends StepInterface {
   questions: Record<string, ClassifierQuestion> | null;
-  runtime: { model: string; timeout: number };
+  runtime: {
+    /** The decision service called; absent on declarations recorded before it was named. */
+    classifier?: ClassifierProvider;
+    model: string;
+    timeout: number;
+  };
   input_schema: JsonSchema | null;
 }
 
@@ -160,10 +185,18 @@ function array(value: unknown, path: string): unknown[] {
 
 function declarationRuntime(value: unknown, path: string): ClassifierDeclaration["runtime"] {
   const runtime = record(value, path);
-  fields(runtime, ["model", "timeout"], path);
+  fields(runtime, ["classifier", "model", "timeout"], path);
   const timeout = number(runtime.timeout, `${path}.timeout`);
   if (timeout === 0) throw new Error(`${path}.timeout must be positive`);
-  return { model: string(runtime.model, `${path}.model`), timeout };
+  const model = string(runtime.model, `${path}.model`);
+  if (runtime.classifier === undefined) return { model, timeout };
+  const classifier = record(runtime.classifier, `${path}.classifier`);
+  fields(classifier, ["kind"], `${path}.classifier`);
+  return {
+    classifier: { kind: string(classifier.kind, `${path}.classifier.kind`) },
+    model,
+    timeout,
+  };
 }
 
 export function decodeEvaluationDeclaration(raw: string): EvaluationDeclaration {

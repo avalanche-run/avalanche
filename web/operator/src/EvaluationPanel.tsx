@@ -1,5 +1,5 @@
 import { AnswerSummary } from "./ClassifierDetails";
-import type { EvaluationDeclaration } from "./classifier";
+import { type EvaluationDeclaration, classifierProviderName } from "./classifier";
 import { MetricInputSummary } from "./MetricInputSummary";
 import type { EvaluationRecord } from "./evaluations";
 import { ValueView } from "./ValueView";
@@ -44,7 +44,8 @@ export function EvaluationPanel({
           </span>
           {record.status === "completed" && (
             <span className="text-muted [overflow-wrap:anywhere]">
-              {record.result.classification.model}
+              {classifierProviderName(record.result.classifier)} ·{" "}
+              <span>{record.result.classification.model}</span>
             </span>
           )}
         </div>

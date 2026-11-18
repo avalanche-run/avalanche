@@ -22,6 +22,8 @@ from avalanche.classifier import (
     ClassifierStepExecutionError,
     capture_classifier_evidence,
 )
+from avalanche.classifier.typesafe import TypeSafeAdapter
+from avalanche.evaluations import EvaluationError, Evaluations, Metric
 from runtime.operator import WorkflowRegistry
 
 
@@ -492,6 +494,176 @@ def test_workflow_defaults_do_not_leak_and_step_overrides_win(questions, service
         7.0,
     ]
     assert all(transport.closed for transport in service.transports)
+
+
+def test_classifier_and_its_model_resolve_together_across_levels(questions, service):
+    typesafe = ava.classifiers.TypeSafe()
+
+    @ava.source
+    def load():
+        return "charged twice"
+
+    @ava.classifier_step(questions=questions)
+    async def inherited(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket)
+
+    @ava.classifier_step(questions=questions, classifier=typesafe, model="jev-1.14.0")
+    async def pinned(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket)
+
+    @ava.classifier_step(questions=questions, classifier=typesafe, timeout=3.0)
+    async def own_classifier(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket)
+
+    @ava.classifier_step(questions=questions, model="step-model")
+    async def own_model(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket)
+
+    defaults = {"classifier": typesafe, "model": "workflow-model", "timeout": 7.0}
+
+    @ava.workflow(classifier_defaults=defaults)
+    def flow_inherited():
+        return inherited(load())
+
+    @ava.workflow(classifier_defaults=defaults)
+    def flow_pinned():
+        return pinned(load())
+
+    @ava.workflow(classifier_defaults=defaults)
+    def flow_own_classifier():
+        return own_classifier(load())
+
+    @ava.workflow(classifier_defaults=defaults)
+    def flow_own_model():
+        return own_model(load())
+
+    @ava.workflow
+    def flow_without_defaults():
+        return pinned(load())
+
+    for flow in (
+        flow_inherited,
+        flow_pinned,
+        flow_own_classifier,
+        flow_own_model,
+        flow_without_defaults,
+    ):
+        result = flow().run(executor=ava.LocalExecutor()).result()
+        assert result.choices["department"].choice == "billing"
+    # A step that names its classifier never takes the model set below it.
+    assert [json.loads(request.content)["model"] for request in service.requests] == [
+        "workflow-model",
+        "jev-1.14.0",
+        "jev-latest",
+        "step-model",
+        "jev-1.14.0",
+    ]
+    assert [request.extensions["timeout"]["read"] for request in service.requests] == [
+        7.0,
+        7.0,
+        3.0,
+        7.0,
+        10.0,
+    ]
+    declared = [
+        step.fn.__classifier_step__.declaration(flow_inherited().classifier_defaults).runtime
+        for step in (inherited, pinned, own_classifier, own_model)
+    ]
+    assert [(runtime.classifier, runtime.model) for runtime in declared] == [
+        (typesafe, "workflow-model"),
+        (typesafe, "jev-1.14.0"),
+        (typesafe, "jev-latest"),
+        (typesafe, "step-model"),
+    ]
+    assert defaults == {"classifier": typesafe, "model": "workflow-model", "timeout": 7.0}
+
+
+@pytest.mark.parametrize(
+    "defaults",
+    [
+        {"classifier": "typesafe"},
+        {"classifier": {"kind": "another-vendor"}},
+        {"classifier": None},
+        {"model": None},
+        {"provider": {"kind": "typesafe"}},
+    ],
+)
+def test_invalid_classifier_defaults_fail_when_the_workflow_is_declared(defaults):
+    with pytest.raises(ValueError):
+        ava.workflow(classifier_defaults=defaults)
+
+
+@pytest.mark.asyncio
+async def test_missing_key_names_the_variable_of_the_classifier_in_use(
+    tmp_path, monkeypatch, questions
+):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    observed = []
+
+    @ava.classifier_step(
+        questions=questions, classifier=ava.classifiers.TypeSafe(), model="jev-1.14.0"
+    )
+    async def classify(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket)
+
+    with capture_classifier_evidence(observed.append):
+        with pytest.raises(ava.ClassifierStepExecutionError, match="TYPESAFE_API_KEY"):
+            await classify.fn("charged twice")
+    assert [record.status for record in observed] == ["running", "failed"]
+    assert "TYPESAFE_API_KEY" in observed[-1].error
+    assert observed[-1].declaration.runtime.model == "jev-1.14.0"
+
+
+@pytest.fixture
+def two_option_choices(monkeypatch):
+    """Give the provider a limit, declared the way an adapter declares one."""
+
+    def check_questions(adapter, questions):
+        for name, question in questions.items():
+            if question.type == "choice" and len(question.criteria) < 2:
+                adapter.refuse(name, "a choice needs at least 2 options")
+
+    monkeypatch.setattr(TypeSafeAdapter, "check_questions", check_questions)
+
+
+@pytest.mark.asyncio
+async def test_a_question_the_provider_cannot_take_is_refused_before_any_request(
+    two_option_choices, questions, service
+):
+    refused = {"only": {"type": "choice", "criteria": {"single": None}}}
+    typesafe = ava.classifiers.TypeSafe()
+    naming = "question 'only' cannot be sent to TypeSafe: a choice needs at least 2 options"
+
+    # The step names its classifier and its questions: refused when it is declared.
+    with pytest.raises(ava.ClassifierStepError, match=naming):
+        ava.classifier_step(questions=refused, classifier=typesafe)
+
+    # The classifier comes from the workflow: refused when the declaration resolves.
+    @ava.classifier_step(questions=refused)
+    async def inherits(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket)
+
+    with pytest.raises(ava.ClassifierStepError, match=naming):
+        inherits.fn.__classifier_step__.declaration({"classifier": {"kind": "typesafe"}})
+    with pytest.raises(EvaluationError, match=naming):
+        Evaluations(
+            metrics={"only": Metric(state=lambda ctx: ctx.output, question=refused["only"])},
+            classifier=typesafe,
+        )
+
+    # The questions arrive with the call: refused there, with failed evidence.
+    observed = []
+
+    @ava.classifier_step(questions=questions)
+    async def per_call(ticket, *, classifier: ava.Classifier):
+        return await classifier(state=ticket, questions=refused)
+
+    with capture_classifier_evidence(observed.append):
+        with pytest.raises(ava.ClassifierStepExecutionError, match=naming):
+            await per_call.fn("charged twice")
+    assert [record.status for record in observed] == ["running", "failed"]
+    assert service.requests == [] and service.transports == []
 
 
 @pytest.mark.asyncio
@@ -1163,7 +1335,11 @@ def discovered():
     assert metadata["questions"]["z_last_alphabetically"]["instructions"] == {
         "ask": ["Is urgent?"]
     }
-    assert metadata["runtime"] == {"model": "discovery-model", "timeout": 4.0}
+    assert metadata["runtime"] == {
+        "classifier": {"kind": "typesafe"},
+        "model": "discovery-model",
+        "timeout": 4.0,
+    }
 
 
 def test_classification_result_is_a_serializable_workflow_final_value(

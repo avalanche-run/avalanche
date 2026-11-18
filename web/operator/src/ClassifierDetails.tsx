@@ -6,13 +6,15 @@ import { createCodeTheme } from "./codeTheme";
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-import type {
-  ClassifierAnswer,
-  ClassifierDeclaration,
-  ClassifierEntry,
-  ClassifierInvocation,
-  ClassifierQuestion,
-  MetricInput,
+import {
+  type ClassifierAnswer,
+  type ClassifierDeclaration,
+  type ClassifierEntry,
+  type ClassifierInvocation,
+  type ClassifierProvider,
+  type ClassifierQuestion,
+  type MetricInput,
+  classifierProviderName,
 } from "./classifier";
 import { ValueView } from "./ValueView";
 import { DeclaredSchema, StepInterfacePanel } from "./StepInterfacePanel";
@@ -341,6 +343,34 @@ export function ClassifierQuestions({
   );
 }
 
+/** The provider and model rows of a description list: which decision service answers. */
+export function ClassifierServiceTerms({
+  provider,
+  model,
+}: {
+  provider: ClassifierProvider | undefined;
+  model: string;
+}) {
+  return (
+    <>
+      <dt className="text-muted">Provider</dt>
+      <dd className="m-0 [overflow-wrap:anywhere]">{classifierProviderName(provider)}</dd>
+      <dt className="text-muted">Model</dt>
+      <dd className="m-0 font-mono [overflow-wrap:anywhere]">{model}</dd>
+    </>
+  );
+}
+
+function ClassifierService(props: { provider: ClassifierProvider | undefined; model: string }) {
+  return (
+    <section aria-label="Decision service" className="min-w-0">
+      <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
+        <ClassifierServiceTerms {...props} />
+      </dl>
+    </section>
+  );
+}
+
 export function ClassifierDefinition({
   declaration,
   context = "definition",
@@ -351,6 +381,14 @@ export function ClassifierDefinition({
   return (
     <div className="grid min-w-0 gap-5 py-3">
       <section aria-label="Classifier" className="min-w-0 border-l-2 border-classifier/40 pl-3">
+        {context === "definition" && (
+          <div className="mb-3 border-b border-line pb-3">
+            <ClassifierService
+              provider={declaration.runtime.classifier}
+              model={declaration.runtime.model}
+            />
+          </div>
+        )}
         <section aria-label="Questions" className="min-w-0">
           <h3 className="inspector-section-title">
             {context === "definition" && declaration.questions !== null
@@ -401,6 +439,10 @@ export function ClassifierInvocationDetails({
       className="classifier-invocation grid min-w-0 gap-3"
       aria-label={`Classifier invocation ${invocation.invocation_id}`}
     >
+      <ClassifierService
+        provider={invocation.declaration.runtime.classifier}
+        model={result?.model ?? invocation.declaration.runtime.model}
+      />
       <section aria-label="Input state" className="min-w-0">
         <h4 className="m-0 mb-1.5 font-mono text-[9px] tracking-[.08em] text-muted uppercase">
           Input

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Annotated, Literal, Self
+from typing import Annotated, Literal, Self, TypedDict
 
 from pydantic import (
     BaseModel,
@@ -17,6 +17,7 @@ from pydantic import (
 )
 
 from ..step_interface import StepInput, StepOutput
+from .providers import ClassifierProvider, TypeSafe
 
 
 def _validate_json(value: object, ancestors: set[int] | None = None) -> object:
@@ -99,7 +100,43 @@ def validate_state(value: object) -> JSONContent:
     return _STATE.validate_python(value)
 
 
+class ClassifierDefaults(TypedDict, total=False):
+    """The keys of ``@ava.workflow(classifier_defaults={...})``."""
+
+    classifier: ClassifierProvider
+    model: str
+    timeout: float
+
+
+class ClassifierSettings(_ClassifierModel):
+    """What one level sets: a step, an ``Evaluations`` declaration or workflow defaults."""
+
+    classifier: ClassifierProvider | None = None
+    model: NonemptyString | None = None
+    timeout: Annotated[float, Field(gt=0)] | None = None
+
+    @field_validator("model")
+    @classmethod
+    def meaningful_model(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("model must not be blank")
+        return value
+
+    @model_validator(mode="before")
+    @classmethod
+    def no_explicit_none(cls, value: object) -> object:
+        # Leaving a setting out means "not set here"; None is not a setting.
+        if isinstance(value, dict) and any(item is None for item in value.values()):
+            raise ValueError("classifier settings cannot be None; omit them instead")
+        return value
+
+
 class ClassifierRuntime(_ClassifierModel):
+    """The resolved provider, model and timeout of one classifier step or evaluation."""
+
+    # Declarations recorded before providers existed name no classifier and were
+    # all TypeSafe calls, so these defaults are the TypeSafe ones.
+    classifier: ClassifierProvider = Field(default_factory=TypeSafe)
     model: NonemptyString = "jev-latest"
     # typesafe-sdk 0.6.0's documented per-HTTP-operation timeout, in seconds.
     timeout: Annotated[float, Field(gt=0)] = 10.0
@@ -113,10 +150,42 @@ class ClassifierRuntime(_ClassifierModel):
 
 
 def validate_runtime_defaults(value: object) -> dict[str, JsonValue]:
-    """Validate only the supported defaults, retaining explicit overrides."""
-    _validate_json(value)
-    runtime = ClassifierRuntime.model_validate(value)
-    return runtime.model_dump(mode="json", exclude_unset=True)
+    """Validate only the supported settings, retaining explicit ones as owned JSON."""
+    settings = ClassifierSettings.model_validate(value)
+    return settings.model_dump(mode="json", exclude_none=True)
+
+
+def resolve_runtime(*levels: ClassifierSettings) -> ClassifierRuntime:
+    """Resolve settings given from the lowest level (workflow) to the highest (step, eval).
+
+    The highest level that sets a classifier decides it, and its model comes from
+    that same level or from a higher one, else from the classifier's default model:
+    a model set below for another classifier is never applied to it. Without any
+    classifier the provider is TypeSafe and the highest model wins. The timeout
+    resolves on its own.
+    """
+    from .adapter import adapter_for
+
+    classifier: ClassifierProvider | None = None
+    model: str | None = None
+    timeout: float | None = None
+    for level in levels:
+        if level.classifier is not None:
+            classifier = level.classifier
+            model = level.model
+        elif level.model is not None:
+            model = level.model
+        if level.timeout is not None:
+            timeout = level.timeout
+    if classifier is None:
+        classifier = TypeSafe()
+    resolved: dict[str, object] = {
+        "classifier": classifier,
+        "model": model if model is not None else adapter_for(classifier).default_model,
+    }
+    if timeout is not None:
+        resolved["timeout"] = timeout
+    return ClassifierRuntime.model_validate(resolved)
 
 
 class ClassifierDeclaration(_ClassifierModel):
@@ -132,12 +201,10 @@ class ClassificationUsage(_ClassifierModel):
     output_tokens: Annotated[int, Field(ge=0)] | None = None
 
 
-def _validate_distribution(probabilities: dict[str, float]) -> None:
-    # TypeSafe rounds each probability to two decimal places independently.
+def _validate_distribution(probabilities: dict[str, float], tolerance: float) -> None:
     # Bound accumulated rounding error without renormalizing the original evidence.
     total = math.fsum(probabilities.values())
-    rounding_tolerance = 0.005 * len(probabilities) + 1e-12
-    if total <= 0 or not math.isclose(total, 1.0, rel_tol=0, abs_tol=rounding_tolerance):
+    if total <= 0 or not math.isclose(total, 1.0, rel_tol=0, abs_tol=tolerance):
         raise ValueError("probabilities must sum to 1 within rounding precision")
 
 
@@ -149,7 +216,6 @@ class ChoiceAnswer(_ClassifierModel):
 
     @model_validator(mode="after")
     def valid_distribution(self) -> Self:
-        _validate_distribution(self.probabilities)
         if self.choice not in self.probabilities:
             raise ValueError("choice must identify a returned option")
         if not math.isclose(
@@ -181,15 +247,8 @@ class ScoreAnswer(_ClassifierModel):
             raise ValueError(
                 "score legend and probabilities must contain every zero-based level"
             )
-        _validate_distribution(self.probabilities)
         if not 0 <= self.score <= len(levels) - 1:
             raise ValueError("score must be within the declared levels")
-        expected = sum(index * self.probabilities[str(index)] for index in range(len(levels)))
-        # The service rounds every probability and the final score independently
-        # to two decimals. Bound their cumulative weighted rounding error.
-        rounding_tolerance = 0.005 * (1 + len(levels) * (len(levels) - 1) / 2) + 1e-12
-        if not math.isclose(self.score, expected, rel_tol=0, abs_tol=rounding_tolerance):
-            raise ValueError("score must equal the probability-weighted level")
         return self
 
 
@@ -241,10 +300,18 @@ class ClassificationResult(_ClassifierModel):
         }
 
     def validate_declaration(self, declaration: ClassifierDeclaration) -> None:
+        """Check the answers against the declared questions and the provider's rounding.
+
+        How far probabilities may be from summing to 1, and a score from its
+        weighted levels, depends on how the declared provider rounds them.
+        """
+        from .adapter import adapter_for
+
         if declaration.questions is None:
             raise ValueError("successful classifications require resolved questions")
         if self.answers.keys() != declaration.questions.keys():
             raise ValueError("answers must match exactly the declared question IDs")
+        rounding = adapter_for(declaration.runtime.classifier).rounding
         for name, question in declaration.questions.items():
             answer = self.answers[name]
             if answer.type != question.type:
@@ -254,10 +321,28 @@ class ClassificationResult(_ClassifierModel):
                     raise ValueError(
                         f"answer {name!r} must contain exactly the declared options"
                     )
+                _validate_distribution(
+                    answer.probabilities,
+                    rounding.distribution_tolerance(len(answer.probabilities)),
+                )
             elif isinstance(question, ScoreQuestion) and isinstance(answer, ScoreAnswer):
                 legend = {str(index): entry for index, entry in enumerate(question.criteria)}
                 if not _same_json(answer.legend, legend):
                     raise ValueError(f"answer {name!r} must preserve the declared score levels")
+                levels = len(legend)
+                _validate_distribution(
+                    answer.probabilities, rounding.distribution_tolerance(levels)
+                )
+                expected = sum(
+                    index * answer.probabilities[str(index)] for index in range(levels)
+                )
+                if not math.isclose(
+                    answer.score,
+                    expected,
+                    rel_tol=0,
+                    abs_tol=rounding.score_tolerance(levels),
+                ):
+                    raise ValueError("score must equal the probability-weighted level")
 
 
 class ClassifierInvocation(_ClassifierModel):

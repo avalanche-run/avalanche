@@ -1,11 +1,10 @@
-"""Bodyful classifier steps backed by the process-local asynchronous TypeSafe SDK."""
+"""Bodyful classifier steps, calling their decision model through a provider adapter."""
 
 from __future__ import annotations
 
 import asyncio
 import inspect
 import json
-import os
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -13,7 +12,6 @@ from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import update_wrapper
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, JsonValue, PydanticUserError, TypeAdapter, ValidationError
 
@@ -24,29 +22,28 @@ from ..step_interface import (
     resolve_step_signature,
     step_interface_from_signature,
 )
+from . import adapter as provider_adapter
+from .errors import ClassifierStepError, ClassifierStepExecutionError
 from .evidence import emit_classifier_evidence
 from .models import (
     ClassificationResult,
     ClassifierDeclaration,
     ClassifierInvocation,
-    ClassifierRuntime,
+    ClassifierSettings,
     JSONContent,
+    resolve_runtime,
     validate_questions,
     validate_runtime_defaults,
     validate_state,
 )
+from .providers import ClassifierProvider
 
-if TYPE_CHECKING:
-    from typesafe_sdk import AsyncTypeSafeClient, SystemOneResponse
-
-
-class ClassifierStepError(RuntimeError):
-    """An invalid classifier declaration or invocation boundary."""
-
-
-class ClassifierStepExecutionError(RuntimeError):
-    """A TypeSafe invocation or classifier resource cleanup failed."""
-
+__all__ = [
+    "Classifier",
+    "ClassifierStepError",
+    "ClassifierStepExecutionError",
+    "classifier_step",
+]
 
 _WORKFLOW_CLASSIFIER_DEFAULTS: ContextVar[Mapping[str, JsonValue]] = ContextVar(
     "avalanche_classifier_workflow_defaults", default={}
@@ -55,53 +52,11 @@ _WORKFLOW_CLASSIFIER_DEFAULTS: ContextVar[Mapping[str, JsonValue]] = ContextVar(
 
 def _error_description(error: BaseException) -> str:
     """Describe failures without leaking request state or server-echoed secrets into errors."""
-    from typesafe_sdk import TypeSafeAPIError
-
     if isinstance(error, (ClassifierStepError, ClassifierStepExecutionError)):
+        # Raised by this package or a provider adapter, which keep them payload-free.
         return str(error)
-    if isinstance(error, TypeSafeAPIError):
-        # The service may echo state in its message; surface only this known,
-        # payload-free machine code, never the response body.
-        detail = error.body.get("detail") if isinstance(error.body, dict) else None
-        suffix = (
-            "; max_tokens_exceeded"
-            if isinstance(detail, dict) and detail.get("error_type") == "max_tokens_exceeded"
-            else ""
-        )
-        return f"{type(error).__name__} (HTTP {error.status}{suffix})"
     # Validation messages and locations can also contain input values or keys.
     return type(error).__name__
-
-
-def _build_client(runtime: ClassifierRuntime) -> AsyncTypeSafeClient:
-    """Resolve credentials and construct the SDK only inside the executing process."""
-    from typesafe_sdk import AsyncTypeSafeClient
-
-    if "TYPESAFE_API_KEY" not in os.environ:
-        from dotenv import find_dotenv, load_dotenv
-
-        load_dotenv(find_dotenv(usecwd=True), override=False)
-
-    if not os.environ.get("TYPESAFE_API_KEY", "").strip():
-        raise ClassifierStepExecutionError("TYPESAFE_API_KEY is required to call a classifier")
-    return AsyncTypeSafeClient(model=runtime.model, timeout=runtime.timeout)
-
-
-def _adapt_response(
-    response: SystemOneResponse, declaration: ClassifierDeclaration
-) -> ClassificationResult:
-    # The SDK exposes the original HTTP body on its typed response. Validate that
-    # boundary directly: SDK decoding intentionally drops unknown answer types and
-    # normalizes integer Score keys, which must not conceal malformed responses.
-    try:
-        result = ClassificationResult.model_validate_json(response.raw_http_response.content)
-        result.validate_declaration(declaration)
-    except ValueError as error:
-        description = _error_description(error)
-        raise ClassifierStepExecutionError(
-            f"Invalid TypeSafe response: {description}"
-        ) from None
-    return result
 
 
 class Classifier:
@@ -117,7 +72,8 @@ class Classifier:
         self._declaration = declaration
         self._step_name = step_name
         self._input_model = input_model
-        self._client: AsyncTypeSafeClient | None = None
+        self._adapter = provider_adapter.adapter_for(declaration.runtime.classifier)
+        self._connection: provider_adapter.ClassifierConnection | None = None
         self._invocation_index = 0
         self._closed = False
         self._pending: set[asyncio.Task[object]] = set()
@@ -173,37 +129,17 @@ class Classifier:
                 finally:
                     # Invalid requests still get a running/failed evidence pair.
                     emit_classifier_evidence(record)
-                if self._client is None:
-                    self._client = _build_client(self._declaration.runtime)
-                from typesafe_sdk import Choice, Noul, NoulCriteria, Question, Score
-
-                from .models import ChoiceQuestion, NoulQuestion
-
-                sdk_questions: dict[str, Question] = {}
-                for name, question in declaration.questions.items():
-                    if isinstance(question, ChoiceQuestion):
-                        sdk_questions[name] = Choice(
-                            instructions=question.instructions, criteria=question.criteria
-                        )
-                    elif isinstance(question, NoulQuestion):
-                        criteria: NoulCriteria | None = None
-                        if question.criteria is not None:
-                            criteria = NoulCriteria()
-                            if "true" in question.criteria:
-                                criteria["true"] = question.criteria["true"]
-                            if "false" in question.criteria:
-                                criteria["false"] = question.criteria["false"]
-                        sdk_questions[name] = Noul(
-                            instructions=question.instructions, criteria=criteria
-                        )
-                    else:
-                        sdk_questions[name] = Score(
-                            instructions=question.instructions, criteria=question.criteria
-                        )
-                response = await self._client.system_one(
-                    state=request_state, questions=sdk_questions
+                self._adapter.check_questions(resolved_questions)
+                if self._connection is None:
+                    self._connection = provider_adapter.connect(
+                        self._adapter, self._declaration.runtime
+                    )
+                result = await provider_adapter.classify(
+                    self._adapter,
+                    self._connection,
+                    state=request_state,
+                    declaration=declaration,
                 )
-                result = _adapt_response(response, declaration)
             except BaseException as error:
                 status = "cancelled" if isinstance(error, asyncio.CancelledError) else "failed"
                 description = _error_description(error)
@@ -246,7 +182,7 @@ class Classifier:
                 self._pending.discard(task)
 
     async def aclose(self) -> None:
-        """Finish outstanding calls and close the single step-owned client."""
+        """Finish outstanding calls and close the single step-owned provider client."""
         if self._closed:
             return
         self._closed = True
@@ -255,8 +191,8 @@ class Classifier:
             task.cancel()
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-        if self._client is not None:
-            await self._client.aclose()
+        if self._connection is not None:
+            await self._connection.aclose()
 
 
 async def _close_classifier(classifier: Classifier) -> None:
@@ -284,20 +220,21 @@ class _ClassifierStepSpec:
     user_fn: Callable[..., object]
     declaration_json: str
     input_model: type[BaseModel] | None
-    runtime_overrides: ClassifierRuntime
+    settings: ClassifierSettings
     public_signature: inspect.Signature
 
     def declaration(
         self, workflow_defaults: Mapping[str, JsonValue] | None = None
     ) -> ClassifierDeclaration:
-        runtime = {
-            **validate_runtime_defaults(dict(workflow_defaults or {})),
-            **self.runtime_overrides.model_dump(mode="json", exclude_unset=True),
-        }
-        declaration = ClassifierDeclaration.model_validate_json(self.declaration_json)
-        return declaration.model_copy(
-            update={"runtime": ClassifierRuntime.model_validate(runtime)}
+        runtime = resolve_runtime(
+            ClassifierSettings.model_validate(dict(workflow_defaults or {})), self.settings
         )
+        declaration = ClassifierDeclaration.model_validate_json(self.declaration_json)
+        if declaration.questions is not None:
+            provider_adapter.adapter_for(runtime.classifier).check_questions(
+                declaration.questions
+            )
+        return declaration.model_copy(update={"runtime": runtime})
 
     def declaration_metadata(
         self, workflow_defaults: Mapping[str, JsonValue] | None = None
@@ -358,13 +295,18 @@ def classifier_step(
     *,
     questions: dict[str, JsonValue] | None = None,
     input_model: type[BaseModel] | None = None,
+    classifier: ClassifierProvider | None = None,
     model: str | None = None,
     timeout: float | None = None,
     slug: str | None = None,
     retries: int = 7,
     on_uncertain: UncertaintyPolicy = "retry",
 ) -> Callable[[Callable[..., object]], Node]:
-    """Declare a bodyful TypeSafe step with optional default questions."""
+    """Declare a bodyful classifier step with optional default questions.
+
+    ``classifier`` picks the provider (``ava.classifiers.TypeSafe()`` by default) and
+    ``model`` one of its models. Both win over the workflow's ``classifier_defaults``.
+    """
     try:
         validated_questions = None if questions is None else validate_questions(questions)
         if input_model is not None and not _safe_issubclass(input_model, BaseModel):
@@ -375,22 +317,28 @@ def classifier_step(
             else None
         )
         overrides: dict[str, object] = {}
+        if classifier is not None:
+            overrides["classifier"] = classifier
         if model is not None:
             overrides["model"] = model
         if timeout is not None:
             overrides["timeout"] = timeout
-        runtime_overrides = ClassifierRuntime.model_validate(overrides)
+        settings = ClassifierSettings.model_validate(overrides)
     except (PydanticUserError, ValidationError, ValueError, TypeError) as error:
         raise ClassifierStepError(
             f"invalid classifier declaration: {_error_description(error)}"
         ) from None
+
+    if settings.classifier is not None and validated_questions is not None:
+        # The provider is known here; a workflow default is checked with the workflow.
+        provider_adapter.adapter_for(settings.classifier).check_questions(validated_questions)
 
     def decorator(user_fn: Callable[..., object]) -> Node:
         public_signature = _public_step_signature(user_fn, decoration_namespace())
         interface = step_interface_from_signature(public_signature)
         declaration = ClassifierDeclaration(
             questions=validated_questions,
-            runtime=runtime_overrides,
+            runtime=resolve_runtime(settings),
             input_schema=input_schema,
             step_inputs=interface.step_inputs,
             step_output=interface.step_output,
@@ -399,7 +347,7 @@ def classifier_step(
             user_fn=user_fn,
             declaration_json=declaration.model_dump_json(),
             input_model=input_model,
-            runtime_overrides=runtime_overrides,
+            settings=settings,
             public_signature=public_signature,
         )
 

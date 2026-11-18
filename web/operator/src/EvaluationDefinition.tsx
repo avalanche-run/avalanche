@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { ClassifierQuestions } from "./ClassifierDetails";
+import { ClassifierQuestions, ClassifierServiceTerms } from "./ClassifierDetails";
 import { decodeEvaluationDeclaration } from "./classifier";
 
 export function EvaluationDefinition({ raw }: { raw: string | undefined }) {
@@ -25,10 +25,10 @@ export function EvaluationDefinition({ raw }: { raw: string | undefined }) {
       {declaration ? (
         <>
           <dl className="m-0 mb-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
-            <dt className="text-muted">Model</dt>
-            <dd className="m-0 font-mono [overflow-wrap:anywhere]">
-              {declaration.runtime.model}
-            </dd>
+            <ClassifierServiceTerms
+              provider={declaration.runtime.classifier}
+              model={declaration.runtime.model}
+            />
             <dt className="text-muted">Timeout</dt>
             <dd className="m-0">{declaration.runtime.timeout}s</dd>
           </dl>

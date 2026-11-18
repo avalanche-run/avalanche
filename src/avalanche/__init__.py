@@ -84,7 +84,9 @@ from .references import (
 )
 
 # Submodules and names resolved lazily on first attribute access (see __getattr__).
-_LAZY_SUBMODULES = frozenset({"agent", "catalog", "classifier", "iceberg", "lance", "runtimes"})
+_LAZY_SUBMODULES = frozenset(
+    {"agent", "catalog", "classifier", "classifiers", "iceberg", "lance", "runtimes"}
+)
 _LAZY_EXPORTS: dict[str, str] = {
     # Agent
     "Agent": "agent",

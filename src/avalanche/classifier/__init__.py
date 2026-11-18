@@ -1,4 +1,4 @@
-"""First-class TypeSafe classifier workflow steps."""
+"""First-class classifier workflow steps, answered by a provider such as TypeSafe."""
 
 from .classifier_step import (
     Classifier,

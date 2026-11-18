@@ -1,4 +1,4 @@
-"""Observe agent invocation outputs with ordinary selectors and TypeSafe questions."""
+"""Observe agent invocation outputs with ordinary selectors and classifier questions."""
 
 from __future__ import annotations
 
@@ -10,31 +10,43 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Annotated, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field, InstanceOf, JsonValue, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    InstanceOf,
+    JsonValue,
+    field_validator,
+    model_validator,
+)
 
 from ._evaluation_inputs import MetricInput, metric_inputs
 from .agent.trace import AgentTrace
+from .classifier.adapter import adapter_for
 from .classifier.classifier_step import Classifier, _close_classifier, _error_description
+from .classifier.errors import ClassifierStepError
 from .classifier.models import (
     Answer,
     ClassificationResult,
     ClassificationUsage,
     ClassifierDeclaration,
     ClassifierRuntime,
+    ClassifierSettings,
     JSONContent,
     NonemptyString,
     Questions,
+    resolve_runtime,
     validate_questions,
-    validate_runtime_defaults,
     validate_state,
 )
+from .classifier.providers import ClassifierProvider, TypeSafe
 
 InputT = TypeVar("InputT")
 OutputT = TypeVar("OutputT")
 
 
 class EvaluationError(RuntimeError):
-    """A declaration, selector, Jev request, or composite could not be evaluated."""
+    """A declaration, selector, classifier request, or composite could not be evaluated."""
 
 
 @dataclass(frozen=True)
@@ -107,10 +119,12 @@ class EvaluationDeclaration(BaseModel):
 
 
 class EvaluationResult(BaseModel):
-    """Raw TypeSafe answers and explicitly normalized, author-defined composites."""
+    """Raw classifier answers and explicitly normalized, author-defined composites."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True, allow_inf_nan=False)
 
+    # Results recorded before providers existed name none and were all TypeSafe calls.
+    classifier: ClassifierProvider = Field(default_factory=TypeSafe)
     classification: ClassificationResult
     composites: dict[str, float]
 
@@ -128,6 +142,7 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
     composites: Mapping[NonemptyString, Callable[[ClassificationResult], float]] = Field(
         default_factory=dict
     )
+    classifier: ClassifierProvider | None = None
     model: Annotated[str, Field(min_length=1, pattern=r"\S")] | None = None
     timeout: Annotated[float, Field(gt=0)] | None = None
 
@@ -154,6 +169,23 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
             _require_sync(function, f"Composite {name!r}")
         return MappingProxyType(value)
 
+    @model_validator(mode="after")
+    def provider_takes_metrics(self) -> Evaluations[InputT, OutputT]:
+        if self.classifier is not None:
+            # The provider is known here; a workflow default is checked when it resolves.
+            self._check_metrics(self.classifier)
+        return self
+
+    def _check_metrics(self, classifier: ClassifierProvider) -> None:
+        try:
+            adapter_for(classifier).check_questions(
+                validate_questions(
+                    {name: metric.question for name, metric in self.metrics.items()}
+                )
+            )
+        except ClassifierStepError as error:
+            raise EvaluationError(f"Invalid metric question: {error}") from None
+
     def declaration_metadata(
         self, runtime_defaults: Mapping[str, JsonValue] | None = None
     ) -> EvaluationDeclaration:
@@ -163,25 +195,35 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
                 {name: metric.question for name, metric in self.metrics.items()}
             ),
             composites=tuple(self.composites),
-            runtime=self._runtime(runtime_defaults),
+            runtime=self.runtime(runtime_defaults),
             metric_inputs={
                 name: metric_inputs(metric.state) for name, metric in self.metrics.items()
             },
         )
 
-    def _runtime(self, runtime_defaults: Mapping[str, JsonValue] | None) -> ClassifierRuntime:
+    def runtime(
+        self, runtime_defaults: Mapping[str, JsonValue] | None = None
+    ) -> ClassifierRuntime:
+        """Resolve the provider, model and timeout over the workflow's classifier defaults."""
         try:
-            overrides = validate_runtime_defaults(dict(runtime_defaults or {}))
+            own: dict[str, object] = {}
+            if self.classifier is not None:
+                own["classifier"] = self.classifier
             if self.model is not None:
-                overrides["model"] = self.model
+                own["model"] = self.model
             if self.timeout is not None:
-                overrides["timeout"] = self.timeout
-            return ClassifierRuntime.model_validate(overrides)
+                own["timeout"] = self.timeout
+            runtime = resolve_runtime(
+                ClassifierSettings.model_validate(dict(runtime_defaults or {})),
+                ClassifierSettings.model_validate(own),
+            )
         except Exception as error:
             raise EvaluationError(
                 f"Evaluation runtime defaults failed: {type(error).__name__}; "
-                "check classifier model and timeout settings"
+                "check classifier, model and timeout settings"
             ) from None
+        self._check_metrics(runtime.classifier)
+        return runtime
 
     async def evaluate(
         self,
@@ -190,7 +232,7 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
         runtime_defaults: Mapping[str, JsonValue] | None = None,
     ) -> EvaluationResult:
         """Select evidence, batch equivalent states, then compute ordinary composites."""
-        runtime = self._runtime(runtime_defaults)
+        runtime = self.runtime(runtime_defaults)
 
         batches: dict[str, tuple[JSONContent, dict[str, JsonValue]]] = {}
         for name, metric in self.metrics.items():
@@ -233,12 +275,11 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
                     result = await classifier(state=state, questions=questions)
                 except Exception as error:
                     raise EvaluationError(
-                        f"Jev evaluation for metrics {names} failed: "
-                        f"{_error_description(error)}"
+                        f"Evaluation for metrics {names} failed: {_error_description(error)}"
                     ) from None
                 if resolved_model is not None and result.model != resolved_model:
                     raise EvaluationError(
-                        f"Jev evaluation for metrics {names} returned a different model; "
+                        f"Evaluation for metrics {names} returned a different model; "
                         "pin a model version to combine answers from multiple requests"
                     )
                 resolved_model = result.model
@@ -284,7 +325,7 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
             except Exception as error:
                 raise EvaluationError(
                     f"Composite {name!r} failed: {type(error).__name__}; "
-                    "check metric names and use the TypeSafe answer accessors"
+                    "check metric names and use the classifier answer accessors"
                 ) from None
             if inspect.iscoroutine(value):
                 value.close()
@@ -298,4 +339,6 @@ class Evaluations(BaseModel, Generic[InputT, OutputT]):
                     "normalize an N-level Score with score / (N - 1)"
                 )
             composites[name] = float(value)
-        return EvaluationResult(classification=classification, composites=composites)
+        return EvaluationResult(
+            classifier=runtime.classifier, classification=classification, composites=composites
+        )
