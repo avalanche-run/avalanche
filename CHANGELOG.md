@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.19
+
 - New classifier provider `ava.classifiers.GeminiDecision()`: classifier steps
   and evaluations can be answered by Google's Gemini Decision service (default
   model `gemini-decision-1`) and return the same `ClassificationResult`. Install
@@ -88,6 +90,10 @@
   chosen; `deployments` adds a picker to the dialog.
 - Docs: a reruns guide (`docs/api/reruns.md`) covers the CLI, web UI and TUI, what is saved,
   what cannot be reused and refusals. The operator UI README describes `startRerun`.
+- Operator UI: a step's input and output rows in the schema view use schema
+  notation like the fields below them (`Quote | null`, `string | null`,
+  `list[Book]`); a `datetime` reads `string` with its `date-time` format
+  (#652).
 
 ## 0.20.18
 
