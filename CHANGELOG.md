@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.16
+
 - `@avalanche-run/operator-ui` is no longer published to GitHub Packages
   (0.20.15 is the last published version); the console uses the in-repo source.
 - Document the Delta provider's tool limits and consent scopes, shared by local
