@@ -156,7 +156,8 @@ def test_native_call_restart_reattaches_one_child(tmp_path, stop_signal, child_k
     script = """
 import json, signal, sys, time
 from runtime.operator.operator import Operator
-op = Operator([sys.argv[1]], watch=False, schedule=False, state_db=sys.argv[2])
+op = Operator([sys.argv[1]], watch=False, schedule=False, state_db=sys.argv[2],
+              webhook_port=0)
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 parked = sys.argv[3] == 'parked'
 try:
@@ -174,7 +175,11 @@ try:
         time.sleep(.02)
     else:
         raise RuntimeError('parent did not park')
-    sys.stdin.read()
+    # Python runs signal handlers only on the main thread, between bytecodes.
+    # When the kernel delivers the stop signal to an operator thread, a main
+    # thread blocked in read() never wakes; a short sleep lets it run.
+    while True:
+        time.sleep(.05)
 finally:
     op.close()
 """
@@ -190,7 +195,7 @@ finally:
         ids = json.loads(process.stdout.readline())
         process.send_signal(stop_signal)
         process.wait(timeout=20)
-        op = Operator([str(fixture)], watch=False, schedule=False, state_db=db)
+        op = Operator([str(fixture)], watch=False, schedule=False, state_db=db, webhook_port=0)
         try:
             parent = op.get_run(ids["parent"])
             assert parent.status != RunStatus.CANCELLED, parent
