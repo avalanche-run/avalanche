@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.20.21
+
+- 0.20.20 was never published: its release stopped before building
+  images or packages. 0.20.21 carries everything listed under 0.20.20.
+
 ## 0.20.20
 
 - Zooming in on the operator UI's graph no longer snaps back to the fitted
