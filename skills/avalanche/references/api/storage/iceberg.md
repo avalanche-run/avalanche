@@ -2,6 +2,15 @@
 
 Avalanche 0.7.0. Imports: `from avalanche import IcebergNamespace, IcebergNsConfig, IcebergTable, AppendResult`.
 
+Install Iceberg support before importing these classes:
+
+```bash
+uv add 'avalanche-ai[iceberg]'
+```
+
+This extra includes PyIceberg, Arrow, pandas, and the local SQLite and S3/Glue
+catalog dependencies. Plain workflows and the CLI do not need it.
+
 ## Namespace and configuration
 
 ```python

@@ -19,8 +19,7 @@ import time
 import uuid
 from typing import TYPE_CHECKING, Literal, overload
 
-from pyiceberg.exceptions import CommitFailedException
-
+from ._storage_errors import commit_failed_exceptions
 from .types import SnapshotMetadata, SnapshotState
 
 # Regex for valid keys: snake_case
@@ -301,7 +300,7 @@ class ProgressStore:
 
                 return snapshot_id
 
-            except CommitFailedException as e:
+            except commit_failed_exceptions() as e:
                 last_error = e
                 self.table.refresh()
 
@@ -369,7 +368,7 @@ class ProgressStore:
 
                 return (claimed[0] if claimed else None) if n == 1 else claimed
 
-            except CommitFailedException:
+            except commit_failed_exceptions():
                 self.table.refresh()
 
         return None if n == 1 else []
@@ -413,7 +412,7 @@ class ProgressStore:
                     if props:
                         tx.set_properties(**props)
                 return
-            except CommitFailedException:
+            except commit_failed_exceptions():
                 self.table.refresh()
 
     def mark_failed(self, snapshot_ids: int | list[int], error: str | None = None) -> None:
@@ -463,7 +462,7 @@ class ProgressStore:
                     if props:
                         tx.set_properties(**props)
                 return
-            except CommitFailedException:
+            except commit_failed_exceptions():
                 self.table.refresh()
 
     def advance_cursor(self) -> int | None:
@@ -526,7 +525,7 @@ class ProgressStore:
 
                 return new_cursor
 
-            except CommitFailedException:
+            except commit_failed_exceptions():
                 self.table.refresh()
 
         return None
@@ -555,7 +554,7 @@ class ProgressStore:
                 with self.table.transaction() as tx:
                     tx.remove_properties(*properties_to_remove)
                 return
-            except CommitFailedException:
+            except commit_failed_exceptions():
                 pass  # Retry with fresh state
 
     def __enter__(self) -> int | list[int] | None:

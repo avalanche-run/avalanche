@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.13.*"
 
 [manifest]
@@ -174,7 +174,6 @@ dependencies = [
     { name = "predict-rlm", extra = ["codex-lm"] },
     { name = "protobuf" },
     { name = "pydantic" },
-    { name = "pyiceberg", extra = ["glue", "pandas", "pyarrow", "s3fs", "sql-sqlite"] },
     { name = "python-dotenv" },
     { name = "python-ulid" },
     { name = "pyyaml" },
@@ -190,6 +189,9 @@ claude = [
 ]
 gemini = [
     { name = "google-genai" },
+]
+iceberg = [
+    { name = "pyiceberg", extra = ["glue", "pandas", "pyarrow", "s3fs", "sql-sqlite"] },
 ]
 lance = [
     { name = "pylance" },
@@ -210,6 +212,7 @@ dev = [
     { name = "moto", extra = ["s3", "server"] },
     { name = "pre-commit" },
     { name = "predict-rlm" },
+    { name = "pyiceberg", extra = ["glue", "pandas", "pyarrow", "s3fs", "sql-sqlite"] },
     { name = "pylance" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -243,7 +246,7 @@ requires-dist = [
     { name = "predict-rlm", extras = ["codex-lm"], specifier = ">=0.13.2,<0.14" },
     { name = "protobuf", specifier = ">=6.31.1" },
     { name = "pydantic", specifier = ">=2,<3" },
-    { name = "pyiceberg", extras = ["glue", "pandas", "pyarrow", "s3fs", "sql-sqlite"], specifier = ">=0.9,<0.11" },
+    { name = "pyiceberg", extras = ["glue", "pandas", "pyarrow", "s3fs", "sql-sqlite"], marker = "extra == 'iceberg'", specifier = ">=0.9,<0.11" },
     { name = "pylance", marker = "extra == 'lance'", specifier = ">=0.24.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "python-ulid", specifier = ">=3.0.0" },
@@ -253,7 +256,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.30,<1" },
     { name = "watchfiles", specifier = ">=1.1.1" },
 ]
-provides-extras = ["lance", "claude", "openai", "gemini"]
+provides-extras = ["iceberg", "lance", "claude", "openai", "gemini"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -266,6 +269,7 @@ dev = [
     { name = "moto", extras = ["s3", "server"], specifier = ">=5,<6" },
     { name = "pre-commit", specifier = ">=4,<5" },
     { name = "predict-rlm", specifier = ">=0.13.2,<0.14" },
+    { name = "pyiceberg", extras = ["glue", "pandas", "pyarrow", "s3fs", "sql-sqlite"], specifier = ">=0.9,<0.11" },
     { name = "pylance", specifier = ">=0.24.0" },
     { name = "pytest", specifier = ">=9.0.3,<10" },
     { name = "pytest-asyncio", specifier = ">=1.4.0,<2" },

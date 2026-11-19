@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Iceberg support now needs `avalanche-ai[iceberg]`. Plain workflows no longer
+  install PyIceberg or its storage dependencies. Lance remains a separate extra
+  and does not need PyIceberg for streams or progress tracking.
+
 ## 0.20.19
 
 - New classifier provider `ava.classifiers.GeminiDecision()`: classifier steps

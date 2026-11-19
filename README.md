@@ -133,6 +133,13 @@ Add Avalanche to an existing project:
 uv add avalanche-ai
 ```
 
+Plain workflows need no storage extra. For Iceberg tables and their table-backed
+streams, install Iceberg support in the environment that runs the flow:
+
+```bash
+uv add "avalanche-ai[iceberg]"
+```
+
 Install the avalanche skill in the same project:
 
 ```bash
@@ -526,15 +533,16 @@ probability semantics, and local evidence retention limits.
 
 | Extra     | Purpose                       |
 | --------- | ----------------------------- |
+| `iceberg` | Iceberg storage backend (including local SQLite and S3/Glue support) |
 | `lance`  | Lance storage backend         |
 | `claude` | `ava.runtimes.ClaudeAgent`, which runs agent steps with Claude through the Claude Agent SDK; also needs the Claude Code CLI |
 | `openai` | `ava.runtimes.OpenAIAgent`, which runs agent steps with OpenAI models through the OpenAI Agents SDK, and `ava.classifiers.OpenAIDecisions`, which answers classifier steps and evaluations with OpenAI's Decisions API |
 | `gemini` | `ava.classifiers.GeminiDecision`, which answers classifier steps and evaluations with Google's Gemini Decision service through `google-genai`; needs `GEMINI_API_KEY` |
 
-The remaining extras can be combined:
+The extras can be combined:
 
 ```bash
-uv add "avalanche-ai[lance,claude,openai,gemini]"
+uv add "avalanche-ai[iceberg,lance,claude,openai,gemini]"
 ```
 
 ## Documentation

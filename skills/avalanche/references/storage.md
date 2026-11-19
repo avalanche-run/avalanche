@@ -45,6 +45,12 @@ Both backends use Pydantic models directly as table schemas.
 
 ### Iceberg
 
+Install the Iceberg extra in the environment that executes table operations:
+
+```bash
+uv add "avalanche-ai[iceberg]"
+```
+
 ```python
 from pathlib import Path
 

@@ -3,6 +3,10 @@
 This directory contains the canonical examples. The standalone Python scripts
 are covered by `test/example_smoke_test.py`.
 
+The `stream_pattern.py` and `cursor_pattern.py` examples need Iceberg support.
+When using an installed package rather than the development checkout, add it with
+`uv add 'avalanche-ai[iceberg]'`.
+
 Run the examples from this directory:
 
 ```bash

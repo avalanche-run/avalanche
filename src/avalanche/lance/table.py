@@ -12,8 +12,8 @@ import polars as pl
 import pyarrow as pa
 from filelock import FileLock
 from pydantic import BaseModel
-from pyiceberg.exceptions import CommitFailedException
 
+from avalanche._storage_errors import CommitConflictError
 from avalanche.lineage import add_row_lineage_to_arrow_schema, add_row_lineage_to_data
 from avalanche.storage import ScanResult, Table
 from avalanche.types import AppendResult
@@ -186,7 +186,7 @@ class LanceTransaction:
             dataset = self._dataset or self._table._create_empty_dataset()
             dataset.update_metadata(self._updates)
         except OSError as exc:
-            raise CommitFailedException(str(exc)) from exc
+            raise CommitConflictError(str(exc)) from exc
 
         return False
 

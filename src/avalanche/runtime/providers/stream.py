@@ -12,8 +12,8 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, Callable, Generator, Generic, Literal, TypeVar
 
 from pydantic import BaseModel
-from pyiceberg.exceptions import CommitFailedException
 
+from avalanche._storage_errors import commit_failed_exceptions
 from avalanche.types import ParamContext, ParameterProvider
 from runtime._async import resolve_awaitable
 
@@ -646,7 +646,7 @@ def _record_rerun_edge(table: Any, *, run_id: str, source_run_id: str) -> None:
             with table.transaction() as tx:
                 tx.set_properties(**{key: source_run_id})
             return
-        except CommitFailedException as exc:
+        except commit_failed_exceptions() as exc:
             last_error = exc
 
     raise RuntimeError(

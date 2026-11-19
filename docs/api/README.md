@@ -46,7 +46,8 @@ and result definitions. Other pages likewise link the APIs they accept or return
   use Avalanche are documented with the API that produces them.
 
 Python 3.13 is required. Agent and classifier support is included in the
-base installation; Lance storage needs `uv add 'avalanche-ai[lance]'`, Claude agent
+base installation; Iceberg storage needs `uv add 'avalanche-ai[iceberg]'`,
+Lance storage needs `uv add 'avalanche-ai[lance]'`, Claude agent
 steps (`ava.runtimes.ClaudeAgent`) need `uv add 'avalanche-ai[claude]'`, and OpenAI
 agent steps (`ava.runtimes.OpenAIAgent`) need `uv add 'avalanche-ai[openai]'`, and the
 Gemini Decision classifier (`ava.classifiers.GeminiDecision`) needs
