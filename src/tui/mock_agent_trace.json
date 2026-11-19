@@ -1,0 +1,139 @@
+{
+  "invocation_id": "agent-mock",
+  "status": "succeeded",
+  "events": [
+    {
+      "kind": "event",
+      "schema_version": 2,
+      "invocation_id": "agent-mock",
+      "sequence": 1,
+      "timestamp_ns": 1795064376694564000,
+      "common": null,
+      "native": {
+        "format": "predict_rlm.run/v1",
+        "kind": "code.generated",
+        "iteration": 1,
+        "code": "records = [item for item in input_records if item.get('active')]\nsummary = {'active_count': len(records), 'names': [item['name'] for item in records]}\nprint(summary)"
+      }
+    },
+    {
+      "kind": "event",
+      "schema_version": 2,
+      "invocation_id": "agent-mock",
+      "sequence": 2,
+      "timestamp_ns": 1795064376694612000,
+      "common": null,
+      "native": {
+        "format": "predict_rlm.run/v1",
+        "kind": "code.executed",
+        "iteration": 1,
+        "output": "SANDBOX_STDOUT_SENTINEL",
+        "execution_error": null
+      }
+    },
+    {
+      "kind": "event",
+      "schema_version": 2,
+      "invocation_id": "agent-mock",
+      "sequence": 3,
+      "timestamp_ns": 1795064376694707000,
+      "common": {
+        "kind": "turn.finished",
+        "turn": {
+          "index": 1,
+          "message": "Filter active records and summarize their names.",
+          "reasoning": null,
+          "tool_calls": [],
+          "duration_ms": 14,
+          "usage": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cache_read_input_tokens": null,
+            "cache_creation_input_tokens": null,
+            "cost_usd": 0.0
+          },
+          "native": {
+            "format": "predict_rlm.run/v1",
+            "code": "records = [item for item in input_records if item.get('active')]\nsummary = {'active_count': len(records), 'names': [item['name'] for item in records]}\nprint(summary)",
+            "output": "SANDBOX_STDOUT_SENTINEL",
+            "untruncated_output": "FULL OUTPUT: {'active_count': 2, 'names': ['Ada Lovelace', 'Grace Hopper']}\nwrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line wrapped output line ",
+            "error": false,
+            "finish_reason": "stop",
+            "usage": {
+              "main": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost": 0.0,
+                "cache_hits": 0
+              },
+              "sub": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost": 0.0,
+                "cache_hits": 0
+              }
+            },
+            "predict_calls": []
+          }
+        },
+        "omitted_tool_calls": 0
+      },
+      "native": null
+    }
+  ],
+  "terminal": {
+    "kind": "trace_finished",
+    "schema_version": 2,
+    "invocation_id": "agent-mock",
+    "header": {
+      "status": "succeeded",
+      "stop_reason": "submit",
+      "model": "mock-main",
+      "duration_ms": 20,
+      "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_read_input_tokens": null,
+        "cache_creation_input_tokens": null,
+        "cost_usd": 0.0
+      },
+      "turn_count": 1,
+      "tool_call_count": 0,
+      "external_run_id": "agent-mock",
+      "session_id": null,
+      "native": {
+        "format": "predict_rlm.run/v1",
+        "sub_model": "mock-sub",
+        "max_iterations": 4,
+        "usage": {
+          "main": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost": 0.0,
+            "cache_hits": 0
+          },
+          "sub": {
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost": 0.0,
+            "cache_hits": 0
+          }
+        },
+        "telemetry_ref": null
+      }
+    },
+    "outputs": {
+      "summary": {
+        "active_count": 1,
+        "ready": false
+      },
+      "labels": [
+        "reviewed"
+      ],
+      "note": null
+    },
+    "omitted_outputs": [],
+    "complete": true
+  },
+  "error": null
+}

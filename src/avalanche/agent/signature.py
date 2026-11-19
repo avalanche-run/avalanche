@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
-import dspy
+try:
+    import dspy
+except ModuleNotFoundError as exc:
+    if exc.name == "dspy":
+        from .._optional import import_optional
+
+        import_optional("dspy", extra="agents", feature="Agent")
+    raise
 from dspy.signatures.signature import SignatureMeta
 
 # These are provider-native field descriptors. Re-exporting them gives class

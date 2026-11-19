@@ -350,13 +350,13 @@ EOF
     # uv applies a source only to a direct dependency, so the checkout must be listed.
     cat >>"$staging_root/pyproject.toml" <<'EOF'
 dependencies = [
-    "avalanche-ai>=0.17",
+    "avalanche-ai[agents]>=0.17",
     "predict-rlm",
 ]
 EOF
   else
     cat >>"$staging_root/pyproject.toml" <<'EOF'
-dependencies = ["avalanche-ai>=0.17"]
+dependencies = ["avalanche-ai[agents]>=0.17"]
 EOF
   fi
 

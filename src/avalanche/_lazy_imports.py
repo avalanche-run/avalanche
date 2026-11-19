@@ -1,6 +1,6 @@
 """Deferred imports for heavy optional-at-runtime dependencies.
 
-Polars and PyArrow are hard dependencies of Avalanche, but most of the public
+Polars and PyArrow belong to the optional dataframes extra. Most of the public
 API only needs them when a caller actually hands in or asks for a dataframe.
 Importing them eagerly costs ~0.3 s and starts native worker threads (OpenBLAS,
 jemalloc, the Polars pool), which matters for short-lived node processes and
@@ -15,9 +15,10 @@ checkers still see the real modules.
 
 from __future__ import annotations
 
-import importlib
 from types import ModuleType
 from typing import Any
+
+from ._optional import import_optional
 
 
 class _LazyModule:
@@ -30,7 +31,11 @@ class _LazyModule:
     def _load(self) -> ModuleType:
         module = object.__getattribute__(self, "_module")
         if module is None:
-            module = importlib.import_module(object.__getattribute__(self, "_name"))
+            module = import_optional(
+                object.__getattribute__(self, "_name"),
+                extra="dataframes",
+                feature="Dataframe",
+            )
             object.__setattr__(self, "_module", module)
         return module
 

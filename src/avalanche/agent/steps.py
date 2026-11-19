@@ -26,7 +26,14 @@ from typing import (
     get_origin,
 )
 
-import dspy
+try:
+    import dspy
+except ModuleNotFoundError as exc:
+    if exc.name == "dspy":
+        from .._optional import import_optional
+
+        import_optional("dspy", extra="agents", feature="Agent")
+    raise
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from .._agent_evidence import emit_agent_evidence

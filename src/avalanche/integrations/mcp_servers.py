@@ -35,6 +35,7 @@ from typing import IO, TYPE_CHECKING
 
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from .._optional import import_optional
 from ..policies import NonRetryableError
 from .accounts import AccessTokenCredential, AccountLoginExpiredError, ApiKeyCredential
 from .core import (
@@ -132,6 +133,8 @@ class MCPConnections:
     def __init__(
         self, step_name: str, servers: Sequence[MCP | Catalog], accounts: StepAccounts
     ) -> None:
+        if servers:
+            import_optional("mcp", extra="integrations", feature="MCP integration")
         self._step_name = step_name
         self._connect_command = accounts.connect_command
         self._declarations = tuple(servers)

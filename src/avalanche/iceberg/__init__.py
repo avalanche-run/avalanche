@@ -10,6 +10,8 @@ from importlib import import_module
 try:
     import_module("pyiceberg")
     import_module("pyarrow")
+    import_module("polars")
+    import_module("dataframely")
 except ImportError as exc:
     raise ImportError(
         "Iceberg features require the optional Iceberg dependency. "

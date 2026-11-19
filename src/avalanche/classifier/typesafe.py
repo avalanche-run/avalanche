@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, ClassVar
 
+from .._optional import import_optional
 from .adapter import ClassifierAdapter, ClassifierConnection, ProbabilityRounding
 from .models import (
     ChoiceQuestion,
@@ -71,6 +72,7 @@ class TypeSafeAdapter(ClassifierAdapter):
     rounding: ClassVar[ProbabilityRounding] = ProbabilityRounding(decimals=2)
 
     def connect(self, *, api_key: str, model: str, timeout: float) -> ClassifierConnection:
+        import_optional("typesafe_sdk", extra="typesafe", feature="TypeSafe classifier")
         import typesafe_sdk
 
         return _TypeSafeConnection(

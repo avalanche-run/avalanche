@@ -11,7 +11,14 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Annotated, ClassVar, Literal, Protocol, Self, runtime_checkable
 
-import dspy
+try:
+    import dspy
+except ModuleNotFoundError as exc:
+    if exc.name == "dspy":
+        from .._optional import import_optional
+
+        import_optional("dspy", extra="agents", feature="Agent")
+    raise
 from pydantic import (
     BaseModel,
     ConfigDict,

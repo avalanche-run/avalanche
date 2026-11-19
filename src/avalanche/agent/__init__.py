@@ -110,6 +110,9 @@ def __getattr__(name: str):
         )
         return File
     elif name == "DirectPythonBackend":
+        from .._optional import import_optional
+
+        import_optional("predict_rlm", extra="agents", feature="PredictRLM agent")
         from predict_rlm import DirectPythonBackend
 
         value = DirectPythonBackend

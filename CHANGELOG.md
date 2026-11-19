@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- TypeSafe classification and evaluation now need `avalanche-ai[typesafe]`.
+  A missing feature extra reports the installation command when first used.
+
+- MCP connections and OAuth logins now need `avalanche-ai[integrations]`.
+  Ordinary HTTP clients and workflow discovery still work without it.
+
+- Dataframe and typed-schema operations now need `avalanche-ai[dataframes]`.
+  Iceberg and Lance include it automatically. FileLock is installed only for Lance.
+
+- PredictRLM agent steps now need `avalanche-ai[agents]`; plain workflows no
+  longer install PredictRLM or Deno. New starter projects select this extra.
+  The mock TUI reads a recorded native trace without loading an agent runtime.
+
 - Iceberg support now needs `avalanche-ai[iceberg]`. Plain workflows no longer
   install PyIceberg or its storage dependencies. Lance remains a separate extra
   and does not need PyIceberg for streams or progress tracking.

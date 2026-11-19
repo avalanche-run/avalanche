@@ -27,6 +27,7 @@ from urllib.parse import parse_qs, urljoin, urlsplit
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from .._optional import import_optional
 from .accounts import AccountLoginExpiredError, AccountUnavailableError, OAuthCredential
 from .connect import IntegrationConnectError
 from .declaration import (
@@ -203,6 +204,7 @@ async def fresh(
         raise AccountLoginExpiredError(
             name, "it has expired and the service gave no way to renew it"
         )
+    import_optional("authlib", extra="integrations", feature="OAuth integration")
     import httpx
     from authlib.integrations.base_client import OAuthError
     from authlib.integrations.httpx_client import AsyncOAuth2Client
@@ -276,6 +278,7 @@ async def connector_login(
     The client ID and secret are those of the app registered with the service.
     Without a secret the client is a public one, protected by PKCE alone.
     """
+    import_optional("authlib", extra="integrations", feature="OAuth integration")
     import httpx
     from authlib.common.security import generate_token
     from authlib.integrations.base_client import OAuthError
@@ -437,6 +440,7 @@ async def mcp_login(
     a server that does not allow that takes the ID of a client registered
     with it beforehand, and that client's secret when it has one.
     """
+    import_optional("mcp", extra="integrations", feature="MCP integration")
     import httpx2
     from mcp import Client
     from mcp.client.auth import OAuthClientProvider, OAuthFlowError, OAuthTokenError

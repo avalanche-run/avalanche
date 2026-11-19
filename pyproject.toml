@@ -14,22 +14,15 @@ classifiers = [
 dependencies = [
     "cloudpickle>=3.1,<4",
     "croniter>=6.2.2",
-    "dataframely>=1.13.0,<2",
     "fastapi>=0.115,<1",
-    "filelock>=4.2.1,<5",
     "grpcio>=1.85.1",
-    "authlib>=1.6,<2",
     "httpx>=0.27,<1",
-    "mcp>=2.3,<3",
-    "polars>=1.34,<1.35",
-    "predict-rlm[codex-lm]>=0.13.2,<0.14",
     "protobuf>=6.31.1",
     "pydantic>=2,<3",
     "python-dotenv>=1.0",
     "python-ulid>=3.0.0",
     "pyyaml>=6",
     "textual>=6.2.1",
-    "typesafe-sdk>=0.6.0",
     "uvicorn>=0.30,<1",
     "watchfiles>=1.1.1",
 ]
@@ -39,16 +32,36 @@ ava = "ava_cli:main"
 avalanche-ai = "ava_cli:main"
 
 [project.optional-dependencies]
+typesafe = [
+    "typesafe-sdk>=0.6.0",
+]
+integrations = [
+    "mcp>=2.3,<3",
+    "authlib>=1.6,<2",
+]
+agents = [
+    "predict-rlm[codex-lm]>=0.13.2,<0.14",
+]
+dataframes = [
+    "polars>=1.34,<1.35",
+    "dataframely>=1.13.0,<2",
+    "pyarrow>=24",
+]
 iceberg = [
+    "avalanche-ai[dataframes]",
     "pyiceberg[glue, pandas, pyarrow, s3fs, sql-sqlite]>=0.9,<0.11",
 ]
 lance = [
+    "avalanche-ai[dataframes]",
+    "filelock>=4.2.1,<5",
     "pylance>=0.24.0",
 ]
 claude = [
+    "avalanche-ai[agents]",
     "claude-agent-sdk>=0.2.174",
 ]
 openai = [
+    "avalanche-ai[agents]",
     "openai-agents>=0.24.0",
     # Decisions with JSON input and question parts (ava.classifiers.OpenAIDecisions).
     "openai>=3.37.0",
