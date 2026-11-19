@@ -50,7 +50,12 @@ from .core import (
     StepAccounts,
     _no_account_store,
 )
-from .providers import CatalogToolSession, delivered_tool_session, integration_provider
+from .providers import (
+    CatalogToolSession,
+    catalog_connection_problem,
+    delivered_tool_session,
+    integration_provider,
+)
 
 if TYPE_CHECKING:
     import httpx2
@@ -158,16 +163,10 @@ class MCPConnections:
                 raise IntegrationError("The host did not authorize this step’s built-ins.")
         elif builtins:
             provider = integration_provider()
-            connected = {item.name: item for item in provider.connections()}
-            missing = [name for name in builtins if name not in connected]
+            problem = catalog_connection_problem(builtins, provider.connections())
             command = accounts.connect_command or "ava connect"
-            if missing:
-                raise IntegrationNotConnectedError(step_name, missing, command)
-            for name in builtins:
-                if connected[name].state == "reconnect_needed":
-                    raise IntegrationReconnectError(
-                        step_name, name, command, "the provider requires a new login"
-                    )
+            if problem is not None:
+                problem.raise_for_step(step_name, command)
             try:
                 session = provider.open_tool_session(step_name, builtins)
             except AccountLoginExpiredError as expired:

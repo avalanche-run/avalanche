@@ -17,7 +17,11 @@ from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from ..policies import NonRetryableError
-from .core import MCPServerUnavailableError
+from .core import (
+    IntegrationNotConnectedError,
+    IntegrationReconnectError,
+    MCPServerUnavailableError,
+)
 
 
 class ProviderNotInstalledError(NonRetryableError, ValueError):
@@ -57,6 +61,36 @@ class CatalogConnection(BaseModel):
     name: str
     state: Literal["connected", "reconnect_needed"]
     connected_at: float | None = None
+
+
+class CatalogConnectionProblem(BaseModel):
+    """A host's preflight refusal, transferable without a credential or a pass."""
+
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+
+    kind: Literal["missing", "reconnect_needed"]
+    names: tuple[str, ...] = Field(min_length=1)
+
+    def raise_for_step(self, step: str, command: str) -> None:
+        if self.kind == "missing":
+            raise IntegrationNotConnectedError(step, self.names, command)
+        raise IntegrationReconnectError(
+            step, self.names[0], command, "the provider requires a new login"
+        )
+
+
+def catalog_connection_problem(
+    names: tuple[str, ...], connections: Sequence[CatalogConnection]
+) -> CatalogConnectionProblem | None:
+    """One rule for local providers and controller-issued catalog sessions."""
+    connected = {connection.name: connection for connection in connections}
+    missing = tuple(name for name in names if name not in connected)
+    if missing:
+        return CatalogConnectionProblem(kind="missing", names=missing)
+    reconnect = tuple(name for name in names if connected[name].state != "connected")
+    if reconnect:
+        return CatalogConnectionProblem(kind="reconnect_needed", names=reconnect)
+    return None
 
 
 class CatalogLogin(BaseModel):
