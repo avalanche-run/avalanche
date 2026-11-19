@@ -52,6 +52,16 @@ and its declarations, which name no classifier, read as TypeSafe. A deployment
 built on 3.1 needs a 3.1 worker, because the worker's Avalanche must know the
 argument and the namespace.
 
+## Protocol 3.2: skipped steps
+
+A step can end as skipped with `ava.skip(reason)`. Protocol **3.2** extends 3.1.
+A deployment built on 3.1 runs unchanged on a 3.2 worker. A deployment built on
+3.2 needs a 3.2 worker: an older worker's Avalanche fails `ava.skip` as an
+ordinary error. On Delta, a skipped step's report carries `skip_reason`, the
+scheduler records the step as skipped (never retried, never a run failure, its
+workspace writes kept as for a success), and a step reading its output binds it
+with the same rule as the local operator (`avalanche.skips.bind_skipped_inputs`).
+
 ## Avalanche 0.18.0
 
 Ray execution is removed: the `ray` extra, `RayExecutor` export, `--ray`

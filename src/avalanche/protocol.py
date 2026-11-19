@@ -11,7 +11,7 @@ class ProtocolVersion(NamedTuple):
         return f"{self.major}.{self.minor}"
 
 
-PROTOCOL_VERSION = ProtocolVersion(3, 1)
+PROTOCOL_VERSION = ProtocolVersion(3, 2)
 
 
 def supports(required: ProtocolVersion, provided: ProtocolVersion = PROTOCOL_VERSION) -> bool:

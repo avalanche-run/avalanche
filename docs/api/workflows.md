@@ -224,7 +224,8 @@ fan-in step can run with the outputs it has. Other edge kinds:
 - A workflow return that reads a skipped step gets `None`.
 
 The run still succeeds, and each skipped step keeps its reason in the operator,
-across restarts. A rerun cannot reuse a skipped step's output: rerun from the
+across restarts. A skipped step's workspace writes are kept, as for a success, on
+the local operator and on Delta. Delta needs protocol 3.2 workers for `ava.skip`. A rerun cannot reuse a skipped step's output: rerun from the
 skipped step instead. [`examples/skipped_steps.py`](../../examples/skipped_steps.py)
 runs these rules through the local operator.
 
