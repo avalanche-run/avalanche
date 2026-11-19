@@ -45,6 +45,7 @@ export function MapRunIo({
   const failed = tones.flatMap((tone, i) => (tone === "danger" ? [i] : []));
   const succeeded = tones.filter((tone) => tone === "success" || tone === "reused").length;
   const running = tones.filter((tone) => tone === "active").length;
+  const skipped = tones.filter((tone) => tone === "skipped").length;
   const notStarted = tones.filter((tone) => tone === undefined).length;
   const select = (next: number) => setSelected({ parentId, index: next });
   const nextFailed = failed.find((i) => i > index) ?? failed[0];
@@ -72,6 +73,7 @@ export function MapRunIo({
             <span className="text-run-status-danger"> · {failed.length} failed</span>
           )}
           {running > 0 && <> · {running} running</>}
+          {skipped > 0 && <span className="text-run-status-skipped"> · {skipped} skipped</span>}
           {notStarted > 0 && <> · {notStarted} not started</>}
         </p>
       </section>
@@ -97,7 +99,7 @@ export function MapRunIo({
           >
             {tones.map((tone, i) => (
               <option key={i} value={i}>
-                {`Item ${i}${tone === "danger" ? " · failed" : tone === undefined ? " · not started" : tone === "active" ? " · running" : ""}`}
+                {`Item ${i}${tone === "danger" ? " · failed" : tone === undefined ? " · not started" : tone === "active" ? " · running" : tone === "skipped" ? " · skipped" : ""}`}
               </option>
             ))}
           </select>

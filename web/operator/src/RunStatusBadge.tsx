@@ -3,7 +3,8 @@ import { useEffect, useRef } from "react";
 
 import { subscribeRunningGlyph } from "./glyphClock";
 
-export type StatusTone = "active" | "warning" | "success" | "danger" | "reused" | "neutral";
+export type StatusTone =
+  "active" | "warning" | "success" | "danger" | "reused" | "skipped" | "neutral";
 type Tone = StatusTone;
 // Avalanche run/node states and Delta step states share one glyph set.
 // Anything not listed is neutral (○), so a node never renders without a glyph.
@@ -23,6 +24,8 @@ const statusTones: Record<string, Tone> = {
   expired: "danger",
   // Did not run in this run: its output comes from an earlier one.
   reused: "reused",
+  // Did not do its work: it skipped itself, or a step it reads from was skipped.
+  skipped: "skipped",
 };
 
 export function statusTone(status: string | undefined): StatusTone {
@@ -36,6 +39,7 @@ export const statusToneColor: Record<StatusTone, string> = {
   success: "var(--color-run-status-success)",
   danger: "var(--color-run-status-danger)",
   reused: "var(--color-run-status-reused)",
+  skipped: "var(--color-run-status-skipped)",
   neutral: "var(--color-run-status-muted)",
 };
 const toneClasses: Record<Tone, string> = {
@@ -44,6 +48,7 @@ const toneClasses: Record<Tone, string> = {
   danger: "text-run-status-danger",
   warning: "text-amber",
   reused: "text-run-status-reused",
+  skipped: "text-run-status-skipped",
   neutral: "text-run-status-muted",
 };
 
@@ -87,9 +92,11 @@ export function RunStatus({
           ? "✗"
           : tone === "reused"
             ? "↺"
-            : normalized === "cancelled"
-              ? "⊘"
-              : "○";
+            : tone === "skipped"
+              ? "↷"
+              : normalized === "cancelled"
+                ? "⊘"
+                : "○";
   const marker = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     if (waiting || tone !== "active" || !marker.current) return;

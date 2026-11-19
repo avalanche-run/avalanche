@@ -783,7 +783,9 @@ function AgentAndStepInspector({
         ? "status-failed text-failed"
         : node?.status === "reused"
           ? "text-run-status-reused"
-          : "text-muted";
+          : node?.status === "skipped"
+            ? "text-run-status-skipped"
+            : "text-muted";
   const nodeName = run
     ? run.topology?.displayNames[nodeId] || node?.name || nodeId
     : workflow?.displayNames[nodeId] || nodeId;
@@ -893,6 +895,14 @@ function AgentAndStepInspector({
                 title={node.error}
               >
                 {node.error}
+              </p>
+            )}
+            {node?.status === "skipped" && node.skipReason && (
+              <p
+                className="node-skip-reason mt-2 mb-0 line-clamp-3 text-[9px] text-run-status-skipped [overflow-wrap:anywhere]"
+                title={node.skipReason}
+              >
+                Skipped: {node.skipReason}
               </p>
             )}
             {run && onOpenDefinition && (

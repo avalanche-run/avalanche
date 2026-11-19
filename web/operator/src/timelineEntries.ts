@@ -168,7 +168,7 @@ function stepEntries(
         offset,
         title: `Step ${name} ${done.verb}${where}`,
         detail:
-          [done.word, attempts > 1 && `after ${attempts} attempts`, node.error]
+          [done.word, attempts > 1 && `after ${attempts} attempts`, node.error, node.skipReason]
             .filter(Boolean)
             .join(" · ") || undefined,
         took: span(node.startedAt, node.endedAt),

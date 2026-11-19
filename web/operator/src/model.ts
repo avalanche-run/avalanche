@@ -425,6 +425,8 @@ export interface NodeSnapshotMsg {
   reusedFromRunId?: string;
   /** Status "reused" only: the step in that run, when the host knows it differs by name. */
   reusedFromNodeId?: string;
+  /** Status "skipped" only: why; unset when the run stopped before the step ran. */
+  skipReason?: string;
 }
 
 export const NodeSnapshotMsg = {
@@ -1119,6 +1121,8 @@ export interface NodeStatusChanged {
   stepIo?: StepIo;
   /** Status "reused" only: the run holding the saved output this step reuses. */
   reusedFromRunId?: string;
+  /** Status "skipped" only: why; unset when the run stopped before the step ran. */
+  skipReason?: string;
 }
 
 export const NodeStatusChanged = {

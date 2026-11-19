@@ -1409,6 +1409,7 @@ export class GrpcWebOperatorApi implements OperatorApi {
     }
     if (node.stepIo) mapped.stepIo = mapStepIo(node.stepIo);
     if (node.reusedFromRunId !== undefined) mapped.reusedFromRunId = node.reusedFromRunId;
+    if (node.skipReason !== undefined) mapped.skipReason = node.skipReason;
     return mapped;
   }
 
@@ -1662,6 +1663,7 @@ export class GrpcWebOperatorApi implements OperatorApi {
             ...(node?.reusedFromRunId !== undefined
               ? { reusedFromRunId: node.reusedFromRunId }
               : {}),
+            ...(node?.skipReason !== undefined ? { skipReason: node.skipReason } : {}),
           },
         });
       }

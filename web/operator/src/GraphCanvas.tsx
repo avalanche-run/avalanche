@@ -141,6 +141,8 @@ interface CardData extends Record<string, unknown> {
   /** Status "reused" only: the run holding this step's saved output. */
   reusedFromRunId?: string;
   onOpenReusedSource?: () => void;
+  /** Status "skipped" only: why; unset when the run stopped before the step ran. */
+  skipReason?: string;
   nodeType: string;
   isAgent: boolean;
   /** The agent runs on ClaudeAgent, the Claude Agent SDK runtime. */
@@ -195,6 +197,7 @@ function MapItemDots({ items }: { items: MapItemDot[] }) {
     ...(
       [
         [count((tone) => tone === "danger"), "failed"],
+        [count((tone) => tone === "skipped"), "skipped"],
         [count((tone) => tone === "active"), "running"],
         [count((tone) => tone === "warning" || tone === "neutral"), "waiting"],
         [count((tone) => tone === undefined), "not started"],
@@ -443,7 +446,7 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
     ];
   return (
     <article
-      className={`node-card ${data.current ? "node-card--current" : ""} ${showDescription ? "node-card--description" : ""} ${isCompact ? `node-card--compact ${hasEvaluationRow ? "min-h-[130px]" : "min-h-[100px]"} justify-center gap-0 px-4 py-3` : "min-h-[130px] gap-2 p-4"} relative flex w-[360px] cursor-pointer flex-col items-stretch rounded border text-left motion-reduce:transition-none ${designationClass} ${state === "reused" ? "border-dashed" : ""}`}
+      className={`node-card ${data.current ? "node-card--current" : ""} ${showDescription ? "node-card--description" : ""} ${isCompact ? `node-card--compact ${hasEvaluationRow ? "min-h-[130px]" : "min-h-[100px]"} justify-center gap-0 px-4 py-3` : "min-h-[130px] gap-2 p-4"} relative flex w-[360px] cursor-pointer flex-col items-stretch rounded border text-left motion-reduce:transition-none ${designationClass} ${state === "reused" ? "border-dashed" : state === "skipped" ? "border-dotted" : ""}`}
       data-node-state={state}
       data-node-wait={waiting ? data.waitKind : undefined}
       data-current={data.current || undefined}
@@ -574,6 +577,14 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
           onOpen={data.onOpenReusedSource}
           className={`nodrag relative z-[3] ${isCompact ? "text-sm" : ""}`}
         />
+      )}
+      {state === "skipped" && data.skipReason && (
+        <span
+          className={`node-skip-reason pointer-events-none relative z-[3] line-clamp-2 font-mono text-run-status-skipped [overflow-wrap:anywhere] ${isCompact ? "text-sm" : "text-[9px]"}`}
+          title={data.skipReason}
+        >
+          Skipped: {data.skipReason}
+        </span>
       )}
       {data.mapItems && <MapItemDots items={data.mapItems} />}
       {data.integrations &&
@@ -1578,6 +1589,7 @@ function GraphCanvasView({
                   onOpenReusedSource(reusedFromRunId, runtimeNode?.reusedFromNodeId ?? nodeId)
               : undefined,
           error: runtimeNode?.error,
+          skipReason: runtimeNode?.skipReason,
           startedAt: runtimeNode?.startedAt || undefined,
           endedAt: runtimeNode?.endedAt || undefined,
           runningElapsedSeconds: runtimeNode?.runningElapsedSeconds ?? 0,
@@ -1950,6 +1962,7 @@ function sameRunNodeState(
       node.nodeType === other.nodeType &&
       node.status === other.status &&
       node.reusedFromRunId === other.reusedFromRunId &&
+      node.skipReason === other.skipReason &&
       node.error === other.error &&
       node.startedAt === other.startedAt &&
       node.endedAt === other.endedAt

@@ -7,6 +7,10 @@
   starts, then the child's wait, and it links to the child run. A standalone
   `ava.start_run` keeps its own node. The console shows the same graph.
 
+- The operator UI shows skipped steps in their own style (↷, dotted border),
+  with the reason on the step's card and in its inspector. A mapped step counts
+  its skipped items, which used to read as waiting.
+
 - A step can now end as skipped: call `ava.skip("reason")` inside it. The step
   stops at once, is not retried, and the operator records it as skipped with its
   reason. A step that reads its output gets `None` where the input is typed
