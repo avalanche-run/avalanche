@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The operator UI draws an `ava.call` as one node instead of a `start_run`
+  node followed by a wait node. Its status is the start's until the child run
+  starts, then the child's wait, and it links to the child run. A standalone
+  `ava.start_run` keeps its own node. The console shows the same graph.
+
 - A step can now end as skipped: call `ava.skip("reason")` inside it. The step
   stops at once, is not retried, and the operator records it as skipped with its
   reason. A step that reads its output gets `None` where the input is typed

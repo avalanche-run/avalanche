@@ -203,6 +203,8 @@ export interface FlowInfoMsg {
    * @generated from protobuf field: bool webhook_active = 19
    */
   webhookActive: boolean;
+  /** Each `ava.call`'s wait node ID to its start node ID, from the flow's wait specs. */
+  callStarts?: Record<string, string>;
 }
 
 export const FlowInfoMsg = {

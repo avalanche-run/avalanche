@@ -17,6 +17,7 @@ import { mapEvaluationRecord, type EvaluationRecord } from "./evaluations";
 import { parseTraceHeaderNative } from "./agentTrace/common";
 import { mapStepIo, parseRunResultDocument, type RunResultTarget } from "./stepIo";
 import { isUnknownRecord } from "./guards";
+import { callStarts } from "./callNodes";
 import {
   parseIntegrationLogin,
   parseIntegrationStatus,
@@ -1889,6 +1890,11 @@ function mapFlowInfo(flow: FlowInfoV2): FlowInfoMsg {
     graph: flow.topology?.graph ?? {},
     nodeTypes: flow.topology?.nodeTypes ?? {},
     displayNames: flow.topology?.displayNames ?? {},
+    callStarts: callStarts(
+      Object.fromEntries(
+        Object.entries(flow.nodeWaitsJson).map(([nodeId, json]) => [nodeId, JSON.parse(json)]),
+      ),
+    ),
     standardStepDocstringLines: flow.topology?.standardStepDocstringLines ?? {},
     cron: flow.cron,
     nextRunAt: flow.nextRunAt,

@@ -51,6 +51,7 @@ export type {
   IntegrationToolDeclaration,
   McpDeclaration,
 } from "./integrationAccounts";
+export { callStarts } from "./callNodes";
 export { RerunRefusedError } from "./rerun";
 export type { RerunMode, RerunProblem, RerunRequest } from "./rerun";
 export { OperatorUi } from "./ui/OperatorUi";

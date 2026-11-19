@@ -91,6 +91,7 @@ import { ClaudeLogo, isClaudeRuntime } from "./ClaudeLogo";
 import { ReusedFromLink } from "./RerunDialog";
 import { RunStatus, statusTone, statusToneColor, type WaitKind } from "./RunStatusBadge";
 import type { WaitCard } from "./RunWaitPanel";
+import { callNodeState, foldCalls } from "./callNodes";
 import {
   INPUT_NODE_ID,
   decodeWorkflowInputDeclaration,
@@ -1134,7 +1135,10 @@ function highlightedNode(highlight: GraphHighlight | undefined, nodeId: string) 
 
 function invocationIdentity(nodeId: string, label: string): string {
   const suffix = nodeId.startsWith(`${label}_`) ? nodeId.slice(label.length + 1) : "";
-  return suffix && /^\d+$/.test(suffix) ? `#${suffix}` : nodeId;
+  if (suffix && /^\d+$/.test(suffix)) return `#${suffix}`;
+  // A node labelled other than its ID (a call shows its child's name) keeps the ID's number.
+  const number = /_(\d+)$/.exec(nodeId)?.[1];
+  return number ? `#${number}` : nodeId;
 }
 
 type TopologyView = Pick<
@@ -1243,16 +1247,22 @@ function GraphCanvasView({
       inputDeclarationJson: workflow.inputDeclarationJson,
     };
   }, [runTopology, workflow]);
-  const groupedTopology = useMemo(() => {
-    if (!topology) return undefined;
+  const calls = (workflow ?? integrationsWorkflow)?.callStarts;
+  const { groupedTopology, foldedCalls } = useMemo(() => {
+    if (!topology)
+      return { groupedTopology: undefined, foldedCalls: {} as Record<string, string> };
     const parents = new Set(Object.keys(topology.mapSpecs));
+    const { topology: folded, folded: foldedCalls } = foldCalls(topology, calls ?? {});
     return {
-      ...topology,
-      nodeIds: topology.nodeIds.filter(
-        (id) => ![...parents].some((parent) => id.startsWith(`${parent}[`)),
-      ),
+      groupedTopology: {
+        ...folded,
+        nodeIds: folded.nodeIds.filter(
+          (id) => ![...parents].some((parent) => id.startsWith(`${parent}[`)),
+        ),
+      },
+      foldedCalls,
     };
-  }, [topology]);
+  }, [calls, topology]);
   const rawInputDeclaration = topology?.inputDeclarationJson ?? "";
   const inputDeclaration = useMemo(() => {
     try {
@@ -1481,6 +1491,10 @@ function GraphCanvasView({
   const nodes = useMemo(() => {
     if (!topology) return [];
     const runtimeNodes = Object.fromEntries(runNodes.map((node) => [node.nodeId, node]));
+    for (const [wait, start] of Object.entries(foldedCalls)) {
+      const state = callNodeState(runtimeNodes[start], runtimeNodes[wait]);
+      if (state) runtimeNodes[wait] = state;
+    }
     const waitKinds = new Map(waits.map((card) => [card.nodeId, card.kind]));
     // Time, external-event and child-run waits share the clock. Decision cards
     // carry the human-action distinction even when the host only lists decisions.
@@ -1493,8 +1507,9 @@ function GraphCanvasView({
         topology.displayNames[nodeId] || runtimeNodes[nodeId]?.name || nodeId,
       ]),
     );
-    const labelCounts = Object.values(labels).reduce<Record<string, number>>(
-      (counts, label) => ({ ...counts, [label]: (counts[label] ?? 0) + 1 }),
+    // Count only drawn nodes, so a call's folded start does not number a lone start_run.
+    const labelCounts = (groupedTopology?.nodeIds ?? []).reduce<Record<string, number>>(
+      (counts, nodeId) => ({ ...counts, [labels[nodeId]]: (counts[labels[nodeId]] ?? 0) + 1 }),
       {},
     );
     const nodes: Node<CardData>[] = (groupedTopology?.nodeIds ?? []).map((nodeId) => {
@@ -1519,7 +1534,11 @@ function GraphCanvasView({
       return {
         id: nodeId,
         selected: nodeId === selectedNodeId,
-        className: highlightedNode(highlight, nodeId) ? "timeline-highlight" : undefined,
+        className:
+          highlightedNode(highlight, nodeId) ||
+          (nodeId in foldedCalls && highlightedNode(highlight, foldedCalls[nodeId]))
+            ? "timeline-highlight"
+            : undefined,
         type: "workflow",
         position: positions[nodeId],
         measured: nodeMeasurements.get(nodeId),
@@ -1599,6 +1618,7 @@ function GraphCanvasView({
     runNodes,
     waits,
     expansions,
+    foldedCalls,
     groupedTopology,
     highlight,
     onOpenNode,
