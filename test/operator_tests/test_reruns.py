@@ -1441,6 +1441,9 @@ def test_a_rerun_parked_on_a_call_keeps_its_reused_steps_across_a_restart(env):
         rerun = _approved(reopened, rerun_id)
         assert rerun.status is RunStatus.SUCCESS
         assert reopened.get_run_result(rerun_id) == "approved 2"
+        # The call's wait is named after its child, so the graph shows one `approval` node.
+        names = dict(rerun.topology.display_names)
+        assert sorted(names.values()) == ["after_call", "approval", "before_call", "start_run"]
         # The resumed run restored the reused step instead of running it again.
         assert env.executed() == ["after_call"]
         assert _statuses(rerun)["before_call"] is NodeStatus.REUSED

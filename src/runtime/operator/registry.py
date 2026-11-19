@@ -34,7 +34,7 @@ from .models import (
     WorkflowDescriptor,
     WorkflowDiscoveryDiagnostic,
     WorkflowInfo,
-    display_name_from_id,
+    node_display_name,
 )
 from .source import resolve_watch_roots
 from .workflow_metadata import (
@@ -197,7 +197,7 @@ def workflow_to_info(
     """Convert a Workflow object to the public flat compatibility model."""
     node_ids = workflow._topological_sort()
     node_types = {nid: workflow.nodes[nid].node.node_type.value for nid in node_ids}
-    display_names = {nid: display_name_from_id(nid) for nid in node_ids}
+    display_names = {nid: node_display_name(workflow, nid) for nid in node_ids}
     agent_declarations = agent_declarations_for_workflow(workflow, node_ids)
     agent_node_ids = list(agent_declarations)
     standard_step_docstring_lines = node_docstring_lines_for_workflow(workflow, node_ids)

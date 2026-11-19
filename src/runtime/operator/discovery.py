@@ -36,7 +36,7 @@ from .models import (
     WorkflowDescriptor,
     WorkflowDiscoveryDiagnostic,
     WorkflowLocator,
-    display_name_from_id,
+    node_display_name,
 )
 from .source_policy import is_excluded_directory, is_path_in_excluded_directory
 from .windows_job import WindowsJob, assign_process, close_job, create_kill_on_close_job
@@ -680,7 +680,7 @@ def _descriptor_to_dict(
         ],
         "graph": [[key, value] for key, value in workflow.graph.items()],
         "node_types": [[nid, workflow.nodes[nid].node.node_type.value] for nid in node_ids],
-        "display_names": [[nid, display_name_from_id(nid)] for nid in node_ids],
+        "display_names": [[nid, node_display_name(workflow, nid)] for nid in node_ids],
         "node_slugs": [[nid, workflow.node_slugs[nid]] for nid in node_ids],
         "agent_node_ids": list(agent_declarations),
         "agent_declarations_json": [

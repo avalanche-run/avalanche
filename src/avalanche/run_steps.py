@@ -70,12 +70,14 @@ def start_run(
     """
     if _workflow_context.get() is None:
         raise TypeError("ava.start_run is workflow-only; use ava run or a normal run client")
-    if isinstance(target, (str, NodeFuture)):
-        name, definition = target, None
-    else:
-        definition = target
-        name = target.name if isinstance(target, Workflow) else target.__name__
+    name, definition = _target(target)
     return RunNode(definition)(name, input, when=when)
+
+
+def _target(target: RunTarget | str | NodeFuture) -> tuple[str | NodeFuture, RunTarget | None]:
+    if isinstance(target, (str, NodeFuture)):
+        return target, None
+    return (target.name if isinstance(target, Workflow) else target.__name__), target
 
 
 class ChildRunError(NonRetryableError):
@@ -168,7 +170,11 @@ def call(
     )
     started = start_run(target, input, when=when)
     spec = spec.model_copy(update={"run_start_node_id": started.future_id})
-    result = RunWaitNode(spec, started.node.definition)(started)
+    wait = RunWaitNode(spec, started.node.definition)
+    # One call reads as one node, named after its child; the UI folds the start into it.
+    name = _target(target)[0]
+    wait.display_name = name if isinstance(name, str) else None
+    result = wait(started)
     result.chain_start = started
     return result
 

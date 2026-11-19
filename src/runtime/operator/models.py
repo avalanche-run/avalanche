@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from types import MappingProxyType
-from typing import Annotated, Literal, Mapping
+from typing import TYPE_CHECKING, Annotated, Literal, Mapping
 
 from pydantic import (
     AfterValidator,
@@ -32,6 +32,9 @@ from avalanche.run_status import EMPTY_WAITING_ON, WaitingOn, local_human_status
 from avalanche.run_steps import RunOpSpec
 
 from .step_io import StepIo
+
+if TYPE_CHECKING:
+    from avalanche.dag import Workflow
 
 # The common kind of an agent live event; "native" when it has no common equivalent.
 AgentEventKind = Literal[
@@ -1053,3 +1056,8 @@ def display_name_from_id(node_id: str) -> str:
     if len(parts) == 2 and parts[1].isdigit():
         return parts[0]
     return node_id
+
+
+def node_display_name(workflow: Workflow, node_id: str) -> str:
+    """A node's declared display name, else the one derived from its ID."""
+    return workflow.nodes[node_id].node.display_name or display_name_from_id(node_id)

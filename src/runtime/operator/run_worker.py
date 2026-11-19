@@ -53,7 +53,7 @@ from .evaluation_worker import EvaluationRequest, snapshot_evaluation
 from .hooks import RunHooks
 from .integration_accounts import OperatorAccounts
 from .machine_state_entry import qualify_state_entry
-from .models import display_name_from_id
+from .models import node_display_name
 from .registry import (
     agent_field_schemas_for_workflow,
     agent_instruction_lines_for_workflow,
@@ -619,7 +619,7 @@ def _workflow_metadata(workflow: Workflow) -> dict[str, Any]:
         "node_types": {
             node_id: workflow.nodes[node_id].node.node_type.value for node_id in node_ids
         },
-        "display_names": {node_id: display_name_from_id(node_id) for node_id in node_ids},
+        "display_names": {nid: node_display_name(workflow, nid) for nid in node_ids},
         "agent_field_schemas_json": agent_field_schemas_for_workflow(workflow, node_ids),
         "agent_instruction_lines": agent_instruction_lines_for_workflow(workflow, node_ids),
         "agent_runtime_kinds": agent_runtime_kinds_for_workflow(workflow, node_ids),

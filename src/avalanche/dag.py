@@ -161,6 +161,8 @@ class Node:
 
     # Ordinary Python nodes retain legacy implicit tuple/list unpacking.
     _expand_single_return: bool = True
+    # Shown in graphs instead of the name derived from the node ID.
+    display_name: str | None = None
 
     def __init__(
         self,
