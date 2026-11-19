@@ -8,6 +8,7 @@ from typing import Callable
 from avalanche.dag import MapFuture, NodeFuture
 from avalanche.input_ref import InputRef
 from avalanche.mapping import MapItemFailure, MapItemsFailed, NodesExpanded
+from avalanche.skips import upstream_skip_reason
 
 from .hooks import RunHooks
 
@@ -36,6 +37,8 @@ class DynamicMaps[T]:
         resolve_list: Callable[[list[T] | NodeFuture | InputRef], list[T]],
         gather: Callable[[str, tuple[str, ...]], None],
         hooks: RunHooks | None,
+        skipped: set[str],
+        skip: Callable[[str, str], None],
     ) -> None:
         self.run_id = run_id
         self.nodes = nodes
@@ -47,6 +50,8 @@ class DynamicMaps[T]:
         self.resolve_list = resolve_list
         self.gather = gather
         self.hooks = hooks
+        self.skipped = skipped
+        self.skip = skip
         self.groups: dict[str, _Group[T]] = {}
         self.expected_counts: dict[str, int] = {}
         self.children: dict[str, tuple[str, int]] = {}
@@ -105,7 +110,23 @@ class DynamicMaps[T]:
             future = group.future
             mapped_sources = {arg.future_id for arg in future.args if self.is_mapped(arg)}
             plain_dependencies = set(self.dependencies.get(parent, ())) - mapped_sources
-            if not plain_dependencies <= self.completed:
+            # The input lists are the positional arguments. When one comes from a
+            # skipped step there is nothing to map over: the whole map is skipped.
+            # A broadcast keyword input is bound per item, like any other input.
+            skipped_source = next(
+                (
+                    arg.future_id
+                    for arg in future.args
+                    if isinstance(arg, NodeFuture) and arg.future_id in self.skipped
+                ),
+                None,
+            )
+            if skipped_source is not None and group.n is None:
+                group.finished = True
+                self.skip(parent, upstream_skip_reason(self.nodes[skipped_source].node_slug))
+                changed = True
+                continue
+            if not plain_dependencies <= self.completed | self.skipped:
                 continue
             if any(self.groups[source].n is None for source in mapped_sources):
                 continue
@@ -144,7 +165,9 @@ class DynamicMaps[T]:
                 if index in group.created:
                     continue
                 upstream_items = {f"{source}[{index}]" for source in mapped_sources}
-                if not upstream_items <= self.completed:
+                # An item whose upstream item was skipped is created; the scheduler
+                # then skips it in turn.
+                if not upstream_items <= self.completed | self.skipped:
                     continue
                 child_id = f"{parent}[{index}]"
                 args = tuple(
@@ -175,15 +198,23 @@ class DynamicMaps[T]:
                 self.publish(parent, tuple(ids), n)
                 changed = True
             item_ids = tuple(f"{parent}[{index}]" for index in range(n))
-            if all(child_id in self.completed for child_id in item_ids):
-                self.gather(parent, item_ids)
+            if all(
+                child_id in self.completed or child_id in self.skipped for child_id in item_ids
+            ):
+                # Skipped items are left out of the collected list.
+                self.gather(
+                    parent, tuple(child for child in item_ids if child not in self.skipped)
+                )
                 group.finished = True
                 self.completed.add(parent)
                 if self.hooks and self.hooks.on_node_success:
                     self.hooks.on_node_success(parent)
                 changed = True
             elif all(
-                child_id in self.completed or child_id in self.failed for child_id in item_ids
+                child_id in self.completed
+                or child_id in self.failed
+                or child_id in self.skipped
+                for child_id in item_ids
             ):
                 self.emit_failure(
                     parent, MapItemsFailed(future.node.name, tuple(group.failures))

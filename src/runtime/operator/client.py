@@ -3060,6 +3060,7 @@ class GrpcStateProvider:
                     node.error = change.error
                     node.step_io = change.step_io
                     node.reused_from_run_id = change.reused_from_run_id
+                    node.skip_reason = change.skip_reason
                     node.revision = change.revision
                     run.nodes = dict(current.nodes)
                     run.nodes[change.node_id] = node
@@ -3401,6 +3402,7 @@ def _run_from_created(operator_instance_id: str, created: RunCreated) -> RunStat
             revision=item.revision,
             event_page_token=item.event_page_token,
             reused_from_run_id=item.reused_from_run_id,
+            skip_reason=item.skip_reason,
         )
         for item in created.nodes
     }

@@ -172,6 +172,7 @@ class _NodeRow(BaseModel):
     map_parent: str | None
     map_index: NonNegativeInt | None
     reused_from_run_id: str | None
+    skip_reason: str | None
     revision: PositiveInt
 
 
@@ -223,6 +224,7 @@ _NODE_COLUMNS = (
     "map_parent",
     "map_index",
     "reused_from_run_id",
+    "skip_reason",
     "revision",
 )
 _INSERT_RUN = (
@@ -387,7 +389,7 @@ class RunsTable:
         nodes: dict[str, list[_NodeRow]] = {}
         for row in connection.execute(
             "SELECT run_id, node_id, name, node_type, status, started_at, ended_at, error, "
-            "step_io_json, map_parent, map_index, reused_from_run_id, revision "
+            "step_io_json, map_parent, map_index, reused_from_run_id, skip_reason, revision "
             f"FROM {_NODES} "
             "ORDER BY run_id, position"
         ):
@@ -503,6 +505,7 @@ def _node_values(
             node.map_parent,
             node.map_index,
             node.reused_from_run_id,
+            node.skip_reason,
             stored.node_revisions[node.node_id],
         )
 
@@ -547,6 +550,7 @@ def _loaded_run(row: _RunRow, node_rows: Collection[_NodeRow]) -> LoadedRun:
             map_parent=node.map_parent,
             map_index=node.map_index,
             reused_from_run_id=node.reused_from_run_id,
+            skip_reason=node.skip_reason,
             status=node.status,
             started_at=node.started_at,
             ended_at=node.ended_at,

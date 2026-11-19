@@ -1430,6 +1430,13 @@ export interface NodeSnapshotV2 {
      * @generated from protobuf field: optional string reused_from_run_id = 15
      */
     reusedFromRunId?: string;
+    /**
+     * Status "skipped" only: why the step was skipped. Unset when the run stopped
+     * before the step ran.
+     *
+     * @generated from protobuf field: optional string skip_reason = 16
+     */
+    skipReason?: string;
 }
 /**
  * A bounded, display-only rendering of one value, never the value itself. Cut
@@ -6723,7 +6730,8 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
             { no: 12, name: "step_io", kind: "message", T: () => StepIoV2 },
             { no: 13, name: "map_parent", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
             { no: 14, name: "map_index", kind: "scalar", opt: true, T: 13 /*ScalarType.UINT32*/ },
-            { no: 15, name: "reused_from_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+            { no: 15, name: "reused_from_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 16, name: "skip_reason", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<NodeSnapshotV2>): NodeSnapshotV2 {
@@ -6789,6 +6797,9 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
                 case /* optional string reused_from_run_id */ 15:
                     message.reusedFromRunId = reader.string();
                     break;
+                case /* optional string skip_reason */ 16:
+                    message.skipReason = reader.string();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -6846,6 +6857,9 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
         /* optional string reused_from_run_id = 15; */
         if (message.reusedFromRunId !== undefined)
             writer.tag(15, WireType.LengthDelimited).string(message.reusedFromRunId);
+        /* optional string skip_reason = 16; */
+        if (message.skipReason !== undefined)
+            writer.tag(16, WireType.LengthDelimited).string(message.skipReason);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

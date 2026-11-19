@@ -178,6 +178,56 @@ by a source step, rather than mapping a direct `ava.input` selector on the drive
 separate from this local implementation. See the offline executable
 [`map_agent_fanout.py`](../../examples/map_agent_fanout.py).
 
+## Skipping a step
+
+```python
+ava.skip(reason: str | None = None) -> NoReturn
+```
+
+Call `ava.skip` inside a step, or in a helper it calls, when the step should not
+do its work. The step ends at once as **skipped**, not succeeded or failed, and
+shows the reason. It is never retried. `ava.skip` raises `ava.StepSkipped`; a
+broad `except Exception` inside the step catches it and cancels the skip.
+
+```python
+@ava.step
+def score_founder(qualification: Qualification) -> DimensionScore:
+    if not qualification.qualified:
+        ava.skip(qualification.outcome)
+    ...
+
+
+@ava.step
+def decide(scores: CompanyScores | None) -> Decision:
+    if scores is None:
+        return Decision.passed()
+    ...
+```
+
+A step that reads a skipped step's output gets `None` for that input when the
+parameter's annotation accepts `None` (`X | None`), and runs. Any other input from
+a skipped step (unannotated, or not accepting `None`) skips the step in turn, with
+the reason `Upstream step '<slug>' was skipped`. Inputs keep their positions, so a
+fan-in step can run with the outputs it has. Other edge kinds:
+
+- A `>>` edge that passes no data never skips the next step.
+- A `Stream` input reads its table as usual; a skipped producer wrote no rows.
+- A skipped step with `num_returns=N` gives `None` for each output.
+- An implicit `>>` input from a skipped step that returns a tuple or list, or
+  has no return annotation, skips the step in turn: how many inputs it would
+  have filled is unknown.
+- A skipped map item is left out of the map's collected list. A map whose input
+  list comes from a skipped step is skipped as a whole, so a consumer of its list
+  gets `None` (or is skipped) by the same rule. A broadcast keyword input from a
+  skipped step follows the input rule for each item. Waits, machine steps and child
+  runs are skipped with any step they depend on.
+- A workflow return that reads a skipped step gets `None`.
+
+The run still succeeds, and each skipped step keeps its reason in the operator,
+across restarts. A rerun cannot reuse a skipped step's output: rerun from the
+skipped step instead. [`examples/skipped_steps.py`](../../examples/skipped_steps.py)
+runs these rules through the local operator.
+
 ## Return contract
 
 The workflow builder declares the value returned by `handle.result()` or `await handle`:

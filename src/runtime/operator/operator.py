@@ -1603,6 +1603,7 @@ class Operator:
                 error=node.error,
                 step_io=node.step_io,
                 reused_from_run_id=node.reused_from_run_id,
+                skip_reason=node.skip_reason,
                 trace=self._trace_descriptors.get((run.run_id, node.node_id)),
                 revision=self._node_revisions.get(
                     (run.run_id, node.node_id),
@@ -3704,6 +3705,7 @@ class Operator:
                                 "node_started": NodeStatus.RUNNING,
                                 "node_succeeded": NodeStatus.SUCCESS,
                                 "node_failed": NodeStatus.FAILED,
+                                "node_skipped": NodeStatus.SKIPPED,
                             }[event_type]
                             if node.node_id in reducer.running_nodes:
                                 reducer.running_nodes.remove(node.node_id)
@@ -3733,6 +3735,9 @@ class Operator:
                                 node.ended_at = event["timestamp"]
                                 node.error = (
                                     event["error"] if status == NodeStatus.FAILED else None
+                                )
+                                node.skip_reason = (
+                                    event["reason"] if status == NodeStatus.SKIPPED else None
                                 )
                             changed_node_ids = (node.node_id,)
                             status_node_ids = changed_node_ids
@@ -4621,6 +4626,7 @@ class Operator:
                             error=node.error,
                             step_io=node.step_io,
                             reused_from_run_id=node.reused_from_run_id,
+                            skip_reason=node.skip_reason,
                         )
                     )
                 if log_item is not None:
@@ -5255,6 +5261,7 @@ _RUN_EVENT_TYPES = {
     "node_started",
     "node_succeeded",
     "node_failed",
+    "node_skipped",
     "agent_evidence",
     "classifier_evidence",
     "evaluation_submitted",
@@ -5267,7 +5274,7 @@ _RUN_EVENT_TYPES = {
     "wait_armed",
     "wait_resolved",
 }
-_NODE_EVENT_TYPES = {"node_started", "node_succeeded", "node_failed"}
+_NODE_EVENT_TYPES = {"node_started", "node_succeeded", "node_failed", "node_skipped"}
 _TERMINAL_STATUSES = {"success", "failed", "cancelled"}
 _MAX_EVENT_NODES = 10_000
 _MAX_EVENT_EDGES = 100_000
@@ -5689,6 +5696,8 @@ def _validate_run_event(event: object, *, validate_result: bool = True) -> str:
         expected = {"type", "node_id", "timestamp"}
         if event_type == "node_failed":
             expected.update({"error", "error_type"})
+        if event_type == "node_skipped":
+            expected.add("reason")
         if event_type == "node_succeeded" and "saved_output" in event:
             expected.add("saved_output")
         _require_exact_event_keys(event, expected)
@@ -5697,6 +5706,8 @@ def _validate_run_event(event: object, *, validate_result: bool = True) -> str:
         if event_type == "node_failed":
             _string_field(event, "error", maximum_length=_MAX_EVENT_MESSAGE_LENGTH)
             _string_field(event, "error_type", maximum_length=256)
+        if event_type == "node_skipped":
+            _string_field(event, "reason", maximum_length=_MAX_EVENT_FIELD_LENGTH)
     elif event_type == "agent_evidence":
         _require_exact_event_keys(event, {"type", "node_id", "event"})
         _string_field(event, "node_id", maximum_length=_MAX_EVENT_FIELD_LENGTH)

@@ -561,6 +561,18 @@ MIGRATIONS += (
     ),
 )
 
+MIGRATIONS += (
+    Migration(
+        version=17,
+        name="skip reasons",
+        statements=(
+            # Why a skipped step was skipped: it called ava.skip, or a step it depends
+            # on was skipped. NULL when the run stopped before the step ran.
+            "ALTER TABLE run_nodes ADD COLUMN skip_reason TEXT",
+        ),
+    ),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

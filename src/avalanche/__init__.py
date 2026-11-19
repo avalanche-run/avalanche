@@ -65,6 +65,7 @@ from .runtime import (  # noqa: F401
     Workspace,
     consume_stream,
 )
+from .skips import StepSkipped, skip
 
 # Storage contracts
 from .storage import Namespace, NamespaceConfig, ScanResult, Table, TableGroup
@@ -154,6 +155,8 @@ __all__ = [
     "source",
     "NonRetryableError",
     "OutcomeUnknownError",
+    "skip",
+    "StepSkipped",
     "Event",
     "event",
     "machine",

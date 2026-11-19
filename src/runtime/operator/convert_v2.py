@@ -483,6 +483,7 @@ def node_snapshot_to_v2(
         ended_at=node.ended_at or 0.0,
         revision=node.revision,
         reused_from_run_id=node.reused_from_run_id,
+        skip_reason=node.skip_reason,
     )
     if node.map_parent is not None:
         message.map_parent = node.map_parent
@@ -799,6 +800,7 @@ def update_envelope_to_v2(
                         running_elapsed_seconds=change.running_elapsed_seconds,
                         step_io=change.step_io,
                         reused_from_run_id=change.reused_from_run_id,
+                        skip_reason=change.skip_reason,
                     ),
                 ),
             )
@@ -1170,6 +1172,7 @@ def node_snapshot_from_v2(msg: pb.NodeSnapshotV2) -> NodeSnapshot:
         reused_from_run_id=(
             msg.reused_from_run_id if msg.HasField("reused_from_run_id") else None
         ),
+        skip_reason=msg.skip_reason if msg.HasField("skip_reason") else None,
     )
 
 
@@ -1371,6 +1374,7 @@ def operator_update_envelope_from_v2(
             reused_from_run_id=(
                 node.reused_from_run_id if node.HasField("reused_from_run_id") else None
             ),
+            skip_reason=node.skip_reason if node.HasField("skip_reason") else None,
         )
     elif payload == "activity_appended":
         appended = msg.activity_appended

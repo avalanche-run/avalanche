@@ -31,6 +31,10 @@ class RunHooks:
     on_node_start: Callable[[str], None] | None = None
     on_node_success: Callable[[str], None] | None = None
     on_node_failure: Callable[[str, Exception], None] | None = None
+    on_node_skipped: Callable[[str, str], None] | None = None
+    """The step ended as skipped: it called ava.skip, or a step it depends on was
+    skipped. Called as on_node_skipped(node_id, reason). A step skipped because of
+    another one gets no on_node_start."""
     on_node_reused: Callable[[str, str], None] | None = None
     """A rerun skipped this step and reuses its saved output. Called before any step
     starts as on_node_reused(node_id, source_run_id), where source_run_id is the run

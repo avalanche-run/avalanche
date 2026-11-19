@@ -292,6 +292,9 @@ class NodeState:
     map_parent: str | None = None
     map_index: int | None = None
     reused_from_run_id: str | None = None
+    # Status "skipped" only: why the step was skipped. Unset when the run stopped
+    # before the step ran.
+    skip_reason: str | None = None
 
     @property
     def elapsed(self) -> float | None:
@@ -432,6 +435,9 @@ class NodeSnapshot:
     map_index: int | None = None
     running_elapsed_seconds: float | None = None
     reused_from_run_id: str | None = None
+    # Status "skipped" only: why the step was skipped. Unset when the run stopped
+    # before the step ran.
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -780,6 +786,9 @@ class NodeStatusChanged:
     running_elapsed_seconds: float | None = None
     step_io: StepIo | None = None
     reused_from_run_id: str | None = None
+    # Status "skipped" only: why the step was skipped. Unset when the run stopped
+    # before the step ran.
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)

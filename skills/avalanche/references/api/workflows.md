@@ -92,6 +92,29 @@ Operators accept only deferred node calls/chains and parallel groups (`TypeError
 
 Independent branches may overlap; fan-in values follow declaration order, not completion order. See [LocalExecutor](runs.md#local-executor) for concurrency.
 
+## Skipping a step
+
+`ava.skip(reason: str | None = None) -> NoReturn` ends the current step at once as
+skipped (never retried; the run still succeeds). Use it instead of returning
+`None` as a "did nothing" signal. A step reading a skipped step's output gets
+`None` for an input typed `X | None` and runs; an unannotated or non-nullable input
+skips it in turn. A `>>` edge passing no data never skips. A skipped map item is
+left out of the collected list. A `Stream` input reads its table as usual. Do not
+catch `ava.StepSkipped` with a broad `except Exception` inside the step.
+
+```python
+@ava.step
+def score(qualification: Qualification) -> Score:
+    if not qualification.qualified:
+        ava.skip(qualification.outcome)
+    ...
+
+
+@ava.step
+def decide(score: Score | None) -> Decision:  # runs; None when score was skipped
+    ...
+```
+
 ## Return contract
 
 The workflow builder declares the value returned by `handle.result()` or `await handle`:

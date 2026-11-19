@@ -16,6 +16,7 @@ from .input_ref import InputRef
 from .local_waits import LocalWaits, Reconcile
 from .policies import MAX_GENERATION, NonRetryableError, OutcomeUnknownError
 from .run_steps import RunWaitNode
+from .skips import StepSkipped, upstream_skip_reason
 from .waits import WaitNode
 
 if TYPE_CHECKING:
@@ -40,6 +41,8 @@ def run_local_schedule(
     resolve_list: Callable[[list[T] | NodeFuture | InputRef], list[T]],
     gather: Callable[[str, tuple[str, ...]], None],
     submit_machine: Callable[[str], Future[tuple[NodeFuture, T]]],
+    skipped: set[str],
+    skip: Callable[[str, str], None],
 ) -> None:
     capacity = max_workers if max_workers is not None else min(32, (os.cpu_count() or 1) + 4)
     remaining = list(order)
@@ -96,6 +99,8 @@ def run_local_schedule(
         resolve_list=resolve_list,
         gather=gather,
         hooks=hooks,
+        skipped=skipped,
+        skip=skip,
     )
 
     def notify(_future: Future[tuple[NodeFuture, T]]) -> None:
@@ -142,6 +147,9 @@ def run_local_schedule(
                     ref = workflow.nodes[node_id]
                     try:
                         node_ref, value = task.result()
+                    except StepSkipped as exc:
+                        # A skip is the step's own outcome: never retried, never a failure.
+                        skip(node_id, exc.reason)
                     except Exception as exc:
                         policy = ref.node.policy
                         if (
@@ -255,10 +263,22 @@ def run_local_schedule(
                     mapped = isinstance(node, WaitNode) and node.spec.map_max_items is not None
                     show_group_id = node.spec.show_node_id if mapped else None
                     if not all(
-                        parent in completed
+                        parent in completed or parent in skipped
                         for parent in dependencies.get(node_id, [])
                         if parent != show_group_id
                     ):
+                        continue
+                    skipped_parents = [p for p in dependencies.get(node_id, []) if p in skipped]
+                    if skipped_parents and (
+                        isinstance(node, WaitNode) or node.node_type.value in {"machine", "run"}
+                    ):
+                        # Waits and host operations take no nullable inputs: they are
+                        # skipped with any step they depend on. A plain step decides
+                        # when it is bound (bind_skipped_inputs).
+                        remaining.remove(node_id)
+                        upstream = workflow.nodes[skipped_parents[0]].node_slug
+                        skip(node_id, upstream_skip_reason(upstream))
+                        progressed = True
                         continue
                     if isinstance(ref.node, WaitNode) and not isinstance(node, RunWaitNode):
                         if hooks and hooks.on_node_start:

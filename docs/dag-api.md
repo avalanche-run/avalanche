@@ -70,6 +70,15 @@ For the full API and configurable `fail_fast` behavior, see
 with `uv run python examples/map_agent_fanout.py`. Browser and TUI groups provide
 per-item drill-down rather than drawing the maximum number of slots.
 
+## Skip a step
+
+A step that finds it should not do its work calls `ava.skip("reason")`. It ends
+at once as skipped, is not retried, and the run still succeeds. A later step that
+reads its output gets `None` where that input is typed `X | None`, and runs;
+otherwise it is skipped in turn. For example, scorers skip an unqualified
+applicant, while the decision step, typed `scores: Scores | None`, still decides.
+See [Skipping a step](api/workflows.md#skipping-a-step) for every edge kind.
+
 ## Inspect step interfaces
 
 The browser inspector shows a **Step interface** panel for source, ordinary,

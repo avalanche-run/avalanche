@@ -75,6 +75,13 @@ from .mapping import DEFAULT_MAX_ITEMS, HARD_CAP, MapSpec
 from .policies import Event, NonRetryableError, StepPolicy, UncertaintyPolicy, event
 from .protocol import PROTOCOL_VERSION, ProtocolVersion
 from .run_handle import RunHandle
+from .skips import (
+    SkippedValue,
+    StepSkipped,
+    bind_skipped_inputs,
+    fills_one_input,
+    upstream_skip_reason,
+)
 from .step_interface import (
     StepInterface,
     decoration_namespace,
@@ -1946,8 +1953,11 @@ def _fetch_node_result(
     nodes,
     executor,
     scheduled_node_ids: set[str] | None = None,
+    skipped_node_ids: set[str] | frozenset[str] = frozenset(),
 ):
-    """Fetch the actual result value for a NodeFuture, handling chains and multi-return."""
+    """Fetch the actual result value for a NodeFuture, handling chains and multi-return.
+
+    A skipped step has no result: its value is None."""
     # If this is a chain composite, fetch the chain_end instead
     fetch_target = nf.chain_end if nf.chain_end != nf else nf
 
@@ -1961,11 +1971,14 @@ def _fetch_node_result(
                 nodes,
                 executor,
                 scheduled_node_ids,
+                skipped_node_ids,
             )
             results.append(branch_result)
         return tuple(results)
 
     # Regular NodeFuture handling
+    if fetch_target.future_id in skipped_node_ids:
+        return None
     if fetch_target.future_id not in result_refs:
         if scheduled_node_ids is not None and fetch_target.future_id not in scheduled_node_ids:
             return None
@@ -2609,6 +2622,23 @@ class Workflow:
 
         result_refs: dict[str, Any] = {}
         reused_node_ids: set[str] = set()
+        # Steps that ended as skipped, by ava.skip or because a step they depend on
+        # was skipped. They have no result; a workflow return reading one gets None.
+        skipped_node_ids: set[str] = set()
+
+        def skip_node(node_id: str, reason: str) -> None:
+            skipped_node_ids.add(node_id)
+            node_ref = nodes[node_id]
+            value = SkippedValue(node_slugs[node_id])
+            if node_ref.node.num_returns > 1 and not isinstance(node_ref, MapFuture):
+                result_refs[node_id] = (value,) * node_ref.node.num_returns
+            else:
+                result_refs[node_id] = value
+            if execution_services is not None:
+                with receipt_refs_lock:
+                    receipt_frontiers[node_id] = parent_receipt_frontier(node_id)
+            if hooks and hooks.on_node_skipped:
+                hooks.on_node_skipped(node_id, reason)
         # Service receipts are a separate control channel. They are never
         # stored in result_refs or exposed to workflow arguments/context.
         receipt_refs: dict[str, Any] = {}
@@ -2714,8 +2744,11 @@ class Workflow:
 
                 original_parent_ids = original_dependencies_map.get(node_id, [])
                 # Saved outputs never stand in for rows: Stream reads replay the source run.
+                # A skipped producer gives no upstream data: a Stream reads its table.
                 provider_parent_results = [
-                    None if pid in reused_node_ids else result_refs.get(pid)
+                    None
+                    if pid in reused_node_ids or pid in skipped_node_ids
+                    else result_refs.get(pid)
                     for pid in original_parent_ids
                 ]
                 upstream_node_slugs = [
@@ -2733,6 +2766,7 @@ class Workflow:
                         selected_result = (
                             None
                             if selector.future_id in reused_node_ids
+                            or selector.future_id in skipped_node_ids
                             else result_refs.get(selector.future_id)
                         )
                         if selected_result is not None and selector.tuple_index is not None:
@@ -2822,6 +2856,17 @@ class Workflow:
             # Injectable params (Logger, Stream, etc.) are excluded — they're
             # handled separately by the provider system.
             if not node_ref.args and not binding_plan.has_explicit_provider_selectors:
+                for binding in binding_plan.implicit_parent_bindings:
+                    if (
+                        binding.may_expand_single_return
+                        and binding.ref.future_id in skipped_node_ids
+                        and not fills_one_input(binding.ref.node.fn)
+                    ):
+                        # How many inputs a skipped tuple would have filled is unknown;
+                        # binding fewer would shift every later input.
+                        raise StepSkipped(
+                            upstream_skip_reason(node_slugs[binding.ref.future_id])
+                        )
                 upstream_values = _collect_implicit_parent_results(
                     node_ref,
                     nodes,
@@ -2856,6 +2901,9 @@ class Workflow:
                 )
                 resolved_args = implicit_args
                 resolved_kwargs.update(implicit_kwargs)
+            resolved_args, resolved_kwargs = bind_skipped_inputs(
+                node_ref.node.fn, resolved_args, resolved_kwargs
+            )
 
             # Handle injectable parameters that may need wrappers (using provider pattern)
             #
@@ -2944,6 +2992,8 @@ class Workflow:
                         num_returns=node_ref.node.num_returns,
                         **resolved_kwargs,
                     )
+            except StepSkipped:
+                raise
             except Exception as exc:
                 if emit_hooks and hooks and hooks.on_node_failure:
                     hooks.on_node_failure(node_id, exc)
@@ -3074,6 +3124,8 @@ class Workflow:
                             # finalized service receipt. Preserve real ancestry;
                             # never re-open the uncertain invocation to invent one.
                             receipt_frontiers[node_id] = parent_receipt_frontier(node_id)
+            except StepSkipped:
+                raise
             except Exception as exc:
                 if hooks and hooks.on_node_failure:
                     hooks.on_node_failure(node_id, exc)
@@ -3152,6 +3204,8 @@ class Workflow:
                 resolve_mapped_list,
                 gather_map,
                 submit_machine,
+                skipped_node_ids,
+                skip_node,
             )
         else:
             for node_id in execution_order:
@@ -3159,8 +3213,11 @@ class Workflow:
                 if cancel_requested and cancel_requested():
                     raise CancelledError()
 
-                node_ref, result = submit_node(node_id)
-                complete_node(node_id, node_ref, result)
+                try:
+                    node_ref, result = submit_node(node_id)
+                    complete_node(node_id, node_ref, result)
+                except StepSkipped as skip:
+                    skip_node(node_id, skip.reason)
 
         # If workflow doesn't return anything, wait for all nodes to complete.
         # Skip if hooks were active — we already resolved per-node above.
@@ -3177,6 +3234,8 @@ class Workflow:
             # LocalExecutor; resolving them just surfaces awaitables/exceptions.
             all_refs = []
             for fid in execution_order:
+                if fid in skipped_node_ids:
+                    continue
                 ref = result_refs.get(fid)
                 if ref is None:
                     continue  # Node was skipped (cancellation)
@@ -3200,6 +3259,7 @@ class Workflow:
                 nodes,
                 executor,
                 scheduled_node_ids if rerun_spec is not None else None,
+                skipped_node_ids,
             )
         elif isinstance(self.returns, tuple):
             # Tuple of NodeFutures returned
@@ -3210,6 +3270,7 @@ class Workflow:
                     nodes,
                     executor,
                     scheduled_node_ids if rerun_spec is not None else None,
+                    skipped_node_ids,
                 )
                 if isinstance(nf, NodeFuture)
                 else nf

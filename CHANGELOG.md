@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A step can now end as skipped: call `ava.skip("reason")` inside it. The step
+  stops at once, is not retried, and the operator records it as skipped with its
+  reason. A step that reads its output gets `None` where the input is typed
+  `X | None`, and is skipped in turn otherwise. See
+  [Skipping a step](docs/api/workflows.md#skipping-a-step).
+
 ## 0.20.21
 
 - 0.20.20 was never published: its release stopped before building

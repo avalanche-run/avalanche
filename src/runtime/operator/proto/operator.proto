@@ -563,6 +563,9 @@ message NodeSnapshotV2 {
   optional uint32 map_index = 14;
   // Status "reused" only: the run holding the saved output this step reuses.
   optional string reused_from_run_id = 15;
+  // Status "skipped" only: why the step was skipped. Unset when the run stopped
+  // before the step ran.
+  optional string skip_reason = 16;
 }
 
 enum StepValuePreviewKindV2 {

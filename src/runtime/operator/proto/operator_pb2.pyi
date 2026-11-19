@@ -853,7 +853,7 @@ class GetRunSnapshotRequestV2(_message.Message):
     def __init__(self, run_id: _Optional[str] = ...) -> None: ...
 
 class NodeSnapshotV2(_message.Message):
-    __slots__ = ("node_id", "name", "node_type", "status", "started_at", "ended_at", "revision", "error", "running_elapsed_seconds", "trace", "activity_continuation", "step_io", "map_parent", "map_index", "reused_from_run_id")
+    __slots__ = ("node_id", "name", "node_type", "status", "started_at", "ended_at", "revision", "error", "running_elapsed_seconds", "trace", "activity_continuation", "step_io", "map_parent", "map_index", "reused_from_run_id", "skip_reason")
     NODE_ID_FIELD_NUMBER: _ClassVar[int]
     NAME_FIELD_NUMBER: _ClassVar[int]
     NODE_TYPE_FIELD_NUMBER: _ClassVar[int]
@@ -869,6 +869,7 @@ class NodeSnapshotV2(_message.Message):
     MAP_PARENT_FIELD_NUMBER: _ClassVar[int]
     MAP_INDEX_FIELD_NUMBER: _ClassVar[int]
     REUSED_FROM_RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    SKIP_REASON_FIELD_NUMBER: _ClassVar[int]
     node_id: str
     name: str
     node_type: str
@@ -884,7 +885,8 @@ class NodeSnapshotV2(_message.Message):
     map_parent: str
     map_index: int
     reused_from_run_id: str
-    def __init__(self, node_id: _Optional[str] = ..., name: _Optional[str] = ..., node_type: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., revision: _Optional[int] = ..., error: _Optional[str] = ..., running_elapsed_seconds: _Optional[float] = ..., trace: _Optional[_Union[TraceDescriptorV2, _Mapping]] = ..., activity_continuation: _Optional[_Union[ContinuationRefV2, _Mapping]] = ..., step_io: _Optional[_Union[StepIoV2, _Mapping]] = ..., map_parent: _Optional[str] = ..., map_index: _Optional[int] = ..., reused_from_run_id: _Optional[str] = ...) -> None: ...
+    skip_reason: str
+    def __init__(self, node_id: _Optional[str] = ..., name: _Optional[str] = ..., node_type: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., revision: _Optional[int] = ..., error: _Optional[str] = ..., running_elapsed_seconds: _Optional[float] = ..., trace: _Optional[_Union[TraceDescriptorV2, _Mapping]] = ..., activity_continuation: _Optional[_Union[ContinuationRefV2, _Mapping]] = ..., step_io: _Optional[_Union[StepIoV2, _Mapping]] = ..., map_parent: _Optional[str] = ..., map_index: _Optional[int] = ..., reused_from_run_id: _Optional[str] = ..., skip_reason: _Optional[str] = ...) -> None: ...
 
 class StepValuePreviewV2(_message.Message):
     __slots__ = ("kind", "type_name", "preview_json", "truncated")

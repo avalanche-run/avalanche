@@ -362,6 +362,19 @@ def _run_worker(
                     },
                 )
 
+        def node_skipped(node_id: str, reason: str) -> None:
+            step_outputs.discard(node_id)
+            if node_id not in item_groups:
+                _put_run_event(
+                    event_queue,
+                    {
+                        "type": "node_skipped",
+                        "node_id": show_groups.get(node_id, node_id),
+                        "timestamp": time.monotonic(),
+                        "reason": reason,
+                    },
+                )
+
         def completed_value(node_id: str, value: object) -> object:
             # Waits and decisions complete here without a task; map groups never do.
             if (
@@ -444,6 +457,7 @@ def _run_worker(
             ),
             on_node_success=node_succeeded,
             on_node_failure=node_failed,
+            on_node_skipped=node_skipped,
             on_node_reused=None if planned_rerun is None else node_reused,
             cancel_requested=cancel_event.is_set,
             wrap_fn=wrap_fn,
