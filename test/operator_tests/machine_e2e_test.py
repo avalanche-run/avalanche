@@ -3,6 +3,7 @@
 import asyncio
 import importlib.util
 import json
+import sys
 from datetime import timedelta
 from pathlib import Path
 
@@ -22,6 +23,9 @@ GOLDEN = SDK / "test" / "fixtures" / "pr_lifecycle.machine.json"
 def load_example():
     spec = importlib.util.spec_from_file_location("machine_pr_example", EXAMPLE)
     module = importlib.util.module_from_spec(spec)
+    # Register before executing, as `import` does: pydantic 2.14 looks the
+    # module up in sys.modules when the example parametrizes `ava.Event[...]`.
+    sys.modules["machine_pr_example"] = module
     spec.loader.exec_module(module)
     return module
 
