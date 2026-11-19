@@ -24,7 +24,9 @@ type ResultJsonValue = (
 
 _RESULT_FORMAT_VERSION = 1
 MAX_RESULT_ATTACHMENTS = 1024
-MAX_RESULT_VALUE_JSON_BYTES = 4 * 1024 * 1024
+# One step output or result value, as encoded JSON. Both hosts import this bound;
+# it matches Delta's per-object limit, so a value one host accepts the other does too.
+MAX_RESULT_VALUE_JSON_BYTES = 8 * 1024 * 1024
 MAX_RESULT_ATTACHMENT_BYTES = 8 * 1024 * 1024
 MAX_RESULT_ATTACHMENTS_BYTES = 32 * 1024 * 1024
 MAX_RESULT_TOTAL_BYTES = 32 * 1024 * 1024

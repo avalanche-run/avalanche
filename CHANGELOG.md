@@ -13,6 +13,12 @@
   `X | None`, and is skipped in turn otherwise. See
   [Skipping a step](docs/api/workflows.md#skipping-a-step).
 
+- The local operator accepts a step output or run result of up to 8 MiB of
+  encoded JSON, the same limit Delta applies, instead of failing the step with
+  "Workflow result JSON exceeds 4194304 bytes" above 4 MiB. On Delta, a larger
+  output now fails its step at once with the limit in the message, instead of
+  after every retry. Return larger data as an `ava.File`.
+
 ## 0.20.21
 
 - 0.20.20 was never published: its release stopped before building
