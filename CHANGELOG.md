@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- operator-ui exports `recordedAgentTrace`, for a host that keeps an agent
+  step's recorded events and final trace body itself. It lists them for the
+  trace views by the rules the local operator applies (turn, duration, failure,
+  tool call count; status, completeness and the usage header).
+
 - A run whose steps were skipped stays succeeded and now says so: the operator
   UI's run list and run view, and the TUI's run history, show how many steps
   were skipped (map items aside) and the first reason.
