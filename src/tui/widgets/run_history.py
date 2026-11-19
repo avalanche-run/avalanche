@@ -132,6 +132,12 @@ class RunHistoryWidget(Static):
         text.append(f"{label} {icon}" + (f"  {note}" if note else ""), style + bg)
         if run.rerun_of_run_id is not None:
             text.append(f"  rerun of {run.rerun_of_run_id}", DIM_STYLE + bg)
+        if run.skips is not None and not note:
+            steps = "step" if run.skips.count == 1 else "steps"
+            text.append(
+                f"  ↷ {run.skips.count} {steps} skipped · {run.skips.first_reason}",
+                Style(color=ICE_PURPLE) + bg,
+            )
         return text
 
     def get_content_height(self, container, viewport, width: int) -> int:

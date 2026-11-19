@@ -1906,6 +1906,7 @@ class Operator:
             error_step=run.error_step,
             error_message=run.error_message,
             rerun_of_run_id=run.rerun_of_run_id,
+            skips=run.skips,
         )
 
     def saved_output_index(self, run_id: str) -> SavedOutputIndex | None:
@@ -3739,6 +3740,8 @@ class Operator:
                                 node.skip_reason = (
                                     event["reason"] if status == NodeStatus.SKIPPED else None
                                 )
+                                if status == NodeStatus.SKIPPED:
+                                    run.note_skip(node)
                             changed_node_ids = (node.node_id,)
                             status_node_ids = changed_node_ids
                             mutated = True

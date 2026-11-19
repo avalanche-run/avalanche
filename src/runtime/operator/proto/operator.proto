@@ -503,6 +503,16 @@ message RunSummaryV2 {
   optional string error_message = 18;
   // The run this one reruns; absent for a run that is not a rerun.
   optional string rerun_of_run_id = 19;
+  // Steps skipped with a reason (ava.skip or an upstream skip), map items aside;
+  // unset when none was. The run itself still succeeds.
+  optional RunSkipsV2 skips = 20;
+}
+
+message RunSkipsV2 {
+  uint32 count = 1;
+  // The first skipped step and its reason.
+  string first_step = 2;
+  string first_reason = 3;
 }
 
 message RunWaitingOnV2 {

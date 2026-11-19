@@ -47,6 +47,7 @@ from .models import (
     RunCreated,
     RunInput,
     RunNodesExpanded,
+    RunSkips,
     RunSnapshot,
     RunStatus,
     RunStatusChanged,
@@ -276,6 +277,14 @@ def run_summary_to_v2(summary) -> pb.RunSummaryV2:
         kind=summary.kind,
         rerun_of_run_id=summary.rerun_of_run_id,
     )
+    if summary.skips is not None:
+        message.skips.CopyFrom(
+            pb.RunSkipsV2(
+                count=summary.skips.count,
+                first_step=summary.skips.first_step,
+                first_reason=summary.skips.first_reason,
+            )
+        )
     if summary.waiting_on is not None:
         message.waiting_on.CopyFrom(
             pb.RunWaitingOnV2(**dict(zip(WAITING_ON_SLOTS, summary.waiting_on)))
@@ -1095,6 +1104,9 @@ def run_summary_from_v2(msg: pb.RunSummaryV2) -> RunSummary:
         created_sequence=msg.created_sequence,
         revision=msg.revision,
         rerun_of_run_id=msg.rerun_of_run_id if msg.HasField("rerun_of_run_id") else None,
+        skips=RunSkips(msg.skips.count, msg.skips.first_step, msg.skips.first_reason)
+        if msg.HasField("skips")
+        else None,
     )
 
 

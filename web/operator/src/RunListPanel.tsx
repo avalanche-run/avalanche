@@ -5,6 +5,7 @@ import { ChevronUp, Maximize2, Minimize2, Workflow } from "lucide-react";
 import { formatElapsedSeconds } from "./elapsedDuration";
 import { waitingOnLabel } from "./runStatus";
 import type { RunSummaryMsg } from "./model";
+import { runSkipsNote } from "./model";
 import {
   type PriorityFit,
   type TextMeasure,
@@ -253,7 +254,7 @@ export function RunListPanel({
     .map((summary) =>
       summary.status === "waiting"
         ? waitingOnLabel(summary.waitingOn)
-        : (summary.errorMessage ?? ""),
+        : (summary.errorMessage ?? (summary.skips ? runSkipsNote(summary.skips) : "")),
     );
   const noteWidth = Math.max(fontSize, (listWidth ?? 300) - 46);
   const rowHeights = rowFits.map(
@@ -662,7 +663,7 @@ export function RunListPanel({
                           </span>
                           {rowNotes[virtualRow.index] && (
                             <span
-                              className="run-summary-note col-span-2 break-all text-secondary normal-case tracking-normal"
+                              className={`run-summary-note col-span-2 normal-case tracking-normal ${summary.errorMessage === undefined && summary.skips ? "run-skips-note text-run-status-skipped [overflow-wrap:anywhere]" : "break-all text-secondary"}`}
                               style={{ lineHeight: `${fontSize + 3}px` }}
                             >
                               {rowNotes[virtualRow.index]}

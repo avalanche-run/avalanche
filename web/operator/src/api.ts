@@ -1828,6 +1828,15 @@ function mapRunSummary(summary: RunSummaryV2): RunSummaryMsg {
     ...(summary.keyJson ? { label: runKeyLabel(parseRunKey(summary.keyJson)) } : {}),
     ...(summary.readState === "expired" ? { expired: true } : {}),
     ...(summary.rerunOfRunId !== undefined ? { rerunOfRunId: summary.rerunOfRunId } : {}),
+    ...(summary.skips
+      ? {
+          skips: {
+            count: summary.skips.count,
+            firstStep: summary.skips.firstStep,
+            firstReason: summary.skips.firstReason,
+          },
+        }
+      : {}),
   };
 }
 

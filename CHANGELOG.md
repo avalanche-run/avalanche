@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A run whose steps were skipped stays succeeded and now says so: the operator
+  UI's run list and run view, and the TUI's run history, show how many steps
+  were skipped (map items aside) and the first reason.
+
 - The operator UI draws an `ava.call` as one node instead of a `start_run`
   node followed by a wait node. Its status is the start's until the child run
   starts, then the child's wait, and it links to the child run. A standalone

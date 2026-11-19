@@ -111,6 +111,8 @@ class StatusBar(Static):
                 text.append(f" {status_label(run.status)}", style)
             if run.rerun_of_run_id is not None:
                 text.append(f" rerun of {run.rerun_of_run_id}", DIM_STYLE)
+            if run.skips is not None:
+                text.append(f" ↷ {run.skips.count} skipped", STATUS_STYLES[NodeStatus.SKIPPED])
 
         node = store.selected_node
         if node:
@@ -122,6 +124,8 @@ class StatusBar(Static):
                     f" reused from {state.reused_from_run_id} · Enter opens it",
                     STATUS_STYLES[NodeStatus.REUSED],
                 )
+            if state is not None and state.skip_reason is not None:
+                text.append(f" skipped: {state.skip_reason}", STATUS_STYLES[NodeStatus.SKIPPED])
 
         # Residual search info
         if store.search_query and not store.searching:

@@ -3385,6 +3385,7 @@ def _run_from_created(operator_instance_id: str, created: RunCreated) -> RunStat
         revision=summary.revision,
         details_hydrated=False,
         rerun_of_run_id=summary.rerun_of_run_id,
+        skips=summary.skips,
     )
     run.nodes = {
         item.node_id: NodeState(

@@ -27,6 +27,7 @@ import { Inspector } from "./Inspector";
 import { RerunDialog } from "./RerunDialog";
 import { canRerunRun, type RerunRequest } from "./rerun";
 import type { FlowInfoMsg, InputFileAttachment, RunSnapshotMsg } from "./model";
+import { runSkipsNote } from "./model";
 import { RunLogPane, stateEntryStep } from "./RunLogPane";
 import { stepScopeLabel } from "./ScopeChip";
 import { RunControls } from "./RunControls";
@@ -1205,6 +1206,7 @@ export function WorkflowWorkspaceSurface({
       normalRunControls
     );
   const rerunOfRunId = run?.summary?.rerunOfRunId;
+  const runSkips = run?.summary?.skips;
   // A step missing from the code's slug map, such as a map item, cannot be a start.
   const rerunSlug = inspectedNode ? workflow?.nodeSlugs[inspectedNode] : undefined;
   const canRerun =
@@ -1375,7 +1377,7 @@ export function WorkflowWorkspaceSurface({
                       history and artifacts expired under the run&apos;s retention policy. The
                       run and its label remain.
                     </div>
-                  ) : run && (!runLive || rerunOfRunId) ? (
+                  ) : run && (!runLive || rerunOfRunId || runSkips) ? (
                     <div
                       ref={bannerRef}
                       data-under-panel={bannerClear ? undefined : true}
@@ -1396,6 +1398,14 @@ export function WorkflowWorkspaceSurface({
                         >
                           ↺ Rerun of run {rerunOfRunId}
                         </button>
+                      )}
+                      {runSkips && (
+                        <div
+                          className="run-skips-header max-w-[240px] truncate rounded border border-history-line bg-history-surface px-3 py-1.5 font-mono text-[9px] text-run-status-skipped shadow-[0_4px_14px_var(--color-shadow-4)]"
+                          title={`${runSkips.firstStep}: ${runSkips.firstReason}`}
+                        >
+                          {runSkipsNote(runSkips)}
+                        </div>
                       )}
                     </div>
                   ) : null}

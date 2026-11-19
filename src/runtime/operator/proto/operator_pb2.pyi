@@ -753,7 +753,7 @@ class EvaluationListV2(_message.Message):
     def __init__(self, records: _Optional[_Iterable[_Union[EvaluationRecordV2, _Mapping]]] = ...) -> None: ...
 
 class RunSummaryV2(_message.Message):
-    __slots__ = ("run_id", "workflow_selector", "workflow_display_name", "status", "started_at", "ended_at", "created_sequence", "revision", "triggered_by", "triggered_at", "key_json", "read_state", "kind", "lifecycle", "waiting_on", "error_code", "error_step", "error_message", "rerun_of_run_id")
+    __slots__ = ("run_id", "workflow_selector", "workflow_display_name", "status", "started_at", "ended_at", "created_sequence", "revision", "triggered_by", "triggered_at", "key_json", "read_state", "kind", "lifecycle", "waiting_on", "error_code", "error_step", "error_message", "rerun_of_run_id", "skips")
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_SELECTOR_FIELD_NUMBER: _ClassVar[int]
     WORKFLOW_DISPLAY_NAME_FIELD_NUMBER: _ClassVar[int]
@@ -773,6 +773,7 @@ class RunSummaryV2(_message.Message):
     ERROR_STEP_FIELD_NUMBER: _ClassVar[int]
     ERROR_MESSAGE_FIELD_NUMBER: _ClassVar[int]
     RERUN_OF_RUN_ID_FIELD_NUMBER: _ClassVar[int]
+    SKIPS_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     workflow_selector: str
     workflow_display_name: str
@@ -792,7 +793,18 @@ class RunSummaryV2(_message.Message):
     error_step: str
     error_message: str
     rerun_of_run_id: str
-    def __init__(self, run_id: _Optional[str] = ..., workflow_selector: _Optional[str] = ..., workflow_display_name: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., created_sequence: _Optional[int] = ..., revision: _Optional[int] = ..., triggered_by: _Optional[str] = ..., triggered_at: _Optional[float] = ..., key_json: _Optional[str] = ..., read_state: _Optional[str] = ..., kind: _Optional[str] = ..., lifecycle: _Optional[str] = ..., waiting_on: _Optional[_Union[RunWaitingOnV2, _Mapping]] = ..., error_code: _Optional[str] = ..., error_step: _Optional[str] = ..., error_message: _Optional[str] = ..., rerun_of_run_id: _Optional[str] = ...) -> None: ...
+    skips: RunSkipsV2
+    def __init__(self, run_id: _Optional[str] = ..., workflow_selector: _Optional[str] = ..., workflow_display_name: _Optional[str] = ..., status: _Optional[str] = ..., started_at: _Optional[float] = ..., ended_at: _Optional[float] = ..., created_sequence: _Optional[int] = ..., revision: _Optional[int] = ..., triggered_by: _Optional[str] = ..., triggered_at: _Optional[float] = ..., key_json: _Optional[str] = ..., read_state: _Optional[str] = ..., kind: _Optional[str] = ..., lifecycle: _Optional[str] = ..., waiting_on: _Optional[_Union[RunWaitingOnV2, _Mapping]] = ..., error_code: _Optional[str] = ..., error_step: _Optional[str] = ..., error_message: _Optional[str] = ..., rerun_of_run_id: _Optional[str] = ..., skips: _Optional[_Union[RunSkipsV2, _Mapping]] = ...) -> None: ...
+
+class RunSkipsV2(_message.Message):
+    __slots__ = ("count", "first_step", "first_reason")
+    COUNT_FIELD_NUMBER: _ClassVar[int]
+    FIRST_STEP_FIELD_NUMBER: _ClassVar[int]
+    FIRST_REASON_FIELD_NUMBER: _ClassVar[int]
+    count: int
+    first_step: str
+    first_reason: str
+    def __init__(self, count: _Optional[int] = ..., first_step: _Optional[str] = ..., first_reason: _Optional[str] = ...) -> None: ...
 
 class RunWaitingOnV2(_message.Message):
     __slots__ = ("operator", "decision", "event", "run", "sleep")

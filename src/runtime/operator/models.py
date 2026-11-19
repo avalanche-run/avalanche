@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import math
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from enum import Enum
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Annotated, Literal, Mapping
+from typing import TYPE_CHECKING, Annotated, Iterable, Literal, Mapping
 
 from pydantic import (
     AfterValidator,
@@ -307,6 +307,34 @@ class NodeState:
         return end - self.started_at
 
 
+@dataclass(frozen=True)
+class RunSkips:
+    """A run's skipped steps, map items aside: how many, and the first one's reason."""
+
+    count: int
+    first_step: str
+    first_reason: str
+
+    @staticmethod
+    def of(nodes: Iterable[NodeState]) -> RunSkips | None:
+        """Rebuilt from stored nodes, once, when a run is loaded."""
+        skipped = sorted(
+            (
+                node
+                for node in nodes
+                if node.status is NodeStatus.SKIPPED
+                and node.skip_reason is not None
+                and node.map_parent is None
+            ),
+            key=lambda node: node.ended_at or 0.0,
+        )
+        if not skipped:
+            return None
+        first = skipped[0]
+        assert first.skip_reason is not None
+        return RunSkips(len(skipped), first.node_id, first.skip_reason)
+
+
 @dataclass
 class RunState:
     run_id: str
@@ -350,6 +378,18 @@ class RunState:
             else self.open_waits
         )
     rerun_of_run_id: str | None = None
+    # Steps skipped with a reason (ava.skip or an upstream skip), map items aside.
+    skips: RunSkips | None = None
+
+    def note_skip(self, node: NodeState) -> None:
+        """Count a step that just ended skipped with a reason."""
+        if node.map_parent is not None or node.skip_reason is None:
+            return
+        self.skips = (
+            RunSkips(1, node.node_id, node.skip_reason)
+            if self.skips is None
+            else replace(self.skips, count=self.skips.count + 1)
+        )
 
     @property
     def elapsed(self) -> float | None:
@@ -473,6 +513,7 @@ class RunSummary:
             self.running_outside_wait,
         )
     rerun_of_run_id: str | None = None
+    skips: RunSkips | None = None
 
 
 @dataclass(frozen=True)

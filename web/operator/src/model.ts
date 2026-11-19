@@ -348,6 +348,21 @@ export interface RunSummaryMsg {
   triggeredAt: number;
   /** The run this one reruns; absent for a run that is not a rerun. */
   rerunOfRunId?: string;
+  /** Steps skipped with a reason, map items aside; absent when none was. */
+  skips?: RunSkips;
+}
+
+/** A run's skipped steps: how many, and the first one's reason. */
+export interface RunSkips {
+  count: number;
+  firstStep: string;
+  firstReason: string;
+}
+
+/** One line for a run whose steps were skipped; the run itself still succeeded. */
+export function runSkipsNote(skips: RunSkips): string {
+  const steps = skips.count === 1 ? "1 step skipped" : `${skips.count} steps skipped`;
+  return `↷ ${steps} · ${skips.firstReason}`;
 }
 
 export const RunSummaryMsg = {

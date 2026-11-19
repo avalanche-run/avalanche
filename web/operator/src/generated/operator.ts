@@ -1254,6 +1254,32 @@ export interface RunSummaryV2 {
      * @generated from protobuf field: optional string rerun_of_run_id = 19
      */
     rerunOfRunId?: string;
+    /**
+     * Steps skipped with a reason (ava.skip or an upstream skip), map items aside;
+     * unset when none was. The run itself still succeeds.
+     *
+     * @generated from protobuf field: optional avalanche.operator.RunSkipsV2 skips = 20
+     */
+    skips?: RunSkipsV2;
+}
+/**
+ * @generated from protobuf message avalanche.operator.RunSkipsV2
+ */
+export interface RunSkipsV2 {
+    /**
+     * @generated from protobuf field: uint32 count = 1
+     */
+    count: number;
+    /**
+     * The first skipped step and its reason.
+     *
+     * @generated from protobuf field: string first_step = 2
+     */
+    firstStep: string;
+    /**
+     * @generated from protobuf field: string first_reason = 3
+     */
+    firstReason: string;
 }
 /**
  * @generated from protobuf message avalanche.operator.RunWaitingOnV2
@@ -6185,7 +6211,8 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
             { no: 16, name: "error_code", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
             { no: 17, name: "error_step", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
             { no: 18, name: "error_message", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
-            { no: 19, name: "rerun_of_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+            { no: 19, name: "rerun_of_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 20, name: "skips", kind: "message", T: () => RunSkipsV2 }
         ]);
     }
     create(value?: PartialMessage<RunSummaryV2>): RunSummaryV2 {
@@ -6270,6 +6297,9 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
                 case /* optional string rerun_of_run_id */ 19:
                     message.rerunOfRunId = reader.string();
                     break;
+                case /* optional avalanche.operator.RunSkipsV2 skips */ 20:
+                    message.skips = RunSkipsV2.internalBinaryRead(reader, reader.uint32(), options, message.skips);
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -6339,6 +6369,9 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
         /* optional string rerun_of_run_id = 19; */
         if (message.rerunOfRunId !== undefined)
             writer.tag(19, WireType.LengthDelimited).string(message.rerunOfRunId);
+        /* optional avalanche.operator.RunSkipsV2 skips = 20; */
+        if (message.skips)
+            RunSkipsV2.internalBinaryWrite(message.skips, writer.tag(20, WireType.LengthDelimited).fork(), options).join();
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
@@ -6349,6 +6382,69 @@ class RunSummaryV2$Type extends MessageType<RunSummaryV2> {
  * @generated MessageType for protobuf message avalanche.operator.RunSummaryV2
  */
 export const RunSummaryV2 = new RunSummaryV2$Type();
+// @generated message type with reflection information, may provide speed optimized methods
+class RunSkipsV2$Type extends MessageType<RunSkipsV2> {
+    constructor() {
+        super("avalanche.operator.RunSkipsV2", [
+            { no: 1, name: "count", kind: "scalar", T: 13 /*ScalarType.UINT32*/ },
+            { no: 2, name: "first_step", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 3, name: "first_reason", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+        ]);
+    }
+    create(value?: PartialMessage<RunSkipsV2>): RunSkipsV2 {
+        const message = globalThis.Object.create((this.messagePrototype!));
+        message.count = 0;
+        message.firstStep = "";
+        message.firstReason = "";
+        if (value !== undefined)
+            reflectionMergePartial<RunSkipsV2>(this, message, value);
+        return message;
+    }
+    internalBinaryRead(reader: IBinaryReader, length: number, options: BinaryReadOptions, target?: RunSkipsV2): RunSkipsV2 {
+        let message = target ?? this.create(), end = reader.pos + length;
+        while (reader.pos < end) {
+            let [fieldNo, wireType] = reader.tag();
+            switch (fieldNo) {
+                case /* uint32 count */ 1:
+                    message.count = reader.uint32();
+                    break;
+                case /* string first_step */ 2:
+                    message.firstStep = reader.string();
+                    break;
+                case /* string first_reason */ 3:
+                    message.firstReason = reader.string();
+                    break;
+                default:
+                    let u = options.readUnknownField;
+                    if (u === "throw")
+                        throw new globalThis.Error(`Unknown field ${fieldNo} (wire type ${wireType}) for ${this.typeName}`);
+                    let d = reader.skip(wireType);
+                    if (u !== false)
+                        (u === true ? UnknownFieldHandler.onRead : u)(this.typeName, message, fieldNo, wireType, d);
+            }
+        }
+        return message;
+    }
+    internalBinaryWrite(message: RunSkipsV2, writer: IBinaryWriter, options: BinaryWriteOptions): IBinaryWriter {
+        /* uint32 count = 1; */
+        if (message.count !== 0)
+            writer.tag(1, WireType.Varint).uint32(message.count);
+        /* string first_step = 2; */
+        if (message.firstStep !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.firstStep);
+        /* string first_reason = 3; */
+        if (message.firstReason !== "")
+            writer.tag(3, WireType.LengthDelimited).string(message.firstReason);
+        let u = options.writeUnknownFields;
+        if (u !== false)
+            (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);
+        return writer;
+    }
+}
+/**
+ * @generated MessageType for protobuf message avalanche.operator.RunSkipsV2
+ */
+export const RunSkipsV2 = new RunSkipsV2$Type();
 // @generated message type with reflection information, may provide speed optimized methods
 class RunWaitingOnV2$Type extends MessageType<RunWaitingOnV2> {
     constructor() {
