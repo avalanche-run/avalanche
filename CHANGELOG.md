@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.22
+
 - operator-ui exports `recordedAgentTrace`, for a host that keeps an agent
   step's recorded events and final trace body itself. It lists them for the
   trace views by the rules the local operator applies (turn, duration, failure,
