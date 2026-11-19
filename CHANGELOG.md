@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Zooming in on the operator UI's graph no longer snaps back to the fitted
+  view when the cards switch detail level, as it could with a step selected on
+  a wide window. The graph re-fits only when the canvas is resized.
+
 - A mapped step's card in the operator UI now shows its items as small status
   dots (about 50 per row) instead of clickable squares. Clicking anywhere on
   the card opens the step, whose Run I/O steps through the items.

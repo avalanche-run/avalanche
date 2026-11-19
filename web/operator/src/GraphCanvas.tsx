@@ -3,6 +3,7 @@ import {
   memo,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
   useCallback,
   useContext,
   useEffect,
@@ -1082,10 +1083,13 @@ function MeasureGraphHandles({ nodes }: { nodes: readonly Node[] }) {
 function FitGraphOnWidthChange({
   options,
   height: followHeight = false,
+  userMoved,
 }: {
   options: FitViewOptions;
   /** Also re-fit when the canvas height changes (the machine graph stays whole). */
   height?: boolean;
+  /** Set once the user zooms or pans the graph; a re-fit clears it. */
+  userMoved: RefObject<boolean>;
 }) {
   const storeWidth = useStore((state) => state.width);
   const storeHeight = useStore((state) => state.height);
@@ -1103,15 +1107,18 @@ function FitGraphOnWidthChange({
     previousWidth.current = width;
     previousHeight.current = height;
     previousOptions.current = options;
+    const resized = previous !== width || heightChanged;
     // Initial fitting belongs to React Flow. Re-fit only after its resize observer
     // has committed a changed canvas width (timeline, inspector or window resize) or,
-    // when followed, height (the log pane), or when the timeline's reserve changes.
-    if (
-      previous <= 0 ||
-      width <= 0 ||
-      (previous === width && !optionsChanged && !heightChanged)
-    )
-      return;
+    // when followed, height (the log pane), or when the fit options change.
+    if (previous <= 0 || width <= 0 || (!resized && !optionsChanged)) return;
+    // New fit options alone (the side of the runs panel, the arc label scale) follow
+    // the measured cards, and a card's size follows the zoom (its detail level). Once
+    // the user has zoomed or panned, re-fitting on them would undo that zoom, and the
+    // re-fit's own zoom could flip the options back. Only a resized canvas re-fits a
+    // view the user moved.
+    if (!resized && userMoved.current) return;
+    userMoved.current = false;
     const frame = requestAnimationFrame(() => void fitView(options));
     return () => cancelAnimationFrame(frame);
   }, [width, height, fitView, options]);
@@ -1800,6 +1807,13 @@ function GraphCanvasView({
     () => firstFrameFor(shownNodes, canvasSize, fitViewOptions, minZoom),
     [shownNodes, canvasSize, fitViewOptions, minZoom],
   );
+  // Whether the user has moved the view away from the last fit (React Flow passes
+  // no event for a programmatic fit or zoom). A new graph starts fitted.
+  const flowKey = JSON.stringify([orientation, graphNodeIds]);
+  const userMoved = useRef(false);
+  useEffect(() => {
+    userMoved.current = false;
+  }, [flowKey]);
 
   return (
     <div ref={containerRef} className="graph-viewport" data-orientation={orientation}>
@@ -1809,7 +1823,7 @@ function GraphCanvasView({
           <ReactFlow
             // A different node set needs fresh handle measurements. A run switch can
             // replace a node with an equally sized one without a resize notification.
-            key={JSON.stringify([orientation, graphNodeIds])}
+            key={flowKey}
             nodes={shownNodes}
             onNodesChange={onNodesChange}
             edges={shownEdges}
@@ -1821,6 +1835,9 @@ function GraphCanvasView({
             fitViewOptions={firstFrame?.fitViewOptions ?? fitViewOptions}
             minZoom={minZoom}
             maxZoom={MAX_ZOOM}
+            onMove={(event) => {
+              if (event) userMoved.current = true;
+            }}
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable={!inspectionDisabled}
@@ -1832,7 +1849,11 @@ function GraphCanvasView({
           >
             <InputEdgeMarkers />
             <MeasureGraphHandles nodes={shownNodes} />
-            <FitGraphOnWidthChange options={fitViewOptions} height={machine !== undefined} />
+            <FitGraphOnWidthChange
+              options={fitViewOptions}
+              height={machine !== undefined}
+              userMoved={userMoved}
+            />
             {bottomRightPanel && (
               <Panel
                 position="bottom-right"
@@ -1849,6 +1870,9 @@ function GraphCanvasView({
             />
             <Controls
               fitViewOptions={fitViewOptions}
+              onZoomIn={() => (userMoved.current = true)}
+              onZoomOut={() => (userMoved.current = true)}
+              onFitView={() => (userMoved.current = false)}
               aria-label="Navpanel"
               className="navpanel"
               showInteractive={false}
