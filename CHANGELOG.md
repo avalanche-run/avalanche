@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.20
+
 - Zooming in on the operator UI's graph no longer snaps back to the fitted
   view when the cards switch detail level, as it could with a step selected on
   a wide window. The graph re-fits only when the canvas is resized.
