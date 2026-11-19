@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import math
@@ -12,6 +13,7 @@ from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic_core import PydanticSerializationError
 
 from avalanche.runtime import File
 from avalanche.workspace import _WORKSPACE_SERIALIZER_CONTEXT_KEY, Workspace, is_inline_tree
@@ -32,6 +34,7 @@ MAX_ATTACHMENT_NAME_LENGTH = 1024
 MAX_ATTACHMENT_MEDIA_TYPE_LENGTH = 255
 _ATTACHMENT_ID = re.compile(r"file_(0|[1-9][0-9]{0,3})")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_OBJECT_ADAPTER = TypeAdapter(object)
 
 
 @dataclass(frozen=True)
@@ -310,6 +313,30 @@ def _encode_value(
             budget,
             depth,
         )
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        # Same rule as Delta's step output capture: pydantic dumps the fields as JSON.
+        try:
+            dumped = _OBJECT_ADAPTER.dump_python(
+                value,
+                mode="json",
+                by_alias=True,
+                context={
+                    _WORKSPACE_SERIALIZER_CONTEXT_KEY: lambda workspace: {
+                        "__operator_workspace_marker__": marker_token,
+                        "manifest": workspace.manifest(),
+                    },
+                },
+            )
+        except PydanticSerializationError as exc:
+            raise TypeError(
+                f"Workflow result dataclass {type(value).__name__} is not serializable: {exc}"
+            ) from exc
+        return _encode_value(
+            dumped,
+            marker_token,
+            budget,
+            depth,
+        )
     if type(value) in {set, frozenset}:
         items = [_encode_value(item, marker_token, budget, depth + 1) for item in value]
         items.sort(key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")))
@@ -360,7 +387,7 @@ def _encode_value(
         }
     raise TypeError(
         "Operator workflow results support JSON scalar/container values, "
-        "Pydantic models, ava.File values, and ava.Workspace values"
+        "Pydantic models, dataclasses, ava.File values, and ava.Workspace values"
     )
 
 
