@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The operator UI's Run I/O tab on a mapped step now shows the map's items:
+  how many ran and failed, and each item's inputs, output and error, with
+  previous/next, an item picker and a jump to the next failed item. It used to
+  say that no inputs or output were captured.
+
 - TypeSafe classification and evaluation now need `avalanche-ai[typesafe]`.
   A missing feature extra reports the installation command when first used.
 

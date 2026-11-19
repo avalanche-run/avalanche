@@ -50,6 +50,7 @@ import { StepRerunActions } from "./RerunDialog";
 import { RetainedAgentValue } from "./RetainedAgentValue";
 import { isUnknownRecord } from "./guards";
 import { StepInterfacePanel } from "./StepInterfacePanel";
+import { MapRunIo } from "./MapRunIo";
 import { StepRunValues, useStepResult } from "./StepRunValues";
 import { decodeStepInterface } from "./stepInterface";
 import { WorkflowInputInspector } from "./WorkflowInputInspector";
@@ -307,6 +308,9 @@ function AgentAndStepInspector({
       : Boolean(node?.trace)
     : isWorkflowAgentNode;
   const stepResult = useStepResult(api, runId, run && !isAgentNode ? node : undefined, entry);
+  const isMapParent = Boolean(
+    run?.topology && nodeId && Object.hasOwn(run.topology.mapSpecs, nodeId),
+  );
   const evaluationRecord =
     run && isAgentNode ? evaluationState.records[nodeId ?? ""] : undefined;
   const rawEvaluationDeclaration = run?.topology?.evaluationMetadataJson[nodeId ?? ""];
@@ -712,6 +716,48 @@ function AgentAndStepInspector({
   }, [following, tab, turns.length]);
 
   if (!nodeId || (!run && !currentNodeExists)) return null;
+  const agentRunIo = (target: {
+    node: NodeSnapshotMsg | undefined;
+    nodeId: string;
+    scope: string;
+    liveEvents: AgentEventDescriptorMsg[];
+  }) => (
+    <div className="grid min-w-0 gap-6">
+      {(["inputs", "outputs"] as const).map((kind) => (
+        <section
+          key={kind}
+          aria-label={kind === "inputs" ? "Inputs" : "Outputs"}
+          className="min-w-0"
+        >
+          <h3 className="inspector-section-title">
+            {kind === "inputs" ? "Inputs" : "Outputs"}
+          </h3>
+          {runId ? (
+            <RetainedAgentValue
+              key={`${target.scope}\0${kind}`}
+              api={api}
+              kind={kind}
+              trace={target.node?.trace}
+              fields={historicalFieldSchemas?.[kind]}
+              schemaUnavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
+              operatorInstanceId={operatorInstanceId}
+              asOfEventUlid={asOfEventUlid}
+              runId={runId}
+              nodeId={target.nodeId}
+              eventPageToken={target.node?.eventPageToken ?? ""}
+              liveEvents={target.liveEvents}
+              nodeStatus={target.node?.status}
+            />
+          ) : (
+            <InspectorFields
+              fields={historicalFieldSchemas?.[kind]}
+              unavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
+            />
+          )}
+        </section>
+      ))}
+    </div>
+  );
   const activePageError = pageError?.key === pageKey ? pageError.value : undefined;
   const nodeSeconds = node
     ? node.status === "running" && node.runningElapsedSeconds !== undefined
@@ -933,41 +979,22 @@ function AgentAndStepInspector({
                 {tab === "evaluations" ? null : tab === "interface" ? (
                   stepInterfacePanel
                 ) : tab === "io" ? (
-                  <div className="grid min-w-0 gap-6">
-                    {(["inputs", "outputs"] as const).map((kind) => (
-                      <section
-                        key={kind}
-                        aria-label={kind === "inputs" ? "Inputs" : "Outputs"}
-                        className="min-w-0"
-                      >
-                        <h3 className="inspector-section-title">
-                          {kind === "inputs" ? "Inputs" : "Outputs"}
-                        </h3>
-                        {runId ? (
-                          <RetainedAgentValue
-                            key={`${descriptorScope}\0${kind}`}
-                            api={api}
-                            kind={kind}
-                            trace={node?.trace}
-                            fields={historicalFieldSchemas?.[kind]}
-                            schemaUnavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
-                            operatorInstanceId={operatorInstanceId}
-                            asOfEventUlid={asOfEventUlid}
-                            runId={runId}
-                            nodeId={nodeId}
-                            eventPageToken={eventPageToken}
-                            liveEvents={liveEvents}
-                            nodeStatus={node?.status}
-                          />
-                        ) : (
-                          <InspectorFields
-                            fields={historicalFieldSchemas?.[kind]}
-                            unavailableMessage={`Historical ${kind === "inputs" ? "input" : "output"} schema unavailable for this run.`}
-                          />
-                        )}
-                      </section>
-                    ))}
-                  </div>
+                  run && nodeId && isMapParent ? (
+                    <MapRunIo
+                      run={run}
+                      parentId={nodeId}
+                      renderItem={(item) =>
+                        agentRunIo({
+                          node: item,
+                          nodeId: item.nodeId,
+                          scope: `${descriptorScope}\0${item.nodeId}`,
+                          liveEvents: EMPTY_EVENTS,
+                        })
+                      }
+                    />
+                  ) : (
+                    agentRunIo({ node, nodeId, scope: descriptorScope, liveEvents })
+                  )
                 ) : node?.trace ? (
                   <AgentTraceExplorer
                     key={descriptorScope}
@@ -1200,7 +1227,23 @@ function AgentAndStepInspector({
               {stepTab === "interface" ? (
                 stepInterfacePanel
               ) : stepTab === "io" ? (
-                <StepRunValues node={node} result={stepResult} />
+                run && nodeId && isMapParent ? (
+                  <MapRunIo
+                    run={run}
+                    parentId={nodeId}
+                    renderItem={(item) => (
+                      <MapItemStepValues
+                        key={item.nodeId}
+                        api={api}
+                        runId={runId}
+                        item={item}
+                        entry={entry}
+                      />
+                    )}
+                  />
+                ) : (
+                  <StepRunValues node={node} result={stepResult} />
+                )
               ) : definitionUnavailable ? (
                 <p className="px-5 text-[11px] text-muted">{definitionUnavailable}</p>
               ) : activeNodeSource?.status === "ready" ? (
@@ -1226,4 +1269,20 @@ function AgentAndStepInspector({
       </aside>
     </StepIntegrationsProvider>
   );
+}
+
+/** One map item's step I/O, with its own accepted result. */
+function MapItemStepValues({
+  api,
+  runId,
+  item,
+  entry,
+}: {
+  api: OperatorApi;
+  runId: string | undefined;
+  item: NodeSnapshotMsg;
+  entry?: number;
+}) {
+  const result = useStepResult(api, runId, item, entry);
+  return <StepRunValues node={item} result={result} />;
 }
