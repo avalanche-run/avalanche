@@ -157,9 +157,7 @@ interface CardData extends Record<string, unknown> {
   runningElapsedSeconds?: number;
   declaration?: AgentFieldSchemas;
   instructionLine?: string;
-  mapItems?: { id: string; status?: string; waitKind?: WaitKind; onOpen?: () => void }[];
-  mapSummary?: string;
-  placeholderHint?: string;
+  mapItems?: { id: string; status?: string; waitKind?: WaitKind }[];
   /** A state machine's current state (machine mode only). */
   current?: boolean;
   /** The run this start/call node started; opens that run's page. */
@@ -169,6 +167,66 @@ interface CardData extends Record<string, unknown> {
   descriptionsExpanded: boolean;
   onOpen: () => void;
   inspectionDisabled?: boolean;
+}
+
+type MapItemDot = NonNullable<CardData["mapItems"]>[number];
+
+/** How a map item's dot reads: its run state, or not started yet. */
+function mapItemTone(item: MapItemDot) {
+  if (item.status === undefined) return undefined;
+  const tone = statusTone(item.status);
+  const waiting =
+    item.status.toLowerCase() === "waiting" || (item.waitKind && tone === "active");
+  return waiting ? (item.waitKind === "decision" ? "warning" : "neutral") : tone;
+}
+
+/**
+ * A mapped step's items as small status dots, for a glance at how the map went;
+ * clicking anywhere on the card inspects the step, whose Run I/O steps through items.
+ */
+function MapItemDots({ items }: { items: MapItemDot[] }) {
+  const tones = items.map(mapItemTone);
+  const count = (wanted: (tone: ReturnType<typeof mapItemTone>) => boolean) =>
+    tones.filter(wanted).length;
+  const summary = [
+    `${count((tone) => tone === "success" || tone === "reused")} done`,
+    ...(
+      [
+        [count((tone) => tone === "danger"), "failed"],
+        [count((tone) => tone === "active"), "running"],
+        [count((tone) => tone === "warning" || tone === "neutral"), "waiting"],
+        [count((tone) => tone === undefined), "not started"],
+      ] as const
+    )
+      .filter(([value]) => value > 0)
+      .map(([value, label]) => `${value} ${label}`),
+  ].join(" · ");
+  return (
+    <div className="node-map-items pointer-events-none relative z-[3] grid gap-1.5">
+      <div
+        className="flex flex-wrap gap-[1.5px]"
+        role="img"
+        aria-label={`${items.length} map items: ${summary}`}
+      >
+        {items.map((item, index) => {
+          const tone = tones[index];
+          return (
+            <span
+              key={item.id}
+              data-item-state={tone ?? "not-started"}
+              className={`size-[5px] shrink-0 rounded-full ${tone === "active" ? "animate-pulse motion-reduce:animate-none" : ""}`}
+              style={
+                tone === undefined
+                  ? { boxShadow: "inset 0 0 0 1px var(--color-line-strong)" }
+                  : { background: statusToneColor[tone] }
+              }
+            />
+          );
+        })}
+      </div>
+      <span className="font-mono text-[9px] text-secondary">{summary}</span>
+    </div>
+  );
 }
 
 interface InputDotData extends Record<string, unknown> {
@@ -515,37 +573,7 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
           className={`nodrag relative z-[3] ${isCompact ? "text-sm" : ""}`}
         />
       )}
-      {data.mapItems && (
-        <div className="relative z-[3] flex flex-wrap gap-1" aria-label="Map items">
-          {data.mapItems.map((item) =>
-            item.onOpen ? (
-              <button
-                key={item.id}
-                type="button"
-                onClick={item.onOpen}
-                aria-label={`Inspect ${item.id}`}
-                title={`${item.id}: ${item.status}`}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded border"
-              >
-                <RunStatus
-                  status={item.status ?? "pending"}
-                  waitKind={item.waitKind}
-                  glyphOnly
-                />
-              </button>
-            ) : (
-              <span
-                key={item.id}
-                title={data.placeholderHint ?? "not started"}
-                className="flex h-8 w-8 shrink-0 items-center justify-center"
-              >
-                ·
-              </span>
-            ),
-          )}
-          <span className="basis-full text-xs">{data.mapSummary}</span>
-        </div>
-      )}
+      {data.mapItems && <MapItemDots items={data.mapItems} />}
       {data.integrations &&
         ("error" in data.integrations ? (
           <span className="node-card-meta font-mono text-[9px] text-secondary">
@@ -1497,22 +1525,8 @@ function GraphCanvasView({
             nodeId in topology.mapSpecs && expansions[nodeId] !== undefined
               ? Array.from({ length: expansions[nodeId] }, (_, index) => {
                   const id = `${nodeId}[${index}]`;
-                  const item = runtimeNodes[id];
-                  return {
-                    id,
-                    status: item?.status,
-                    waitKind: waitKindFor(id),
-                    onOpen: item ? () => onOpenNode(id) : undefined,
-                  };
+                  return { id, status: runtimeNodes[id]?.status, waitKind: waitKindFor(id) };
                 })
-              : undefined,
-          placeholderHint:
-            runtimeNode && ["failed", "skipped", "success"].includes(runtimeNode.status)
-              ? "not run"
-              : "not started",
-          mapSummary:
-            nodeId in topology.mapSpecs && expansions[nodeId] !== undefined
-              ? `${runNodes.filter((item) => item.mapParent === nodeId && item.status === "success").length} done · ${runNodes.filter((item) => item.mapParent === nodeId && item.status === "running").length} running · ${runNodes.filter((item) => item.mapParent === nodeId && item.status === "failed").length} failed · ${expansions[nodeId] - runNodes.filter((item) => item.mapParent === nodeId && ["success", "running", "failed"].includes(item.status)).length} not started`
               : undefined,
           identity:
             labelCounts[labels[nodeId]] > 1

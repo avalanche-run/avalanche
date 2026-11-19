@@ -103,7 +103,7 @@ const presentation = {
 afterEach(() => window.localStorage.removeItem("avalanche.explorer-pinned"));
 
 describe("runtime map group cards", () => {
-  it("keeps index-aligned placeholders off the graph and opens real item details", () => {
+  it("keeps index-aligned placeholders off the graph and opens the mapped step", () => {
     const spec = {
       mappedArgs: ["value"],
       broadcastArgs: [],
@@ -145,10 +145,10 @@ describe("runtime map group cards", () => {
       />,
     );
     expect(screen.getByText(/edit_english ×4/)).toBeVisible();
-    expect(screen.getAllByTitle("not started")).toHaveLength(6);
-    expect(screen.queryByRole("button", { name: "Inspect edit[1]" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Inspect edit[0]" }));
-    expect(open).toHaveBeenCalledWith("edit[0]");
+    expect(document.querySelectorAll('[data-item-state="not-started"]')).toHaveLength(6);
+    expect(screen.queryByRole("button", { name: /Inspect edit\[/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Inspect edit_english ×4" }));
+    expect(open).toHaveBeenCalledWith("edit");
     expect(document.querySelectorAll(".node-title")).toHaveLength(2);
   });
 });

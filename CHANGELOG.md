@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A mapped step's card in the operator UI now shows its items as small status
+  dots (about 50 per row) instead of clickable squares. Clicking anywhere on
+  the card opens the step, whose Run I/O steps through the items.
+
 - The operator UI's Run I/O tab on a mapped step now shows the map's items:
   how many ran and failed, and each item's inputs, output and error, with
   previous/next, an item picker and a jump to the next failed item. It used to
