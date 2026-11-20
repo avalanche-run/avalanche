@@ -45,20 +45,29 @@ class FlowAssignment:
     flow: str
 
 
-class ConnectionNotResolvedError(NonRetryableError):
+class ConnectionResolutionError(NonRetryableError):
+    """Safe declaration identity for a host to present an actionable refusal."""
+
+    integration: str
+    connection_slug: str | None
+
+
+class ConnectionNotResolvedError(ConnectionResolutionError):
     code: ClassVar[str] = "connection_not_resolved"
 
     def __init__(self, flow: str, integration: str) -> None:
+        self.integration, self.connection_slug = integration, None
         super().__init__(
             f"Flow {flow!r} uses {integration}, but no {integration} connection is assigned "
             "to the flow, its project or the organization. Assign one, then deploy again."
         )
 
 
-class ConnectionAmbiguousError(NonRetryableError):
+class ConnectionAmbiguousError(ConnectionResolutionError):
     code: ClassVar[str] = "connection_ambiguous"
 
     def __init__(self, flow: str, integration: str, level: str, slugs: Sequence[str]) -> None:
+        self.integration, self.connection_slug = integration, None
         listed = " and ".join(repr(slug) for slug in slugs)
         count = "two" if len(slugs) == 2 else str(len(slugs))
         super().__init__(
@@ -68,40 +77,44 @@ class ConnectionAmbiguousError(NonRetryableError):
         )
 
 
-class ConnectionNotAssignedError(NonRetryableError):
+class ConnectionNotAssignedError(ConnectionResolutionError):
     code: ClassVar[str] = "connection_not_assigned"
 
-    def __init__(self, flow: str, slug: str) -> None:
+    def __init__(self, flow: str, integration: str, slug: str) -> None:
+        self.integration, self.connection_slug = integration, slug
         super().__init__(
             f"Flow {flow!r} names connection {slug!r}, which is not assigned to the flow, "
             "its project or the organization."
         )
 
 
-class ConnectionNotFoundError(NonRetryableError):
+class ConnectionNotFoundError(ConnectionResolutionError):
     code: ClassVar[str] = "connection_not_found"
 
     def __init__(self, flow: str, integration: str, slug: str) -> None:
+        self.integration, self.connection_slug = integration, slug
         super().__init__(
             f"Flow {flow!r} names connection {slug!r}, which does not exist "
             f"(or is not a {integration} connection)."
         )
 
 
-class ConnectionPerUserTriggeredError(NonRetryableError):
+class ConnectionPerUserTriggeredError(ConnectionResolutionError):
     code: ClassVar[str] = "connection_per_user_triggered"
 
     def __init__(self, flow: str, integration: str, slug: str) -> None:
+        self.integration, self.connection_slug = integration, slug
         super().__init__(
             f"Flow {flow!r} has a schedule or webhook, and its {integration} connection "
             f"{slug!r} is per user. A triggered run has no user. Assign a shared connection."
         )
 
 
-class ConnectionUserNotConnectedError(NonRetryableError):
+class ConnectionUserNotConnectedError(ConnectionResolutionError):
     code: ClassVar[str] = "connection_user_not_connected"
 
     def __init__(self, flow: str, integration: str, slug: str) -> None:
+        self.integration, self.connection_slug = integration, slug
         super().__init__(
             f"Connect your {integration} account ({slug!r}) to run flow {flow!r}, "
             "then start the run again."
@@ -149,7 +162,7 @@ def resolve_connections(
                 if connection is None or connection.integration != entry.name:
                     raise ConnectionNotFoundError(flow, entry.name, entry.connection)
                 if connection.id not in assigned:
-                    raise ConnectionNotAssignedError(flow, entry.connection)
+                    raise ConnectionNotAssignedError(flow, entry.name, entry.connection)
             else:
                 for level, ids in visible.items():
                     candidates = sorted(
@@ -187,6 +200,7 @@ def resolve(
     project: str,
     starter: str | None,
     triggered: Literal["schedule", "webhook"] | None,
+    connect_action: str | None = None,
 ) -> dict[str, dict[str, ConnectionInstance]]:
     """Bind the resolved connections to connected instances at run admission.
 
@@ -218,9 +232,18 @@ def resolve(
                         connection.integration,
                         "ava connect",
                         f"connection {connection.slug!r} requires a new login",
+                        connection_slug=connection.slug,
+                        connect_action=connect_action,
                     )
                 if instance is None or instance.state != "connected":
-                    raise IntegrationNotConnectedError(step, [connection.slug], "ava connect")
+                    raise IntegrationNotConnectedError(
+                        step,
+                        [connection.slug],
+                        "ava connect",
+                        integration=connection.integration,
+                        connection_slug=connection.slug,
+                        connect_action=connect_action,
+                    )
             bindings[key] = instance
         result[step] = bindings
     return result

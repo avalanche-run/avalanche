@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Named-connection resolution errors expose integration and connection slug for
+  host diagnostics. Hosts can supply their own connect action without changing
+  Avalanche's selection rules or local operator behavior.
+
 ## 0.20.28
 
 - **Breaking:** the legacy Iceberg and Lance tables and `ava.Stream` are

@@ -72,7 +72,17 @@ class IntegrationNotConnectedError(NonRetryableError):
     fails at once.
     """
 
-    def __init__(self, step_name: str, names: Sequence[str], connect_command: str) -> None:
+    def __init__(
+        self,
+        step_name: str,
+        names: Sequence[str],
+        connect_command: str,
+        *,
+        integration: str | None = None,
+        connection_slug: str | None = None,
+        connect_action: str | None = None,
+    ) -> None:
+        self.integration, self.connection_slug = integration, connection_slug
         self.step_name = step_name
         self.names = tuple(names)
         commands = " and ".join(f"`{connect_command} {name}`" for name in self.names)
@@ -80,7 +90,7 @@ class IntegrationNotConnectedError(NonRetryableError):
         listed = ", ".join(repr(name) for name in self.names)
         super().__init__(
             f"step {step_name!r} uses {subject} {listed} with no connected account. "
-            f"Connect with {commands}, then start the run again."
+            f"Connect with {connect_action or commands}, then start the run again."
         )
 
 
@@ -92,12 +102,23 @@ class IntegrationReconnectError(NonRetryableError):
     can help, so the step is not retried.
     """
 
-    def __init__(self, step_name: str, name: str, connect_command: str, reason: str) -> None:
+    def __init__(
+        self,
+        step_name: str,
+        name: str,
+        connect_command: str,
+        reason: str,
+        *,
+        connection_slug: str | None = None,
+        connect_action: str | None = None,
+    ) -> None:
+        self.integration, self.connection_slug = name, connection_slug
+        action = connect_action or f"`{connect_command} {name}`"
         self.step_name = step_name
         self.name = name
         super().__init__(
             f"step {step_name!r}: the login of integration {name!r} is no longer valid "
-            f"({reason}). Connect it again with `{connect_command} {name}`, then start "
+            f"({reason}). Connect it again with {action}, then start "
             "the run again."
         )
 
@@ -512,8 +533,10 @@ def step_integrations(
         connection = integration.connection if isinstance(integration, Catalog) else None
         connections_by_name.setdefault(integration.name, []).append(connection)
     for name, connections in connections_by_name.items():
-        if len(connections) > 1 and None in connections and any(
-            connection is not None for connection in connections
+        if (
+            len(connections) > 1
+            and None in connections
+            and any(connection is not None for connection in connections)
         ):
             raise IntegrationError(
                 f"{owner} mixes bare and connection-bound declarations of {name!r}; "
