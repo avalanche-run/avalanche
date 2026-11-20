@@ -114,6 +114,7 @@ class _Server:
     """One declared server and the state of its connection."""
 
     declaration: MCP
+    tool_prefix: str
     account: StepAccount | None
     session: CatalogToolSession | None = field(default=None, repr=False)
     # Resolved with the server's tools once it is connected, or with why not.
@@ -183,6 +184,7 @@ class MCPConnections:
                 resolved.append(
                     _Server(
                         declaration=MCP(server.name, url=session.url, allow=server.allow),
+                        tool_prefix=server.tool_prefix,
                         account=None,
                         session=session,
                     )
@@ -191,6 +193,7 @@ class MCPConnections:
                 resolved.append(
                     _Server(
                         declaration=server,
+                        tool_prefix=server.tool_prefix,
                         account=accounts.account(server.name)
                         if server.accepts_account
                         else None,
@@ -324,7 +327,7 @@ class MCPConnections:
                 client_info=Implementation(name="avalanche", version=version("avalanche-ai")),
             )
             await stack.enter_async_context(client)
-            offered = await self._offered(server.declaration, client)
+            offered = await self._offered(server.declaration, client, server.tool_prefix)
             server.client = client
             yield offered
 
@@ -385,7 +388,9 @@ class MCPConnections:
         )
         return streamable_http_client(declaration.url, http_client=http)
 
-    async def _offered(self, declaration: MCP, client: Client) -> tuple[_OfferedTool, ...]:
+    async def _offered(
+        self, declaration: MCP, client: Client, tool_prefix: str
+    ) -> tuple[_OfferedTool, ...]:
         """Ask the server for its tools and keep those the declaration allows."""
         listed = []
         cursor: str | None = None
@@ -413,7 +418,7 @@ class MCPConnections:
             offered.append(
                 _OfferedTool(
                     server_name=tool.name,
-                    agent_name=declaration.tool_prefix
+                    agent_name=tool_prefix
                     + "__"
                     + _NOT_A_NAME_CHARACTER.sub("_", tool.name),
                     description=tool.description,

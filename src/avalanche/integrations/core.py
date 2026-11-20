@@ -355,9 +355,31 @@ class Catalog(Integration):
     does not discover, import, or contact one.
     """
 
-    def __init__(self, name: str, *, allow: Sequence[str] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        *,
+        allow: Sequence[str] | None = None,
+        connection: str | None = None,
+    ) -> None:
         self.name = _checked_name("ava.Catalog", name)
         self.allow = None if allow is None else _string_tuple(name, "allow", allow)
+        self.connection = (
+            None if connection is None else _checked_name("ava.Catalog connection", connection)
+        )
+
+    def __call__(
+        self, *, connection: str | None = None, allow: Sequence[str] | None = None
+    ) -> Catalog:
+        return Catalog(
+            self.name,
+            connection=self.connection if connection is None else connection,
+            allow=self.allow if allow is None else allow,
+        )
+
+    @property
+    def tool_prefix(self) -> str:
+        return (self.name if self.connection is None else self.connection).replace("-", "_")
 
     @property
     def requires_account(self) -> bool:
@@ -365,7 +387,7 @@ class Catalog(Integration):
         return False
 
     def declaration(self) -> CatalogDeclaration:
-        return CatalogDeclaration(name=self.name, allow=self.allow)
+        return CatalogDeclaration(name=self.name, allow=self.allow, connection=self.connection)
 
 
 class MCP(Integration):
@@ -485,18 +507,32 @@ def step_integrations(
                 f"{owner} cannot use MCP server {integration.name!r}: MCP tools are for "
                 "agent steps only; declare it on an ava.agent_step"
             )
-    names = [integration.name for integration in integrations]
-    duplicates = sorted({name for name in names if names.count(name) > 1})
-    if duplicates:
-        raise IntegrationError(f"{owner} declares several integrations named {duplicates}")
+    connections_by_name: dict[str, list[str | None]] = {}
+    for integration in integrations:
+        connection = integration.connection if isinstance(integration, Catalog) else None
+        connections_by_name.setdefault(integration.name, []).append(connection)
+    for name, connections in connections_by_name.items():
+        if len(connections) > 1 and None in connections and any(
+            connection is not None for connection in connections
+        ):
+            raise IntegrationError(
+                f"{owner} mixes bare and connection-bound declarations of {name!r}; "
+                "set connection= on every declaration of this integration"
+            )
+        if len(connections) != len(set(connections)):
+            raise IntegrationError(
+                f"{owner} declares several integrations named {[name]} "
+                f"with the same connection {connections}; declare each only once"
+            )
     prefixes: dict[str, str] = {}
     for integration in integrations:
-        other = prefixes.setdefault(integration.tool_prefix, integration.name)
-        if other != integration.name:
+        other = prefixes.get(integration.tool_prefix)
+        if other is not None:
             raise IntegrationError(
                 f"{owner} integrations {other!r} and {integration.name!r} give their "
                 f"tools the same names ({integration.tool_prefix}__...); rename one"
             )
+        prefixes[integration.tool_prefix] = integration.name
     own_tools = {str(getattr(tool, "__name__", type(tool).__name__)) for tool in tools}
     clashes = sorted(
         tool_name
@@ -521,11 +557,14 @@ def check_workflow_integrations(
     A name is one account. Two steps may share an integration, but two
     different declarations under one name would silently share its account.
     """
-    seen: dict[str, tuple[str, IntegrationDeclaration]] = {}
+    seen: dict[tuple[str, str | None], tuple[str, IntegrationDeclaration]] = {}
     for step_name, integrations in steps.items():
         for integration in integrations:
             declaration = integration.declaration()
-            first_step, first = seen.setdefault(integration.name, (step_name, declaration))
+            connection = integration.connection if isinstance(integration, Catalog) else None
+            first_step, first = seen.setdefault(
+                (integration.name, connection), (step_name, declaration)
+            )
             if first != declaration:
                 raise IntegrationError(
                     f"workflow {workflow_name!r} declares integration {integration.name!r} "

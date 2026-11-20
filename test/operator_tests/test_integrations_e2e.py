@@ -1070,13 +1070,20 @@ def test_browser_logins_refresh_and_fail_when_revoked(tmp_path):
 class _CatalogService:
     """External login/connection service and real MCP relay for the plug-in proof."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(
+        self,
+        root: Path,
+        *,
+        integration: str = "asana",
+        server: Path = _FIXTURES / "catalog_test_server.py",
+    ) -> None:
+        self.integration = integration
         self.expired_pass = root / "expired-pass"
         self.mcp = _McpServer(
             root / "catalog-calls.jsonl",
             _KB_KEY,
             self.expired_pass,
-            server=_FIXTURES / "catalog_test_server.py",
+            server=server,
         )
         self.mode = "ready"
         self.connected = False
@@ -1101,8 +1108,8 @@ class _CatalogService:
                     body = json.dumps(
                         [
                             {
-                                "name": "asana",
-                                "display_name": "Asana proof",
+                                "name": service.integration,
+                                "display_name": service.integration.title() + " proof",
                                 "icon_url": service.url + "/icon.png",
                             }
                         ]
@@ -1111,7 +1118,7 @@ class _CatalogService:
                     body = json.dumps(
                         [
                             {
-                                "name": "asana",
+                                "name": service.integration,
                                 "connected_at": service.connected_at,
                                 "state": "reconnect_needed"
                                 if service.mode == "expired"
@@ -1174,11 +1181,13 @@ class _CatalogService:
         return json.dumps(
             {
                 "login_id": login_id,
-                "name": "asana",
+                "name": self.integration,
                 "status": "failed" if self.mode == "not_connected" else self.logins[login_id],
                 "authorization_url": f"{self.url}/approve?id={login_id}",
                 "error": str(
-                    IntegrationNotConnectedError("catalog login", ["asana"], "ava connect")
+                    IntegrationNotConnectedError(
+                        "catalog login", [self.integration], "ava connect"
+                    )
                 )
                 if self.mode == "not_connected"
                 else None,
@@ -1422,6 +1431,140 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
         stored = _stored_text_outside_accounts(state_db)
         assert '"name":"asana__search_tasks_in_workspace"' in stored
         for text in (stored, log.read_text(), service.journal.read_text(), *shown):
+            assert _KB_KEY not in text
+    finally:
+        service.close()
+        models.close()
+
+
+def test_catalog_connection_slugs_prefix_tools_and_refuse_conflicts(
+    tmp_path, catalog_provider_path
+):
+    from avalanche.catalog import slack
+    from avalanche.integrations.declaration import CatalogDeclaration
+
+    # Bare declarations keep their exact wire shape and the generated constant
+    # is not mutated by binding a connection or narrowing its tools.
+    assert slack.declaration().model_dump_json() == (
+        '{"kind":"catalog","name":"slack","allow":null}'
+    )
+    header = """import avalanche as ava
+from avalanche.catalog import slack
+from avalanche.integrations.core import Catalog
+
+class Research(ava.Signature):
+    topic: str = ava.InputField()
+    findings: list[str] = ava.OutputField()
+
+"""
+    mistakes = tmp_path / "mistakes"
+    mistakes.mkdir()
+    declarations = {
+        "mixed_bare_first": ("slack, slack(connection='acme-hq')", "set connection="),
+        "mixed_bound_first": ("slack(connection='acme-hq'), slack", "set connection="),
+        "duplicate_slug": (
+            "slack(connection='acme-hq'), slack(connection='acme-hq')",
+            "same connection",
+        ),
+        "shared_slug": (
+            "slack(connection='acme-hq'), Catalog('notion', connection='acme-hq')",
+            "acme_hq__",
+        ),
+        "prefix_clash": ("slack(connection='acme-hq'), Catalog('acme-hq')", "acme_hq__"),
+        "normalized_clash": (
+            "slack(connection='acme-hq'), slack(connection='acme_hq')",
+            "acme_hq__",
+        ),
+        "invalid_slug": ("slack(connection='Acme--HQ')", "lowercase"),
+    }
+    for name, (members, _) in declarations.items():
+        (mistakes / f"{name}.py").write_text(
+            header
+            + f"@ava.agent_step(Research, integrations=[{members}])\n"
+            + "async def ask(*, agent: ava.Agent): pass\n"
+            + "@ava.workflow\ndef refused(): return ask()\n"
+        )
+    refused = subprocess.run(
+        [sys.executable, "-m", "ava_cli", "operator", str(mistakes), "--no-web"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert refused.returncode != 0
+    for name, (_, reason) in declarations.items():
+        error = next(line for line in refused.stderr.splitlines() if f"{name}.py" in line)
+        assert reason in error, error
+
+    fixture = tmp_path / "named_catalog.py"
+    fixture.write_text(
+        header
+        + """@ava.agent_step(
+    Research,
+    runtime=ava.runtimes.OpenAIAgent(model="gpt-5.4-mini", narrate=False),
+    integrations=[
+        slack(allow=["search"])(connection="acme-hq"),
+        Catalog("slack", connection="partner-ws", allow=["ping"]),
+    ],
+    retries=0,
+)
+async def named_tools(*, agent: ava.Agent) -> list[str]:
+    return (await agent(topic="refunds")).outputs.findings
+
+@ava.workflow
+def named_catalog():
+    return named_tools()
+"""
+    )
+    calls = [("acme_hq__search", {"query": "refunds"}), ("partner_ws__ping", {})]
+    models = ScriptedModelApis(calls, answer_field="findings")
+    # This is the existing provider contract, not named-account resolution:
+    # both declarations use the same loopback relay and its connected account.
+    service = _CatalogService(tmp_path, integration="slack", server=_MCP_SERVER)
+    service.connected = True
+    service.connected_at = time.time()
+    environment = {
+        "PYTHONPATH": os.pathsep.join(
+            filter(None, [catalog_provider_path, os.environ.get("PYTHONPATH")])
+        ),
+        "AVALANCHE_INTEGRATION_PROVIDER": "proof",
+        "CATALOG_PROOF_URL": service.url,
+        "OPENAI_BASE_URL": f"{models.url}/v1",
+        "OPENAI_API_KEY": "scripted-model",
+    }
+    state_db, log = tmp_path / "catalog.db", tmp_path / "operator.log"
+    address = f"127.0.0.1:{_free_port()}"
+    try:
+        # A second operator reads the persisted definition after a restart.
+        for _ in range(2):
+            with _operator(state_db, address, environment, log, fixture) as provider:
+                (flow,) = provider.list_workflows()
+                declared = flow.integration_declarations["named_tools_1"].integrations
+                for entry, expected in zip(
+                    declared,
+                    [("slack", "acme-hq", ("search",)), ("slack", "partner-ws", ("ping",))],
+                    strict=True,
+                ):
+                    assert isinstance(entry, CatalogDeclaration)
+                    assert (entry.name, entry.connection, entry.allow) == expected
+                run = _ended(provider, provider.start_run("named_catalog"))
+                assert run.status is RunStatus.SUCCESS, (
+                    [node.error for node in run.nodes.values()], log.read_text()
+                )
+                answers = provider.get_run_result(run.run_id)
+                assert "refunds-0" in answers[0] and "pong" in answers[1]
+                assert set(models.offered["openai"]) == {name for name, _ in calls}
+        assert [(call["tool"], call.get("query")) for call in service.mcp.entries("call")] == [
+            ("search", "refunds"), ("ping", None),
+            ("search", "refunds"), ("ping", None),
+        ]
+        stored = _stored_text_outside_accounts(state_db)
+        assert '"name":"acme_hq__search"' in stored
+        assert '"name":"partner_ws__ping"' in stored
+        assert slack.declaration().model_dump_json() == (
+            '{"kind":"catalog","name":"slack","allow":null}'
+        )
+        for text in (stored, log.read_text(), service.journal.read_text()):
             assert _KB_KEY not in text
     finally:
         service.close()

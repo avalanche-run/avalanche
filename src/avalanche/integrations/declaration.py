@@ -106,6 +106,7 @@ class CatalogDeclaration(BaseModel):
     kind: Literal["catalog"] = "catalog"
     name: str
     allow: tuple[str, ...] | None
+    connection: str | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 IntegrationDeclaration = Annotated[
