@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.23
+
 - Shared connection resolution separates assignment/trigger checks at deployment
   from account readiness at run admission; both use the same selection rules.
 
