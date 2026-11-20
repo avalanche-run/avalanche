@@ -312,6 +312,24 @@ def test_native_calls():
     assert len(driver.host.instances) == 1
     assert len(driver.host.flow_runs) == 1
 
+    class Doubled(BaseModel):
+        twice: int
+
+    @ava.step
+    def double(value: Output) -> Doubled:
+        return Doubled(twice=value.id * 2)
+
+    # No declared output: the call types the result by the chain's last step.
+    @ava.workflow(input=Input)
+    def chained():
+        return (first := answer(ava.input)) >> double(first)
+
+    @ava.workflow
+    def calls_chained():
+        return ava.call(chained, Input(id=3))
+
+    assert calls_chained().test().handle.result(timeout=1) == Doubled(twice=6)
+
     # A reference to the same definition is not a recursive graph build.
     @ava.workflow
     def recursive_work():

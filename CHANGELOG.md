@@ -50,6 +50,10 @@
   example `deep_screening`, instead of `run`, in the graph, the run view and
   the TUI. Node IDs, slugs and `--from` names are unchanged.
 
+- `ava.call` now types a child's result by the last step of a chained child
+  (`return a >> b`) that declares no `output=`. It used the chain's first
+  step, so the call failed with a `ValidationError` after the child succeeded.
+
 - A step can now end as skipped: call `ava.skip("reason")` inside it. The step
   stops at once, is not retried, and the operator records it as skipped with its
   reason. A step that reads its output gets `None` where the input is typed

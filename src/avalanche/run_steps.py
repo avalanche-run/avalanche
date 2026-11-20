@@ -133,9 +133,9 @@ class RunWaitNode(WaitNode):
                     continue
                 work = self.definition.works[state.work]
                 model = work.output_type
-                if model is None and isinstance(work.returns, NodeFuture):
+                if model is None and work.output_node is not None:
                     model = inspect.signature(
-                        work.returns.node.fn, eval_str=True
+                        work.output_node.node.fn, eval_str=True
                     ).return_annotation
                 if model is not None and model is not inspect.Signature.empty:
                     models.append(model)
@@ -143,10 +143,11 @@ class RunWaitNode(WaitNode):
         flow = self.definition if isinstance(self.definition, Workflow) else self.definition()
         if flow.output_type is not None:
             return flow.validate_output(value)
-        if isinstance(flow.returns, NodeFuture):
+        if flow.output_node is not None:
             import inspect
 
-            signature = inspect.signature(flow.returns.node.fn, eval_str=True)
+            # The chain's last step, not `returns.node` (a chain's first step).
+            signature = inspect.signature(flow.output_node.node.fn, eval_str=True)
             annotation = signature.return_annotation
             if annotation is not inspect.Signature.empty:
                 return TypeAdapter(annotation).validate_python(value)
