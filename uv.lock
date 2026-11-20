@@ -158,7 +158,7 @@ wheels = [
 
 [[package]]
 name = "avalanche-ai"
-version = "0.20.24"
+version = "0.20.25"
 source = { editable = "." }
 dependencies = [
     { name = "cloudpickle" },
