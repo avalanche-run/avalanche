@@ -104,7 +104,6 @@ class RerunProblemReason(StrEnum):
     NOT_REUSABLE = "not_reusable"
     OUTPUT_UNAVAILABLE = "output_unavailable"
     OUTPUT_DOES_NOT_FIT = "output_does_not_fit"
-    STREAM_NOT_REPLAYABLE = "stream_not_replayable"
     SOURCE_RUN_ACTIVE = "source_run_active"
 
 
@@ -307,27 +306,8 @@ class _Checks:
             if isinstance(node, WaitNode) and node.spec.show_node_id in upstream:
                 read.add(node.spec.show_node_id)
         blocked: dict[str, RerunProblem] = {}
-        replayed: set[str] = set()
         for skipped in _skipped_input_reads(workflow.nodes, order, self.parents):
-            if skipped.kind == "value":
-                read.add(skipped.producer)
-            elif skipped.kind == "replay":
-                replayed.add(skipped.producer)
-            else:
-                blocked[skipped.producer] = self._problem(
-                    skipped.producer, RerunProblemReason.STREAM_NOT_REPLAYABLE, skipped.message
-                )
-        # Row replay needs no saved value, but it does need the run holding the rows.
-        for node_id in replayed:
-            if workflow.node_slugs[node_id] not in self.index.outputs:
-                blocked.setdefault(
-                    node_id,
-                    self._problem(
-                        node_id,
-                        RerunProblemReason.MISSING_FROM_SOURCE,
-                        f"run {self.index.run_id} has no record of this step's rows",
-                    ),
-                )
+            read.add(skipped.producer)
         for node_id in read:
             problem = self._output_problem(node_id)
             if problem is not None:
@@ -377,8 +357,7 @@ def plan_rerun(
     A skipped step is needed when a running step or the workflow's return reads its
     return value; a needed step must have a saved output that fits its declared return
     type in this code. Other upstream steps are reused if the source has them and never
-    block. Steps reading ``ava.Stream`` tables replay rows, which needs the source to
-    know the producer but not a saved output.
+    block.
     """
     if index.run_id != rerun.run_id:
         raise ValueError(f"Index of run {index.run_id} cannot check a rerun of {rerun.run_id}")

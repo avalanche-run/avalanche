@@ -175,11 +175,8 @@ _FLOWS = (
     + """
 import time
 
-import dataframely as dy
-import polars as pl
 from pydantic import BaseModel
 
-from avalanche.iceberg import IcebergNs, IcebergNsConfig, IcebergTable
 
 
 class Numbers(ava.BaseInput):
@@ -278,37 +275,16 @@ def with_run_workspace():
     return revise(draft())
 
 
-STORE = Path(os.environ["RERUN_TEST_LOG"]).parent / "store"
-STORE.mkdir(exist_ok=True)
-
-
-class Row(dy.Schema):
-    id = dy.Int64(nullable=False)
-    value = dy.Int64(nullable=False)
-
-
-class Tables(IcebergNs):
-    ns_config = IcebergNsConfig(name="reruns", base_location=str(STORE))
-    rows = IcebergTable(schema=Row)
-
-
-TABLES = Tables(
-    catalog="reruns",
-    load_catalog_props={"type": "sql", "uri": f"sqlite:///{STORE / 'catalog.db'}"},
-)
-TABLES.push()
-
-
 @ava.source
-def write_rows(*, table=TABLES.rows):
-    ran("write_rows")
-    return table.append(pl.DataFrame({"id": [1, 2], "value": [1, 2]})).snapshot_id
+def numbers() -> list[int]:
+    ran("numbers")
+    return [1, 2]
 
 
 @ava.step
-def between(rows=ava.Stream(TABLES.rows)) -> int:
+def between(rows: list[int]) -> int:
     ran("between")
-    return sum(rows["value"].to_list())
+    return sum(rows)
 
 
 @ava.step
@@ -318,8 +294,8 @@ def last(total: int) -> int:
 
 
 @ava.workflow
-def with_stream():
-    return write_rows() >> between() >> last()
+def with_numbers():
+    return last(between(numbers()))
 
 
 @ava.source
@@ -915,20 +891,20 @@ def test_a_rerun_of_a_rerun_goes_straight_to_the_run_holding_each_output(env, op
     ]
 
 
-def test_a_rerun_of_a_rerun_of_a_stream_reader_keeps_the_rows_holder(env, operator):
-    first = _run(operator, "with_stream")
+def test_a_rerun_of_a_rerun_keeps_the_saved_output_holder(env, operator):
+    first = _run(operator, "with_numbers")
     assert first.status is RunStatus.SUCCESS
-    entry = operator.saved_output_index(first.run_id).outputs["write_rows"]
+    entry = operator.saved_output_index(first.run_id).outputs["numbers"]
 
-    second = _rerun(operator, "with_stream", first, "last")
+    second = _rerun(operator, "with_numbers", first, "last")
     assert second.status is RunStatus.SUCCESS
-    # `second` never read the rows, and still has to say which run holds them.
-    carried = operator.saved_output_index(second.run_id).outputs["write_rows"]
+    # `second` never read the list, and still has to say which run holds it.
+    carried = operator.saved_output_index(second.run_id).outputs["numbers"]
     assert carried.run_id == first.run_id
     assert type(carried) is type(entry)
 
     env.forget_executed()
-    third = _rerun(operator, "with_stream", second, "between")
+    third = _rerun(operator, "with_numbers", second, "between")
     assert third.status is RunStatus.SUCCESS
     assert env.executed() == ["between", "last"]
     assert operator.get_run_result(third.run_id) == 4

@@ -15,7 +15,6 @@ const REASON_TEXT: Record<string, string> = {
   not_reusable: "has a saved output that cannot be reused",
   output_unavailable: "has a saved output that is no longer available",
   output_does_not_fit: "has a saved output that does not fit its return type",
-  stream_not_replayable: "wrote stream rows that cannot be replayed",
   source_run_active: "is still going",
 };
 

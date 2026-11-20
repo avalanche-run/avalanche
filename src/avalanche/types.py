@@ -1,122 +1,16 @@
 """
-Data types for Avalanche streaming and execution.
+Data types for Avalanche execution.
 
 Defines core types used throughout the framework:
-- AppendResult: Return type for table.append() operations
-- SnapshotState: State tracking for per-snapshot processing
-- ParameterProvider: Protocol for dependency injection
+- LineagedResult: Internal envelope carrying a result's producer lineage
+- ParamContext and ParameterProvider: dependency injection for step parameters
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Generic, TypeVar, Union, cast
-
-from pydantic import BaseModel
-
-if TYPE_CHECKING:
-    import polars as pl
-    import pyarrow as pa
-else:
-    from ._lazy_imports import lazy_module
-
-    pl = lazy_module("polars")
-    pa = lazy_module("pyarrow")
-
-ModelT = TypeVar("ModelT", bound=BaseModel)
-
-
-@dataclass
-class AppendResult(Generic[ModelT]):
-    """
-    Result of an append operation to an Iceberg table.
-
-    Contains both the appended data (for zero-copy passing) and the
-    snapshot_id (for progress tracking), plus an optional row_model for
-    typed model access through to_models(), one(), and one_or_none().
-
-    This enables the framework to:
-    - Pass data in-memory to downstream tasks (zero-copy)
-    - Track snapshot_id for progress marking
-    - Support both passthrough and table-backed modes
-
-    Attributes:
-        data: The appended data (Polars DataFrame, PyArrow Table, or RecordBatch)
-        snapshot_id: The snapshot ID created by this append
-        row_model: Optional pydantic model type for typed row access
-
-    Example:
-        @ava.source
-        def load_docs(*, documents=ns.documents):
-            docs = fetch_from_s3()
-            result = documents.append(docs.to_arrow())
-            return result  # AppendResult(data=..., snapshot_id=...)
-    """
-
-    data: Union[pl.DataFrame, pa.Table, pa.RecordBatch]
-    snapshot_id: int
-    table_identity: str | None = None
-    row_model: type[ModelT] | None = None
-
-    def to_polars(self) -> pl.DataFrame:
-        """Convert data to Polars DataFrame if needed."""
-        if isinstance(self.data, pl.DataFrame):
-            return self.data
-        result = pl.from_arrow(self.to_arrow())
-        assert isinstance(result, pl.DataFrame)
-        return result
-
-    def to_arrow(self) -> pa.Table:
-        """Convert data to PyArrow Table if needed."""
-        if isinstance(self.data, pa.Table):
-            return self.data
-        if isinstance(self.data, pa.RecordBatch):
-            return pa.Table.from_batches([self.data])
-        return self.data.to_arrow()
-
-    def to_dicts(self) -> list[dict[str, Any]]:
-        """Return appended rows as Python dictionaries."""
-        return self.to_polars().to_dicts()
-
-    def to_models(self) -> list[ModelT]:
-        """Return appended rows as pydantic model instances."""
-        from avalanche.model_frame import arrow_to_models
-
-        model = self._require_row_model()
-        return cast(list[ModelT], arrow_to_models(self.to_arrow(), model))
-
-    def one(self) -> ModelT:
-        """Return exactly one appended row as a pydantic model instance."""
-        model = self._require_row_model()
-        row_count = self.to_arrow().num_rows
-        if row_count != 1:
-            raise self._cardinality_error(model, row_count)
-        return self.to_models()[0]
-
-    def one_or_none(self) -> ModelT | None:
-        """Return one appended model row, or None when no rows were appended."""
-        model = self._require_row_model()
-        row_count = self.to_arrow().num_rows
-        if row_count == 0:
-            return None
-        if row_count > 1:
-            raise self._cardinality_error(model, row_count)
-        return self.to_models()[0]
-
-    def _require_row_model(self) -> type[ModelT]:
-        if self.row_model is None:
-            raise TypeError(
-                "Typed access is unavailable because this AppendResult did not come from "
-                "a table declared with a pydantic model schema."
-            )
-        return self.row_model
-
-    def _cardinality_error(self, model: type[ModelT], row_count: int) -> ValueError:
-        return ValueError(
-            f"Expected exactly one row for {model.__name__}; got {row_count} rows."
-        )
+from typing import Any, Callable, ClassVar
 
 
 @dataclass
@@ -124,10 +18,9 @@ class LineagedResult:
     """A node return value carrying the lineage vector of its producers.
 
     Reruns must record, on each produced row, which producer versions were
-    consumed (`_ava_lineage_vector`). Stream inputs merge that lineage inside
-    the worker/runtime context during `consume_stream`, but a node that
-    consumes an upstream result through an ordinary Python argument would
-    otherwise lose it once the value crosses the executor boundary.
+    consumed (`_ava_lineage_vector`). A node that consumes an upstream result
+    through an ordinary Python argument would otherwise lose it once the value
+    crosses the executor boundary.
 
     The framework wraps node results in `LineagedResult` so downstream nodes can
     merge the producer lineage regardless of executor. It is an internal
@@ -147,69 +40,6 @@ def unwrap_lineaged(value: Any) -> Any:
 def lineage_of(value: Any) -> dict[str, str]:
     """Return the lineage vector carried by a value, or empty if none."""
     return dict(value.lineage_vector) if isinstance(value, LineagedResult) else {}
-
-
-class SnapshotState(str, Enum):
-    """
-    State of a snapshot in the streaming progress tracker.
-
-    States:
-    - pending: Not yet claimed by any worker
-    - started: Claimed by a worker, processing in progress
-    - done: Successfully processed
-    - failed: Processing failed
-    - quarantined: Failed too many times, needs manual intervention
-    """
-
-    PENDING = "pending"
-    STARTED = "started"
-    DONE = "done"
-    FAILED = "failed"
-    QUARANTINED = "quarantined"
-
-
-@dataclass
-class SnapshotMetadata:
-    """
-    Metadata for tracking snapshot processing state.
-
-    Stored in Iceberg table properties as JSON:
-    `avalanche.snapshot.<key>.<snapshot_id>`
-
-    Attributes:
-        state: Current state of this snapshot
-        lease_expires_at: Unix timestamp when lease expires (None if not leased)
-        attempt: Number of processing attempts (for retry/quarantine logic)
-        worker_id: ID of worker currently processing (or last worker if done/failed)
-        last_error: Error message from last failure (None if not failed)
-    """
-
-    state: SnapshotState
-    lease_expires_at: int | None = None
-    attempt: int = 0
-    worker_id: str | None = None
-    last_error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
-            "state": self.state.value,
-            "lease_expires_at": self.lease_expires_at,
-            "attempt": self.attempt,
-            "worker_id": self.worker_id,
-            "last_error": self.last_error,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "SnapshotMetadata":
-        """Create from dictionary (JSON deserialization)."""
-        return cls(
-            state=SnapshotState(data["state"]),
-            lease_expires_at=data.get("lease_expires_at"),
-            attempt=data.get("attempt", 0),
-            worker_id=data.get("worker_id"),
-            last_error=data.get("last_error"),
-        )
 
 
 class ParamContext:
@@ -330,18 +160,18 @@ class ParameterProvider(ABC):
     Abstract base class for dependency injection in DAG execution.
 
     Providers must inherit from this class and implement all abstract methods.
-    This enables extensible parameter injection (Stream, Logger, Config, etc.)
+    This enables extensible parameter injection (Logger, Config, etc.)
     without modifying DAG execution logic.
 
     Example:
-        class Stream(ParameterProvider):
+        class Config(ParameterProvider):
             @classmethod
             def can_resolve(cls, param_value: Any) -> bool:
-                return isinstance(param_value, Stream)
+                return isinstance(param_value, Config)
 
             @classmethod
             def resolve(cls, param_value: Any, param_context: ParamContext) -> Any:
-                # Find upstream data and prepare stream
+                # Load the configuration for this step
                 return resolved_value
 
             @classmethod

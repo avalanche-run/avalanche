@@ -64,7 +64,6 @@ proposal_flow/
 ├── util.py                   # mapping, validation, conversion, and file helpers
 ├── skills.py                 # reusable Skills shared across agent steps
 ├── config.py                 # optional environment/config loading
-├── namespace.py              # Iceberg or Lance namespaces and tables
 └── agents/
     ├── __init__.py
     ├── package_audit/

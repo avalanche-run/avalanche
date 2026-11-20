@@ -221,8 +221,7 @@ nodes and native libraries that release the GIL.
 one node, checks cancellation, and only then admits the next node; it does not
 queue a ready sibling that could start after the earlier node cancels or fails.
 
-Parallel nodes have no ordering guarantee. Independent nodes can append to the
-same Avalanche table; both appends are retained, but commit order is unspecified.
+Parallel nodes have no ordering guarantee.
 If a node must observe another node's output or otherwise follow it, express that
 dependency with `>>`. Other shared external state still needs user synchronization.
 
@@ -246,30 +245,15 @@ def training_flow():
 
 ## Runtime providers
 
-Provider defaults are resolved while a node executes. Common providers are
-`ava.Stream`, `ava.ModelStream`, `ava.Cursor`, and `ava.Logger`.
+Provider defaults are resolved while a node executes. Use `ava.Logger()` to
+inject a logger into a step:
 
 ```python
 @ava.step
-def chunk_new_documents(
-    _loaded: object = None,
-    documents=ava.Stream(ns.documents, key="documents_to_chunks", mode="append_scan"),
-    *,
-    destination=ns.chunks,
-):
-    return destination.append(process_documents_to_chunks(documents))
+def report(total: int, *, logger=ava.Logger()):
+    logger.info("Processed %s items", total)
+    return total
 ```
-
-| Need | API |
-| --- | --- |
-| Rows written in this run | `ava.Stream(table)` |
-| Incremental table backlog | `ava.Stream(table, key="...", mode="append_scan")` |
-| Validated Pydantic rows | `ava.ModelStream.one(table)`, `.one_or_none(table)`, or `.all(table)` |
-| Manual table checkpoint | `ava.Cursor(table, key="...")` |
-
-Do not call `.read()` on a `Stream` provider. See
-[`data-model-api.md`](data-model-api.md#streams-and-cursors) for table setup and
-stream behavior.
 
 ## Input and context
 
@@ -410,7 +394,7 @@ For task-scoped platform resources, pass `ava.ExecutionServicesSpec`; see
 
 To rerun a step of a local operator's run from the CLI, web UI or TUI, see
 [Reruns](api/reruns.md). The rest of this section is embedded Python only, where nothing is
-saved and a step can be skipped only if later steps read its output through `ava.Stream`.
+saved; a step can be skipped only if later steps do not need its output.
 
 Use `ava.Rerun` to run part of an earlier workflow again. Target stable node
 slugs; set `slug=` explicitly for nodes that must be rerun by name.

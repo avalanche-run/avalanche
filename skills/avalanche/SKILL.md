@@ -5,8 +5,7 @@ description: >-
   user describes an outcome that should become a typed multi-step workflow, or
   when creating an Avalanche flow or belt, choosing deterministic, TypeSafe
   classifier, or PredictRLM-backed agent steps, composing DAGs with >> and &,
-  selecting operator/browser/TUI execution, using Iceberg or Lance persistence,
-  or looking up Avalanche workflow-author API signatures, fields, and behavior.
+  selecting operator/browser/TUI execution, or looking up Avalanche workflow-author API signatures, fields, and behavior.
 compatibility: >-
   Requires Python 3.13 and avalanche-ai. Agent and classifier steps
   are included in the base package. Includes a vendored copy of PredictRLM's RLM-design skill
@@ -37,7 +36,7 @@ Load only what the task needs:
 - Workflow-author API lookup (call forms, defaults, fields, return values, and
   errors): [API reference](references/api/README.md). Follow its topic links
   for workflows, runs, inputs/context, files/workspaces, agents, classifiers,
-  Iceberg/Lance storage, streams, cursors, and CLI commands. For reference-only
+  and CLI commands. For reference-only
   questions, look up the API directly; the workflow-design approval gates below
   apply when designing or implementing a workflow, not when explaining an API.
 - Designing and implementing one PredictRLM-backed Avalanche step:
@@ -62,7 +61,6 @@ Load only what the task needs:
   scoring, extraction, and verification, local execution, and CLI flags:
   [usage.md](references/usage.md#native-classifier-steps).
 - File layout and maintainability: [project-layout.md](references/project-layout.md).
-- Iceberg and Lance persistence: [storage.md](references/storage.md).
 
 This skill designs the complete agentic workflow: stage boundaries,
 deterministic work, agent responsibilities, typed handoffs, topology,
@@ -267,10 +265,10 @@ terminal result visible without reading node bodies.
 
 ### Step 7: Choose persistence and execution deliberately
 
-Use in-memory typed values for ordinary within-run handoffs. Add Iceberg or
-Lance when artifacts must survive runs, be queried or audited, feed an
-incremental backlog, or be consumed outside the immediate process. Persistence
-is an architectural requirement, not a default stage.
+Use in-memory typed values for ordinary within-run handoffs. Tables and
+streams are being rebuilt; until they return, keep artifacts that must outlive
+a run in files or an external store the flow owns. Persistence is an
+architectural requirement, not a default stage.
 
 Run workflows through the operator. Do not add standalone runner scripts,
 `main()` functions, `if __name__ == "__main__"` blocks, or direct
@@ -508,8 +506,6 @@ neighboring descriptions so the story remains accurate and connected.
    typed result from its body.
 5. Declare the DAG at the bottom of `flow.py` as one returned, parenthesized
    `>>` / `&` expression. Bind futures with `:=` only for explicit dependencies.
-6. For table-backed flows, define and push the Iceberg or Lance namespace, then
-   connect table and stream providers to the DAG.
 
 ## Run the local operator and browser UI
 
@@ -804,5 +800,3 @@ the workflow body's expression statement.
 - Operator discovery, CLI input, or browser UI is exercised only when it changes
   or the user requests it. Hand off a requested TUI command to the user; do not
   launch the TUI from the agent.
-- Iceberg or Lance namespaces are pushed and append/stream behavior is exercised
-  when persistence is used.

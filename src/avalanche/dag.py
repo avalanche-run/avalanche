@@ -58,7 +58,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from functools import update_wrapper, wraps
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Callable, DefaultDict, Literal, TypeVar, get_type_hints
+from typing import TYPE_CHECKING, Any, Callable, DefaultDict, TypeVar, get_type_hints
 
 from pydantic import BaseModel, JsonValue, TypeAdapter
 from ulid import ULID
@@ -710,7 +710,7 @@ def source(
 
     Example:
         @ava.source
-        def load_from_s3(*, cursor=ava.Cursor(ns().staging), staging=ns().staging):
+        def load_from_s3(bucket: str) -> list[dict]:
             ...
 
         @ava.source(num_returns=2)
@@ -795,7 +795,7 @@ def step(
 
     Example:
         @ava.step
-        def chunk_docs(*, docs=ava.Stream(ns().docs), chunks=ns().chunks):
+        def chunk_docs(docs: list[str]) -> list[str]:
             ...
     """
     localns = decoration_namespace() if fn is not None else None
@@ -844,7 +844,7 @@ def dest(
 
     Example:
         @ava.dest
-        def push_to_vespa(*, embeddings=ava.Stream(ns().embeddings)):
+        def push_to_vespa(embeddings: list[list[float]]) -> None:
             ...
     """
     localns = decoration_namespace() if fn is not None else None
@@ -1019,11 +1019,6 @@ def _runtime_param_names_from_signature(fn: Callable) -> set[str]:
     return names
 
 
-@dataclass(frozen=True)
-class _ProviderSelector:
-    future_id: str
-    tuple_index: int | None
-    explicit: bool
 
 
 @dataclass(frozen=True)
@@ -1043,14 +1038,10 @@ class _ImplicitParentBinding:
 class _NodeBindingPlan:
     args: tuple[Any, ...]
     kwargs: dict[str, Any]
-    provider_selectors: dict[str, _ProviderSelector]
     implicit_slot_kinds: tuple[str, ...]
     implicit_parent_bindings: tuple[_ImplicitParentBinding, ...]
     positional_call_adapter: _PositionalCallAdapter | None = None
 
-    @property
-    def has_explicit_provider_selectors(self) -> bool:
-        return any(selector.explicit for selector in self.provider_selectors.values())
 
 
 def _matching_provider(value: Any, providers: list) -> Any | None:
@@ -1090,7 +1081,7 @@ def _build_node_binding_plan(
     try:
         params = list(inspect.signature(fn).parameters.values())
     except (ValueError, TypeError):
-        return _NodeBindingPlan(args, dict(kwargs), {}, (), ())
+        return _NodeBindingPlan(args, dict(kwargs), (), ())
 
     from .runtime import BaseInput
 
@@ -1099,25 +1090,7 @@ def _build_node_binding_plan(
     except Exception:
         type_hints = {}
     runtime_param_names = _runtime_param_names_from_signature(fn)
-    selectors: dict[str, _ProviderSelector] = {}
-
-    # A keyword NodeFuture can select only a provider declared by the function
-    # default. Removing it then exposes that provider default to inspection.
-    for param in params:
-        value = kwargs.get(param.name)
-        if not isinstance(value, NodeFuture):
-            continue
-        if param.default is inspect.Parameter.empty:
-            continue
-        provider = _matching_provider(param.default, providers)
-        if provider is not None and getattr(provider, "consumes_upstream", False):
-            selectors[param.name] = _ProviderSelector(
-                future_id=value.future_id,
-                tuple_index=value.tuple_index,
-                explicit=True,
-            )
-
-    bound_kwargs = {name: value for name, value in kwargs.items() if name not in selectors}
+    bound_kwargs = dict(kwargs)
     positional_slots: list[tuple[inspect.Parameter, str]] = []
     implicit_slots: list[tuple[inspect.Parameter, str]] = []
 
@@ -1139,16 +1112,6 @@ def _build_node_binding_plan(
             provider = None
 
         if provider is not None:
-            if getattr(provider, "consumes_upstream", False) and param.name not in selectors:
-                # Providers can consume an upstream logical slot for ``>>`` even
-                # when Python forbids binding that parameter positionally.
-                implicit_slots.append((param, "stream"))
-                if param.kind in (
-                    inspect.Parameter.POSITIONAL_ONLY,
-                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                ):
-                    positional_slots.append((param, "stream"))
-            # Non-upstream providers never consume a workflow argument.
             continue
 
         if param.name in bound_kwargs:
@@ -1190,14 +1153,7 @@ def _build_node_binding_plan(
                 positional_bindings.append((param, value))
             continue
         arg_index += 1
-        if slot_kind == "stream" and isinstance(value, NodeFuture):
-            selectors[param.name] = _ProviderSelector(
-                future_id=value.future_id,
-                tuple_index=value.tuple_index,
-                explicit=True,
-            )
-        else:
-            positional_bindings.append((param, value))
+        positional_bindings.append((param, value))
 
     implicit_slot_kinds = tuple(
         "python" if kind == "varargs" else kind for _, kind in implicit_slots
@@ -1218,20 +1174,6 @@ def _build_node_binding_plan(
             zip(implicit_slot_kinds, logical_incoming_refs)
         )
     )
-
-    # ``>>`` stores its exact upstream refs separately from args/kwargs. Match
-    # those refs to implicit upstream slots, which include upstream-consuming
-    # keyword-only providers but keep ordinary explicit positional binding
-    # restricted to parameters Python permits positionally. Explicit
-    # positional/provider selectors continue to suppress implicit chain binding.
-    if not args and not any(selector.explicit for selector in selectors.values()):
-        for (param, _), binding in zip(implicit_slots, implicit_parent_bindings):
-            if binding.slot_kind == "stream":
-                selectors[param.name] = _ProviderSelector(
-                    future_id=binding.ref.future_id,
-                    tuple_index=binding.ref.tuple_index,
-                    explicit=False,
-                )
 
     uses_varargs = any(
         param.kind == inspect.Parameter.VAR_POSITIONAL for param, _ in positional_bindings
@@ -1257,7 +1199,6 @@ def _build_node_binding_plan(
     return _NodeBindingPlan(
         args=tuple(bound_args),
         kwargs=bound_kwargs,
-        provider_selectors=selectors,
         implicit_slot_kinds=implicit_slot_kinds,
         implicit_parent_bindings=implicit_parent_bindings,
         positional_call_adapter=(
@@ -1333,12 +1274,10 @@ def _incoming_refs_for_node(
 
 @dataclass(frozen=True)
 class _SkippedRead:
-    """A scheduled step reading a skipped step's return value or table rows."""
+    """A scheduled step reading a skipped step's return value."""
 
     consumer: str
     producer: str
-    kind: Literal["value", "replay", "not_replayable"]
-    """``replay`` is a Stream read the source run's rows can serve."""
     message: str = ""
 
 
@@ -1366,26 +1305,6 @@ def _skipped_input_reads(
             providers=PROVIDERS,
         )
 
-        for selector in binding_plan.provider_selectors.values():
-            producer = nodes[selector.future_id]
-            if (
-                selector.tuple_index is not None or producer.node.num_returns > 1
-            ) and selector.future_id not in scheduled:
-                yield _SkippedRead(
-                    node_id,
-                    selector.future_id,
-                    "not_replayable",
-                    f"Rerun node {node_id!r} has an indexed or multi-return "
-                    "ava.Stream selector "
-                    f"for skipped upstream node {selector.future_id!r}; indexed "
-                    "Stream selectors cannot replay skipped upstreams because "
-                    "durable lineage is keyed only by (run_id, node_slug). Include "
-                    "the producer in the rerun, or model its outputs as distinct "
-                    "source nodes.",
-                )
-            elif selector.future_id not in scheduled:
-                yield _SkippedRead(node_id, selector.future_id, "replay")
-
         # 1. Explicit NodeFuture args/kwargs referencing skipped upstreams.
         for arg in binding_plan.args:
             for ref in _node_future_refs(arg):
@@ -1393,10 +1312,9 @@ def _skipped_input_reads(
                     yield _SkippedRead(
                         node_id,
                         ref.future_id,
-                        "value",
                         f"Rerun node {node_id!r} has an explicit dependency on skipped "
                         f"upstream node {ref.future_id!r}; skipped upstream data "
-                        "must be consumed through ava.Stream",
+                        "requires saved outputs from a planned rerun",
                     )
 
         for kwarg in binding_plan.kwargs.values():
@@ -1405,70 +1323,35 @@ def _skipped_input_reads(
                     yield _SkippedRead(
                         node_id,
                         ref.future_id,
-                        "value",
                         f"Rerun node {node_id!r} has an explicit dependency on skipped "
                         f"upstream node {ref.future_id!r}; skipped upstream data "
-                        "must be consumed through ava.Stream",
+                        "requires saved outputs from a planned rerun",
                     )
 
-        # 2. Implicit chain refs assigned by logical upstream slot order.
-        if node_ref.args or binding_plan.has_explicit_provider_selectors:
-            # Explicit args suppress implicit positional binding. An unselected Stream
-            # then replays every parent's rows.
-            if "stream" in binding_plan.implicit_slot_kinds:
-                for parent_id in original_dependencies_map.get(node_id, []):
-                    if parent_id not in scheduled:
-                        yield _SkippedRead(node_id, parent_id, "replay")
-            continue
-
-        if not binding_plan.implicit_slot_kinds:
+        # Explicit args suppress implicit positional binding.
+        if node_ref.args or not binding_plan.implicit_slot_kinds:
             continue
 
         for binding in binding_plan.implicit_parent_bindings:
             parent_id = binding.ref.future_id
-            if binding.slot_kind == "stream":
-                if (
-                    parent_id not in scheduled
-                    and binding.may_expand_single_return
-                    and "python" in binding_plan.implicit_slot_kinds[binding.slot_index + 1 :]
-                ):
-                    yield _SkippedRead(
-                        node_id,
-                        parent_id,
-                        "not_replayable",
-                        f"Rerun node {node_id!r} has an ambiguous single-return "
-                        f"container from skipped upstream node {parent_id!r}; its "
-                        "ava.Stream slot is replayable, but tuple/list values could "
-                        "also populate a non-stream parameter. Include the producer "
-                        "in the rerun or declare separate returns.",
-                    )
-                continue
             if parent_id not in scheduled:
                 yield _SkippedRead(
                     node_id,
                     parent_id,
-                    "value",
                     f"Rerun node {node_id!r} has an implicit dependency on skipped "
-                    f"upstream node {parent_id!r} bound to a non-stream parameter; "
-                    "v1 reruns require skipped upstream data to be consumed through "
-                    "ava.Stream",
+                    f"upstream node {parent_id!r}; "
+                    "requires saved outputs from a planned rerun",
                 )
 
 
-def _validate_no_skipped_non_stream_inputs(
+def _validate_no_skipped_inputs(
     nodes: dict[str, NodeFuture],
     scheduled_node_ids: set[str],
     original_dependencies_map: dict[str, list[str]],
 ) -> None:
-    """Reject rerun schedules where a skipped upstream feeds a non-stream input.
-
-    v1 reruns require skipped upstream data to be consumed through ava.Stream.
-    This runs before any node is submitted so the failure is a clear validation
-    error rather than a downstream Python TypeError.
-    """
+    """Reject embedded reruns that need an unavailable skipped output."""
     for read in _skipped_input_reads(nodes, scheduled_node_ids, original_dependencies_map):
-        if read.kind != "replay":
-            raise ValueError(read.message)
+        raise ValueError(read.message)
 
 
 def _inspect_providers(fn: Callable, kwargs: dict[str, Any], providers: list) -> dict[str, Any]:
@@ -2012,26 +1895,6 @@ def _fetch_node_result(
         return _unwrap_lineaged_tree(value)
 
 
-def _implicit_value_from_upstream(item: Any) -> Any:
-    """Prepare an upstream value for implicit binding, preserving lineage.
-
-    - Bare AppendResult -> its .data (legacy zero-copy behavior).
-    - LineagedResult(AppendResult) -> LineagedResult(.data) so the outer context
-      wrapper can still merge the producer lineage before unwrapping for the
-      user function.
-    - Other LineagedResult / values -> passed through unchanged (the wrapper
-      merges + unwraps them).
-    """
-    from .types import AppendResult, LineagedResult
-
-    if isinstance(item, LineagedResult):
-        inner = item.value
-        if isinstance(inner, AppendResult):
-            return LineagedResult(inner.data, item.lineage_vector)
-        return item
-    if isinstance(item, AppendResult):
-        return item.data
-    return item
 
 
 def _implicit_items_from_parent_result(presult: Any) -> list[Any]:
@@ -2163,7 +2026,7 @@ def _bind_implicit_parent_results(
             break
 
         item = upstream_values[upstream_index]
-        value = _implicit_value_from_upstream(item)
+        value = item
 
         if param.kind == inspect.Parameter.POSITIONAL_ONLY:
             if adapt_positionals:
@@ -2188,7 +2051,7 @@ def _bind_implicit_parent_results(
 
         if param.kind == inspect.Parameter.VAR_POSITIONAL:
             resolved_args.extend(
-                _implicit_value_from_upstream(item) for item in upstream_values[upstream_index:]
+                item for item in upstream_values[upstream_index:]
             )
             upstream_index = len(upstream_values)
             continue
@@ -2398,7 +2261,7 @@ class Workflow:
         )
 
         original_dependencies_map = _reverse_graph(self.graph)
-        _validate_no_skipped_non_stream_inputs(
+        _validate_no_skipped_inputs(
             self.nodes,
             scheduled_node_ids,
             original_dependencies_map,
@@ -2745,8 +2608,7 @@ class Workflow:
                 from .types import ParamContext
 
                 original_parent_ids = original_dependencies_map.get(node_id, [])
-                # Saved outputs never stand in for rows: Stream reads replay the source run.
-                # A skipped producer gives no upstream data: a Stream reads its table.
+                # Providers never see a reused or skipped producer's output.
                 provider_parent_results = [
                     None
                     if pid in reused_node_ids or pid in skipped_node_ids
@@ -2763,39 +2625,12 @@ class Workflow:
                     provider = provider_by_param.get(param_name)
                     if provider is None:
                         continue
-                    selector = binding_plan.provider_selectors.get(param_name)
-                    if selector is not None:
-                        selected_result = (
-                            None
-                            if selector.future_id in reused_node_ids
-                            or selector.future_id in skipped_node_ids
-                            else result_refs.get(selector.future_id)
-                        )
-                        if selected_result is not None and selector.tuple_index is not None:
-                            selected_result = _indexed_parent_result(
-                                selected_result,
-                                selector.tuple_index,
-                                executor,
-                            )
-                        parent_results = [selected_result]
-                        param_position = 0
-                        parent_slugs = [node_slugs[selector.future_id]]
-                    else:
-                        parent_results = provider_parent_results
-                        param_position = _data_param_position(
-                            node_ref.node.fn,
-                            param_name,
-                            skip_param_names,
-                            position_consuming_params,
-                        )
-                        parent_slugs = upstream_node_slugs
-
                     param_context = ParamContext(
-                        parent_results=parent_results,
-                        param_position=param_position,
+                        parent_results=provider_parent_results,
+                        param_position=0,
                         node_name=node_ref.node.fn.__name__,
                         node_slug=node_ref.node_slug,
-                        upstream_node_slugs=parent_slugs,
+                        upstream_node_slugs=upstream_node_slugs,
                         run_id=run_id,
                         rerun=rerun_spec,
                         preserve_missing_results=rerun_spec is not None,
@@ -2857,7 +2692,7 @@ class Workflow:
             # This enables: `a() >> b() >> c()` without manual wiring.
             # Injectable params (Logger, Stream, etc.) are excluded — they're
             # handled separately by the provider system.
-            if not node_ref.args and not binding_plan.has_explicit_provider_selectors:
+            if not node_ref.args:
                 for binding in binding_plan.implicit_parent_bindings:
                     if (
                         binding.may_expand_single_return
@@ -2911,7 +2746,6 @@ class Workflow:
             #
             # Some providers wrap the function to add behavior (e.g., context managers).
             # Examples:
-            #   - Stream: Returns wrapper to enter consume_stream() context manager
             #   - Logger: Returns None (no wrapper needed, just inject LoggerInstance)
             #   - Future Config: Might return wrapper for transaction/connection management
             #

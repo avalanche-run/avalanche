@@ -15,8 +15,6 @@ Add only the features your project uses; combine names, for example
 | `dataframes` | Polars dataframes, Dataframely typed schemas and Arrow conversion. |
 | `integrations` | MCP server connections and OAuth logins. |
 | `typesafe` | TypeSafe classification and evaluation. |
-| `iceberg` | Iceberg tables; includes `dataframes`. |
-| `lance` | Lance tables and FileLock; includes `dataframes`. |
 | `openai` | OpenAI agent runtime and Decisions classifier; includes `agents`. |
 | `gemini` | Gemini Decision classifier. |
 | `claude` | Claude agent runtime; includes `agents`. |

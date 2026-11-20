@@ -76,7 +76,7 @@ declaration order.
 ## Typed signature class
 
 Use `@ava.agent_step` (or `@ava.agent.step` outside a workflow) when the function
-does more than call the agent. Here it also writes the result to a table:
+needs custom preparation around the agent call:
 
 Define inputs and outputs with `ava.Signature`, `ava.InputField`, and
 `ava.OutputField`, following [DSPy's Signature API](https://dspy.ai/api/signatures/Signature/).
@@ -103,7 +103,6 @@ class AuditRfpSig(ava.Signature):
     )
 
 
-# `ns.audit_results` is this belt's model-declared audit table.
 @ava.agent_step(
     AuditRfpSig,
     runtime=ava.runtimes.PredictRLM(skills=[ava.runtimes.predict_rlm.skills.pdf]),
@@ -112,11 +111,9 @@ async def audit_rfp(
     documents: list[File],
     *,
     agent: ava.Agent,
-    # The table binding remains explicit at the step declaration boundary.
-    dest: ava.Table = ns.audit_results,
-) -> ava.AppendResult:
+) -> RfpAudit:
     result = await agent(documents=documents)
-    return dest.append(result.outputs.audit)
+    return result.outputs.audit
 ```
 
 The injected `agent` parameter is required and keyword-only. It is never passed
@@ -178,14 +175,11 @@ async def render_artifacts(
     plan: ProposalPlan,
     *,
     agent: ava.Agent,
-    dest: ava.Table = ns.draft_artifacts,
-) -> ava.AppendResult:
+) -> DraftArtifacts:
     outputs = (await agent(plan=plan)).outputs
-    return dest.append(
-        DraftArtifacts(
-            proposal=outputs.proposal,
-            compliance_matrix=outputs.compliance_matrix,
-        )
+    return DraftArtifacts(
+        proposal=outputs.proposal,
+        compliance_matrix=outputs.compliance_matrix,
     )
 ```
 

@@ -3,10 +3,6 @@
 This directory contains the canonical examples. The standalone Python scripts
 are covered by `test/example_smoke_test.py`.
 
-The `stream_pattern.py` and `cursor_pattern.py` examples need Iceberg support.
-When using an installed package rather than the development checkout, add it with
-`uv add 'avalanche-ai[iceberg]'`.
-
 Run the examples from this directory:
 
 ```bash
@@ -127,37 +123,7 @@ examples below, it requires a connected account and is not an offline smoke run.
 
 Simplest local flow execution path. It demonstrates the Python DAG API,
 explicit data passing, fan-out, fan-in, and `ava.LocalExecutor` without requiring
-Iceberg, the operator, or the TUI.
-
-
-### `stream_pattern.py`
-
-Stream-based incremental processing with local Iceberg tables. It uses the
-current provider API:
-
-```python
-@ava.step
-def chunk_documents(
-    docs: pl.DataFrame = ava.Stream(
-        ns.document, key="documents_to_chunks", mode="append_scan"
-    ),
-    *,
-    dest=ns.chunk,
-):
-    chunks = process_documents_to_chunks(docs)
-    return dest.append(chunks)
-```
-
-This example uses append-scan streams (`mode="append_scan"`): each consumer edge
-gets a unique Stream `key`, and the runtime injects a `polars.DataFrame` for the
-claimed snapshot. The default `ava.Stream(table)` is run-scoped and takes no key.
-
-
-### `cursor_pattern.py`
-
-Manual checkpoint control for advanced incremental flows. It demonstrates a
-Cursor that tracks a source table snapshot while writing to a destination table,
-model-specific cursors, and a multi-table sync checkpoint.
+the operator or the TUI.
 
 
 ### `operator_workflow.py`
@@ -179,13 +145,6 @@ uv run python examples/classifier_provider_workflow.py
 ```
 
 ## Notes
-
-- `ava.Stream(table)` is a provider marker, not an object you call with
-  `.read()`. It defaults to run-scoped reads.
-- For backlog/queue streaming use `ava.Stream(table, key="...", mode="append_scan")`
-  with one unique key per consumer edge. `key` is only valid with `append_scan`.
-- Local example artifacts are ignored by git through `.avalanche/`.
-- The standalone scripts listed here are part of the smoke-tested onboarding path.
 
 ## Model selection
 

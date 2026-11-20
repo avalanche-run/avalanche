@@ -28,8 +28,7 @@ Avalanche makes agents first-class steps in typed data pipelines. Compose adapti
 
 The [API reference](docs/api/README.md) covers the interfaces used to write and run
 workflows: step decorators, graph operations, run handles, inputs and context,
-files and workspaces, agents, classifiers, Iceberg/Lance storage, streams,
-cursors, and CLI commands. Entries list parameters, fields, returns, and errors.
+files and workspaces, agents, classifiers, CLI commands. Entries list parameters, fields, returns, and errors.
 The same reference is bundled in the [Avalanche skill](skills/avalanche/SKILL.md)
 for offline API lookup.
 
@@ -88,8 +87,6 @@ Add only the features your project uses; combine names, for example
 | `dataframes` | Polars dataframes, Dataframely typed schemas and Arrow conversion. |
 | `integrations` | MCP server connections and OAuth logins. |
 | `typesafe` | TypeSafe classification and evaluation. |
-| `iceberg` | Iceberg tables; includes `dataframes`. |
-| `lance` | Lance tables and FileLock; includes `dataframes`. |
 | `openai` | OpenAI agent runtime and Decisions classifier; includes `agents`. |
 | `gemini` | Gemini Decision classifier. |
 | `claude` | Claude agent runtime; includes `agents`. |
@@ -152,13 +149,6 @@ Add Avalanche to an existing project:
 
 ```bash
 uv add avalanche-ai
-```
-
-Plain workflows need no storage extra. For Iceberg tables and their table-backed
-streams, install Iceberg support in the environment that runs the flow:
-
-```bash
-uv add "avalanche-ai[iceberg]"
 ```
 
 Install the avalanche skill in the same project:
@@ -489,8 +479,6 @@ workflow; the rest are focused pattern demos.
 | [`classifier_workflow.py`](examples/classifier_workflow.py) | TypeSafe Choice, Noul, and Score questions, typed answers, and current/historical classifier inspection in the operator UI. |
 | [`classifier_provider_workflow.py`](examples/classifier_provider_workflow.py) | The same three question types answered by OpenAI Decisions or Gemini Decision when that key is set, else TypeSafe. |
 | [`complex_dag_pattern.py`](examples/complex_dag_pattern.py)       | Local DAG API with explicit data passing, fan-out, and fan-in on`ava.LocalExecutor`.                                                                  |
-| [`stream_pattern.py`](examples/stream_pattern.py)                 | Stream-based incremental processing with local Iceberg tables.                                                                                          |
-| [`cursor_pattern.py`](examples/cursor_pattern.py)                 | Manual checkpoint control with cursors for advanced incremental flows.                                                                                  |
 | [`document_file_workflow.py`](examples/document_file_workflow.py) | Typed`ava.File` inputs and outputs through a `BaseInput` workflow.                                                                                  |
 | [`operator_workflow.py`](examples/operator_workflow.py)           | Flow file for the local operator and connected TUI path.                                                                                                |
 
@@ -554,8 +542,6 @@ probability semantics, and local evidence retention limits.
 
 | Extra     | Purpose                       |
 | --------- | ----------------------------- |
-| `iceberg` | Iceberg storage backend (including local SQLite and S3/Glue support) |
-| `lance`  | Lance storage backend         |
 | `claude` | `ava.runtimes.ClaudeAgent`, which runs agent steps with Claude through the Claude Agent SDK; also needs the Claude Code CLI |
 | `openai` | `ava.runtimes.OpenAIAgent`, which runs agent steps with OpenAI models through the OpenAI Agents SDK, and `ava.classifiers.OpenAIDecisions`, which answers classifier steps and evaluations with OpenAI's Decisions API |
 | `gemini` | `ava.classifiers.GeminiDecision`, which answers classifier steps and evaluations with Google's Gemini Decision service through `google-genai`; needs `GEMINI_API_KEY` |
@@ -563,7 +549,7 @@ probability semantics, and local evidence retention limits.
 The extras can be combined:
 
 ```bash
-uv add "avalanche-ai[iceberg,lance,claude,openai,gemini]"
+uv add "avalanche-ai[claude,openai,gemini]"
 ```
 
 ## Documentation
@@ -575,7 +561,6 @@ uv add "avalanche-ai[iceberg,lance,claude,openai,gemini]"
 - [Agent steps](docs/agent-steps.md)
 - [Classifier steps](docs/classifier-steps.md)
 - [Integrations](docs/integrations.md)
-- [Data model and storage API](docs/data-model-api.md)
 - [Execution services](docs/execution-services.md)
 - [Architecture](ARCHITECTURE.md)
 - [Examples](examples/README.md)

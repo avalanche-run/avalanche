@@ -24,7 +24,7 @@ they own process-global resources. CI runs these same groups in separate jobs.
 Keep this collection focused on:
 
 - DAG execution, runtime injection, failure, cancellation, and rerun lineage.
-- Storage read/write integrity, concurrent commits, cursors, and safe file publication.
+- Safe file publication and workspace integrity.
 - Operator discovery, spawned execution, transport recovery, and trust boundaries.
 - UI selection, run controls, live-state ordering, inspection, and recovery.
 
@@ -85,5 +85,5 @@ uv build
 ## Optional Components
 
 The default development sync installs the dependencies needed for the current
-test suite. Optional package extras are `lance`, `claude`, and `openai`; document
+test suite. Optional package extras include `claude` and `openai`; document
 new optional dependencies in `pyproject.toml` and `README.md` together.

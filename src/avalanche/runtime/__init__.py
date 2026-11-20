@@ -1,7 +1,7 @@
 """
 Runtime primitives for Avalanche tasks.
 
-Provides Cursor, Stream, Logger, and run input/context types.
+Provides Logger and run input/context types.
 """
 
 from ..workspace import Workspace
@@ -14,22 +14,17 @@ from .context import (
     get_current_run_context,
     run_with_context,
 )
-from .cursor import Cursor
-from .providers import Logger, LoggerInstance, ModelStream, Stream, consume_stream
+from .providers import Logger, LoggerInstance
 
 __all__ = [
     "BaseContext",
     "BaseInput",
-    "Cursor",
     "File",
     "Workspace",
     "Rerun",
     "RunContext",
     "get_current_run_context",
     "run_with_context",
-    "Stream",
-    "ModelStream",
-    "consume_stream",
     "Logger",
     "LoggerInstance",
 ]

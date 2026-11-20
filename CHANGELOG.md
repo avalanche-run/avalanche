@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Breaking:** the legacy Iceberg and Lance tables and `ava.Stream` are
+  removed: `avalanche.iceberg`, `avalanche.lance`, `ava.Stream`,
+  `ava.ModelStream`, `ava.Cursor`, `ava.ProgressStore`, `ava.AppendResult`,
+  the storage contracts (`ava.Table`, `ava.Namespace` and friends), the
+  `iceberg` and `lance` extras, their docs and examples. They broke on the
+  local operator in 0.20.9, because step results must be JSON. Importing
+  `avalanche.iceberg` or `avalanche.lance`, or using `ava.Stream`, now raises
+  one error saying tables and streams are being rebuilt in the Linear project
+  "Tables and streams in Avalanche and Delta". Reruns no longer report
+  `stream_not_replayable`.
+
 ## 0.20.27
 
 ## 0.20.26

@@ -1,15 +1,4 @@
-"""
-Avalanche - Pythonic data workflows on Iceberg and Lance.
-
-Provides a DAG-based framework for building data transformation workflows
-with local and distributed execution.
-
-The Iceberg and Lance storage backends, the agent module, and the classifier
-module are imported lazily on first attribute access, so ``import avalanche``
-does not load the catalog and columnar stacks (pyiceberg, pyarrow, pandas,
-SQLAlchemy, object-store clients) for programs that only use the DAG,
-executor, and runtime API.
-"""
+"""Avalanche: Pythonic workflows with local and distributed execution."""
 
 from importlib import import_module
 
@@ -44,9 +33,6 @@ from .machine_host import MachineEventReceipt, MachineHost, MachineInstance
 from .mapping import DEFAULT_MAX_ITEMS, HARD_CAP, MapItemFailure, MapItemsFailed
 from .model_frame import Json
 from .policies import Event, NonRetryableError, OutcomeUnknownError, event
-
-# Progress tracking
-from .progress import ProgressStore
 from .protocol import PROTOCOL_VERSION, ProtocolVersion
 from .run_handle import RunHandle
 from .run_steps import RunStart, call, start_run
@@ -55,23 +41,13 @@ from .run_steps import RunStart, call, start_run
 from .runtime import (  # noqa: F401
     BaseContext,
     BaseInput,
-    Cursor,
     File,
     Logger,
-    ModelStream,
     Rerun,
     RunContext,
-    Stream,
     Workspace,
-    consume_stream,
 )
 from .skips import StepSkipped, skip
-
-# Storage contracts
-from .storage import Namespace, NamespaceConfig, ScanResult, Table, TableGroup
-
-# Types
-from .types import AppendResult, SnapshotMetadata, SnapshotState
 from .waits import decision, sleep, wait_for_event
 from .webhook import Webhook
 
@@ -86,7 +62,7 @@ from .references import (
 
 # Submodules and names resolved lazily on first attribute access (see __getattr__).
 _LAZY_SUBMODULES = frozenset(
-    {"agent", "catalog", "classifier", "classifiers", "iceberg", "lance", "runtimes"}
+    {"agent", "catalog", "classifier", "classifiers", "runtimes"}
 )
 _LAZY_EXPORTS: dict[str, str] = {
     # Agent
@@ -113,23 +89,14 @@ _LAZY_EXPORTS: dict[str, str] = {
     "EvalContext": "evaluations",
     "Metric": "evaluations",
     "Evaluations": "evaluations",
-    # Iceberg backend
-    "IcebergAppendScan": "iceberg",
-    "IcebergNamespace": "iceberg",
-    "IcebergNs": "iceberg",
-    "IcebergNsConfig": "iceberg",
-    "IcebergTable": "iceberg",
-    "IcebergTableGroup": "iceberg",
-    # Lance backend
-    "LanceNamespace": "lance",
-    "LanceNamespaceConfig": "lance",
-    "LanceNs": "lance",
-    "LanceNsConfig": "lance",
-    "LanceTable": "lance",
 }
 
 
 def __getattr__(name: str):
+    if name in {"iceberg", "lance", "Stream", "ModelStream", "Cursor", "AppendResult"}:
+        from ._removed import TablesAndStreamsRemovedError
+
+        raise TablesAndStreamsRemovedError()
     if name in _LAZY_SUBMODULES:
         value = import_module(f"{__name__}.{name}")
     elif name in _LAZY_EXPORTS:
@@ -215,20 +182,12 @@ __all__ = [
     "BaseContext",
     "BaseInput",
     "BaseModel",
-    "Cursor",
     "File",
     "Workspace",
     "Rerun",
     "RunContext",
     "RunHandle",
-    "Stream",
-    "ModelStream",
     "Logger",
-    "consume_stream",
-    # Progress
-    "ProgressStore",
-    # Types
-    "AppendResult",
     "Classifier",
     "ClassificationResult",
     "ClassifierStepError",
@@ -236,26 +195,5 @@ __all__ = [
     "EvalContext",
     "Metric",
     "Evaluations",
-    "SnapshotState",
-    "SnapshotMetadata",
     "Json",
-    # Storage contracts
-    "Namespace",
-    "NamespaceConfig",
-    "Table",
-    "TableGroup",
-    "ScanResult",
-    # Iceberg
-    "IcebergNamespace",
-    "IcebergNs",
-    "IcebergNsConfig",
-    "IcebergTable",
-    "IcebergTableGroup",
-    "IcebergAppendScan",
-    # Lance
-    "LanceNamespace",
-    "LanceNs",
-    "LanceNamespaceConfig",
-    "LanceNsConfig",
-    "LanceTable",
 ]

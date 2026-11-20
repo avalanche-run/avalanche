@@ -1,7 +1,7 @@
 [project]
 name = "avalanche-ai"
 version = "0.20.27"
-description = "Python toolkit for local data-flow experiments with Iceberg and Lance"
+description = "Python toolkit for local-first data workflows"
 authors = [{ name = "Gabriel Lesperance", email = "611342+glesperance@users.noreply.github.com" }]
 requires-python = ">=3.13,<3.14"
 readme = "README.md"
@@ -47,15 +47,6 @@ dataframes = [
     "dataframely>=1.13.0,<2",
     "pyarrow>=24",
 ]
-iceberg = [
-    "avalanche-ai[dataframes]",
-    "pyiceberg[glue, pandas, pyarrow, s3fs, sql-sqlite]>=0.9,<0.11",
-]
-lance = [
-    "avalanche-ai[dataframes]",
-    "filelock>=4.2.1,<5",
-    "pylance>=0.24.0",
-]
 claude = [
     "avalanche-ai[agents]",
     "claude-agent-sdk>=0.2.174",
@@ -72,7 +63,6 @@ gemini = [
 
 [dependency-groups]
 dev = [
-    "pyiceberg[glue, pandas, pyarrow, s3fs, sql-sqlite]>=0.9,<0.11",
     "boto3>=1.35,<2",
     "pytest>=9.0.3,<10",
     "pytest-asyncio>=1.4.0,<2",
@@ -82,7 +72,6 @@ dev = [
     "grpcio>=1.85.1",
     "grpcio-tools>=1.75.1",
     "moto[s3,server]>=5,<6",
-    "pylance>=0.24.0",
     "s3fs>=2026.6.0,<2027",
     "pytest-cov>=7.0.0",
     "textual>=6.2.1",

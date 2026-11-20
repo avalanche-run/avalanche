@@ -75,7 +75,6 @@ Earliest step to rerun from: b_renamed
 | `not_reusable` | The step's output could not be saved. |
 | `output_unavailable` | The saved copy is missing or changed, or the source run was deleted. |
 | `output_does_not_fit` | The saved output does not validate against the declared return type. |
-| `stream_not_replayable` | A step reads a stream table in a way that cannot be replayed. |
 | `source_run_active` | The source run is still going. |
 
 ## What is saved
@@ -99,18 +98,14 @@ saved outputs with their runs.
   `ava.Workspace()`, its saved output keeps a copy of that workspace as the step left it, and
   a rerun starts its own workspace from the copy of the last reused step that saved one.
   A changed copy fails the rerun before any step runs.
-- **Streams.** A step that reads an `ava.Stream` table keeps replaying rows from the run that
-  wrote them. No saved value is needed, but the source run must have a record of the step.
-  A read from a table without row lineage is not caught by the checks: it fails when the
-  step starts.
 - **A step with no return annotation** is rebuilt as plain JSON, so a `File` or model it
   returned reaches later steps as a dictionary. Annotate the return type of a step you
   expect to reuse.
 
 ## Embedded reruns
 
-`Workflow.run(rerun=ava.Rerun(...))` is unchanged and separate. It saves no outputs and can
-only skip a step whose output later steps read through `ava.Stream` tables, and you pass
+`Workflow.run(rerun=ava.Rerun(...))` is separate. It saves no outputs and can
+only skip a step whose output later steps do not need, and you pass
 `input=` again yourself:
 
 ```python

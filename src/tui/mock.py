@@ -393,7 +393,7 @@ FAKE_LOGS: dict[str, list[tuple[LogLevel, str, float]]] = {
         (LogLevel.INFO, "Building summary: 5 regions, 1,231 orders", 0.8),
     ],
     "save_warehouse_1": [
-        (LogLevel.INFO, "Writing to iceberg table orders_summary...", 0.0),
+        (LogLevel.INFO, "Writing orders_summary...", 0.0),
         (LogLevel.INFO, "Appended 5 rows, snapshot 42 → 43", 0.5),
         (LogLevel.INFO, "Warehouse save complete", 0.8),
     ],

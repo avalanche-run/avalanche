@@ -11,8 +11,6 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_EXAMPLES = [
     Path("examples/complex_dag_pattern.py"),
-    Path("examples/stream_pattern.py"),
-    Path("examples/cursor_pattern.py"),
     Path("examples/operator_workflow.py"),
     Path("examples/scripted_agent.py"),
     Path("examples/map_agent_fanout.py"),

@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-Avalanche is a local-first Python toolkit for defining and running data-flow DAGs. It combines a small decorator-based workflow API, Iceberg and Lance storage helpers, local execution, an optional operator/gRPC control plane, and a Textual TUI. The project is an early release candidate: keep operational claims local-development focused and do not imply production auth, multi-tenancy, deployment, or durable recovery that does not exist.
+Avalanche is a local-first Python toolkit for defining and running data-flow DAGs. It combines a small decorator-based workflow API, local execution, an optional operator/gRPC control plane, and a Textual TUI. The project is an early release candidate: keep operational claims local-development focused and do not imply production auth, multi-tenancy, deployment, or durable recovery that does not exist.
 
 ## Architecture & Data Flow
 
 1. **DAG authoring:** `src/avalanche/dag.py` captures decorated node calls inside a `ContextVar`-scoped `@workflow`. `NodeFuture`, `>>`, and `&` describe dependencies; workflow bodies should define graph edges rather than perform runtime work.
 2. **Embedded execution:** `Workflow.run()` creates an awaitable `RunHandle` and starts a driver thread. The driver schedules nodes topologically, resolves annotated runtime providers and dependency references, submits work to `LocalExecutor`, and fetches only final outputs. Payloads, status, lineage, and execution receipts remain separate channels.
-3. **Runtime injection and storage:** providers in `src/avalanche/runtime/providers/` inject streams, models, logging, run input, and context. Backend-neutral contracts live in `src/avalanche/storage.py`; Iceberg and Lance implementations preserve snapshot and rerun lineage.
+3. **Runtime injection:** providers in `src/avalanche/runtime/providers/` inject logging, run input, and context. Tables and streams were removed and are being rebuilt; do not reintroduce them outside that design.
 4. **Operator mode:** `src/runtime/operator/` discovers workflow descriptors, runs each workflow in a spawned coordinator process, and exchanges serializable lifecycle events over queues. The gRPC server exposes discovery, run control, logs, and update streams.
 5. **TUI:** `GrpcStateProvider` implements the `StateProvider` boundary. `src/tui/ui_store.py` is the single mutable UI state owner; background threads enqueue guarded updates that the Textual UI applies on its own thread.
 
@@ -16,12 +16,12 @@ Preserve these boundaries. Do not pass live `Workflow` objects across operator o
 
 ## Key Directories
 
-- `src/avalanche/`: public library API, DAG construction/execution, runtime models, storage contracts, Iceberg/Lance backends, and agent support.
+- `src/avalanche/`: public library API, DAG construction/execution, runtime models, and agent support.
 - `src/runtime/`: executor implementations and the operator runtime, including discovery, scheduling, workers, gRPC, and generated protobuf modules.
 - `src/tui/`: Textual application, widgets, DAG layout, mock provider, and `UIStore`.
 - `src/ava_cli/`: the `ava` command-line entry point.
-- `test/`: behavior and integration tests, with focused suites under `operator_tests/`, `storage/`, `iceberg/`, and `agent/`.
-- `examples/`: smoke-tested executable workflows covering DAGs, streams, cursors, and operator discovery.
+- `test/`: behavior and integration tests, with focused suites under `operator_tests/` and `agent/`.
+- `examples/`: smoke-tested executable workflows covering DAGs and operator discovery.
 - `docs/`: architecture, API, execution-service, agent, and release guidance.
 - `scripts/`: maintenance and performance tooling, including `benchmark_tui.py`.
 
@@ -97,7 +97,6 @@ narrow file or directory.
 - `src/avalanche/__init__.py`: supported public exports.
 - `src/avalanche/dag.py`: graph model, decorators, binding, scheduling, and `Workflow.run()`.
 - `src/avalanche/run_handle.py`: thread-backed awaitable run lifecycle and cancellation.
-- `src/avalanche/storage.py`: backend-neutral namespace/table contracts.
 - `src/runtime/executor.py`: Executor protocol, `LocalExecutor`, and result normalization.
 - `src/runtime/operator/operator.py`: operator state and run-process orchestration.
 - `src/runtime/operator/run_worker.py`: spawn-safe workflow execution worker.
@@ -113,7 +112,7 @@ narrow file or directory.
 - Use **uv** for dependency management and command execution; keep `uv.lock` synchronized. Do not introduce pip/Poetry workflows.
 - Packaging uses Hatchling with a `src/` layout containing four import roots: `avalanche`, `ava_cli`, `runtime`, and `tui`.
 - The supported CLI is `ava`; do not document an `avalanche` command or unimplemented initialization flow.
-- Optional extras include `lance`, `claude`, and `openai`. When adding an extra, synchronize
+- Optional extras include `claude` and `openai`. When adding an extra, synchronize
   `pyproject.toml`, README, and getting-started documentation.
 - Real-terminal TUI tests require the `tmux` executable. Operator integration uses local processes and gRPC ports.
 - Use `AVALANCHE_EXAMPLE_ROOT` to isolate example storage artifacts when needed.

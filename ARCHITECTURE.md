@@ -128,7 +128,7 @@ describe graph edges; it should not do runtime I/O or invoke models directly.
 
 The driver schedules nodes topologically. It binds ordinary upstream values and
 resolves runtime-provided parameters at execution time. Providers cover run
-input and context, streams, cursors, logging, injected agents, and related
+input and context, logging, injected agents, and related
 runtime capabilities. Provider markers remain references during DAG
 construction; they are not eager values.
 
@@ -204,17 +204,9 @@ The coordinator tears down its executor after a terminal outcome. The parent
 coordinates cancellation and process-group shutdown; it does not send a live
 `Workflow` object across the process boundary.
 
-### Storage and execution services
+### Execution services
 
-Avalanche's storage boundary is backend-neutral. `Namespace` and `Table`
-define typed contracts; Iceberg and Lance implement their respective backends.
-Applications declare the namespace name, table schema, storage location, and
-catalog configuration. Avalanche does not impose a universal filesystem default
-for application catalogs.
-
-`ava.Stream` and `ava.Cursor` are runtime providers for workflow data flow.
-They are distinct from execution services. Execution services are an
-executor-owned task lifecycle around platform-provided resources:
+Execution services are an executor-owned task lifecycle around platform-provided resources:
 
 ```text
 probe → negotiate → open → materialize_input → user task → finalize → teardown
@@ -575,7 +567,7 @@ object sharing, and UI-owned execution.
 
 | Area | Primary locations |
 | --- | --- |
-| Public DAG, runtime, storage, agent APIs | `src/avalanche/` |
+| Public DAG, runtime, agent APIs | `src/avalanche/` |
 | Local executor | `src/runtime/executor.py` |
 | Operator lifecycle, registry, transport, worker | `src/runtime/operator/` |
 | Browser UI source | `web/operator/` |
@@ -613,8 +605,6 @@ object sharing, and UI-owned execution.
   reruns, and execution.
 - [Agent steps](docs/agent-steps.md): typed model contracts and runtime
   configuration.
-- [Data model and storage API](docs/data-model-api.md): namespaces, tables,
-  schemas, and storage backends.
 - [Execution services](docs/execution-services.md): executor-owned worker
   lifecycle services.
 - [Examples](examples/README.md): runnable local workflows.
