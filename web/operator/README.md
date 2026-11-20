@@ -193,6 +193,18 @@ attempt, so use it to make a retry return the first run. Steps are offered from
 `FlowInfoMsg.nodeSlugs`. A `deployments` prop on the workspace adds a deployment picker to
 the dialog. `GrpcWebOperatorApi` implements `startRerun` for the local operator.
 
+`FlowGraph` draws one flow's DAG on its own, read-only, for a page that shows a
+definition without an operator behind it (a shared template, docs). Give it the
+flow's steps and edges and a sized box; the cards open nothing, nothing is
+selectable, and the mouse wheel scrolls the page (drag pans, the controls zoom):
+
+```tsx
+<FlowGraph
+  className="h-[420px]"
+  flow={{ name: "brief", nodeIds: ["fetch", "draft"], graph: { fetch: ["draft"] } }}
+/>
+```
+
 Pass `bottomRightPanel` to `WorkflowWorkspace` to replace the graph's floating
 actions with host controls. Omit it to retain built-in controls, or pass `null`
 to hide the panel. The panel stays inside the graph when the inspector opens.

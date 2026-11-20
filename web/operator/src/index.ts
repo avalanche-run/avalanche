@@ -74,6 +74,9 @@ export type {
   OperatorUiProps,
   OperatorUiSelection,
 } from "./ui/types";
+// A flow's DAG alone, read-only, for pages that show a definition (a shared template).
+export { FlowGraph } from "./FlowGraph";
+export type { FlowGraphDefinition, FlowGraphProps } from "./FlowGraph";
 export { WorkflowWorkspace } from "./WorkflowWorkspace";
 export type {
   WorkflowWorkspaceProps,

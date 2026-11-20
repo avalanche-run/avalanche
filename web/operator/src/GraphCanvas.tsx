@@ -169,7 +169,8 @@ interface CardData extends Record<string, unknown> {
   /** The integrations the step declares; absent when it declares none. */
   integrations?: StepIntegrationsResult;
   descriptionsExpanded: boolean;
-  onOpen: () => void;
+  /** Absent on a read-only graph: the card opens nothing. */
+  onOpen?: () => void;
   inspectionDisabled?: boolean;
 }
 
@@ -241,7 +242,7 @@ interface InputDotData extends Record<string, unknown> {
   /** What scheduled runs start with; only for a cron workflow's definition. */
   scheduleNote?: string;
   error?: string;
-  onOpen: () => void;
+  onOpen?: () => void;
   inspectionDisabled?: boolean;
 }
 
@@ -494,20 +495,22 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
         position={Position.Right}
         isConnectable={false}
       />
-      <button
-        type="button"
-        className="node-card-action absolute inset-0 z-[2] cursor-pointer rounded-[inherit] border-0 bg-transparent p-0 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-acid"
-        onClick={data.onOpen}
-        disabled={data.inspectionDisabled}
-        aria-label={`Inspect ${data.label}${data.identity ? ` ${data.identity}` : ""}`}
-        aria-description={
-          data.evaluationDeclarationError
-            ? "Evaluation declaration unavailable"
-            : data.evaluationCount !== undefined
-              ? `${data.evaluationCount} evaluation ${data.evaluationCount === 1 ? "metric" : "metrics"} configured`
-              : undefined
-        }
-      />
+      {data.onOpen && (
+        <button
+          type="button"
+          className="node-card-action absolute inset-0 z-[2] cursor-pointer rounded-[inherit] border-0 bg-transparent p-0 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-acid"
+          onClick={data.onOpen}
+          disabled={data.inspectionDisabled}
+          aria-label={`Inspect ${data.label}${data.identity ? ` ${data.identity}` : ""}`}
+          aria-description={
+            data.evaluationDeclarationError
+              ? "Evaluation declaration unavailable"
+              : data.evaluationCount !== undefined
+                ? `${data.evaluationCount} evaluation ${data.evaluationCount === 1 ? "metric" : "metrics"} configured`
+                : undefined
+          }
+        />
+      )}
       <header
         className={`node-header relative ${
           isCompact
@@ -732,13 +735,15 @@ const WorkflowInputDot = memo(({ data, selected }: NodeProps<Node<InputDotData>>
       data-cron={data.cron}
       title={note ? `${label}\n${note}` : label}
     >
-      <button
-        type="button"
-        className="node-card-action absolute inset-0 z-[2] cursor-pointer rounded-full border-0 bg-transparent p-0 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-acid"
-        onClick={data.onOpen}
-        disabled={data.inspectionDisabled}
-        aria-label={`Inspect workflow input${data.typeName ? ` ${data.typeName}` : ""}`}
-      />
+      {data.onOpen && (
+        <button
+          type="button"
+          className="node-card-action absolute inset-0 z-[2] cursor-pointer rounded-full border-0 bg-transparent p-0 focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-acid"
+          onClick={data.onOpen}
+          disabled={data.inspectionDisabled}
+          aria-label={`Inspect workflow input${data.typeName ? ` ${data.typeName}` : ""}`}
+        />
+      )}
       <span aria-hidden="true" className="node-input-dot size-6 rounded-full" />
       <span
         aria-hidden="true"
@@ -1198,7 +1203,11 @@ interface GraphCanvasProps {
   reserve?: CanvasReserve;
   selectedNodeId?: string;
   onClearNode?: () => void;
-  onOpenNode: (nodeId: string) => void;
+  /**
+   * Opens a step in the host's inspector. Absent for a read-only graph (a public
+   * page): cards open nothing, nothing is selectable, and the wheel scrolls the page.
+   */
+  onOpenNode?: (nodeId: string) => void;
   /** Start/call nodes' child runs by node ID; each card links to its child's page. */
   childRuns?: Record<string, GraphChildRun>;
   /** Opens the run holding a reused step's saved output, on that step. */
@@ -1369,7 +1378,9 @@ function GraphCanvasView({
   const openCallbacks = useMemo(
     () =>
       Object.fromEntries(
-        (topologyNodeIds ?? []).map((nodeId) => [nodeId, () => onOpenNode(nodeId)]),
+        onOpenNode
+          ? (topologyNodeIds ?? []).map((nodeId) => [nodeId, () => onOpenNode(nodeId)])
+          : [],
       ),
     [onOpenNode, topologyNodeIds],
   );
@@ -1476,7 +1487,7 @@ function GraphCanvasView({
       cron: runTopology ? undefined : cron || undefined,
       scheduleNote,
       error,
-      onOpen: () => onOpenNode(INPUT_NODE_ID),
+      onOpen: onOpenNode ? () => onOpenNode(INPUT_NODE_ID) : undefined,
       inspectionDisabled,
     };
   }, [
@@ -1872,7 +1883,10 @@ function GraphCanvasView({
             }}
             nodesDraggable={false}
             nodesConnectable={false}
-            elementsSelectable={!inspectionDisabled}
+            elementsSelectable={!inspectionDisabled && onOpenNode !== undefined}
+            // A read-only graph sits in a scrolling page: the wheel scrolls it, drag pans.
+            zoomOnScroll={onOpenNode !== undefined}
+            preventScrolling={onOpenNode !== undefined}
             onPaneClick={() => {
               setMachineSelected(undefined);
               onClearNode?.();
