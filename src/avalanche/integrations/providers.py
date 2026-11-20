@@ -115,6 +115,7 @@ class CatalogToolSession(BaseModel):
     url: str = Field(pattern=r"^https?://")
     pass_value: SecretStr = Field(repr=False, exclude=True)
     expires_at: float
+    bindings: dict[str, str] = Field(default_factory=dict)
 
 
 _DELIVERED_SESSION: ContextVar[tuple[CatalogToolSession, tuple[str, ...]] | None] = ContextVar(

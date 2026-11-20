@@ -162,7 +162,7 @@ class MCPConnections:
         # MCP thread's event loop, never nested inside the agent's running loop.
         step_name, servers, accounts = self._step_name, self._declarations, self._accounts
         builtins = tuple(server.name for server in servers if isinstance(server, Catalog))
-        if self._bindings is None and any(
+        if self._bindings is None and self._delivered is None and any(
             isinstance(server, Catalog) and server.connection is not None for server in servers
         ):
             raise IntegrationError(
@@ -208,9 +208,15 @@ class MCPConnections:
                         step_name, {key: self._bindings[(server.name, server.connection)]}
                     )
                 assert session is not None
+                relay_key = server.name
+                if session.bindings and server.connection is not None:
+                    relay_key = server.connection
                 resolved.append(
                     _Server(
-                        declaration=MCP(server.name, url=session.url, allow=server.allow),
+                        declaration=MCP(
+                            relay_key,
+                            url=session.url, allow=server.allow,
+                        ),
                         tool_prefix=server.tool_prefix,
                         account=None,
                         session=session,
