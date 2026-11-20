@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add a host-neutral built-in Slack example that reads team info with a scripted
+  agent, needs no model key, and returns only a small summary.
+
 - A flow run with a skipped step (map items aside) now ends **skipped** instead
   of succeeded on the local operator; a failure or a cancellation still wins.
   Its result is kept: `ava result` downloads it and an `ava.call` parent gets it.

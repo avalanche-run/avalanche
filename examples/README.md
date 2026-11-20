@@ -97,6 +97,32 @@ workbook with parallel theme and risk agents, validates their reports
 deterministically, then publishes an Excel product review and Word executive
 brief. See its [README](customer_feedback_review/README.md) for the full flow.
 
+### [`builtin_integration.py`](builtin_integration.py)
+
+One agent step calls the read-only built-in `slack__get_team_info` tool. The
+scripted `DummyLM` + `PredictRLM` runtime makes no model requests and needs no
+model API key. DSPy and PredictRLM come from the `agents` extra; MCP transport
+comes from `integrations`:
+
+```bash
+uv add 'avalanche-ai[agents,integrations]'
+uv run ava dev examples/builtin_integration.py
+```
+
+Connect Slack through the host's integration provider (`ava connect slack` for
+the local operator), then select `builtin_integration` in the browser and start
+a run. A provider and a connected Slack account are required: the scripted
+model does not fake the tool response. See [built-in integrations](../docs/integrations.md)
+for provider setup. The workflow returns only `nonempty_team_info` and the first
+three characters of the team id; it does not return the team name or full id.
+The normal agent trace still records the tool response.
+
+The same file runs unchanged on any host that supplies the built-in Slack
+account. There are no host addresses, credentials, or local-process MCP servers
+in the workflow. The developer connections proof copies and hashes this exact
+file for both its local-operator and deployed-host runs. Unlike the standalone
+examples below, it requires a connected account and is not an offline smoke run.
+
 ### `complex_dag_pattern.py`
 
 Simplest local flow execution path. It demonstrates the Python DAG API,
