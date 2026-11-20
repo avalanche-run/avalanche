@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Prepare local catalog account selection behind a provider-only proof opt-in:
+  resolve shared and personal accounts before a run starts, carry the selected
+  accounts to tool sessions, and refuse personal accounts on schedules. Installed
+  providers and the public CLI stay unchanged until activation.
+
 ## 0.20.22
 
 - operator-ui exports `recordedAgentTrace`, for a host that keeps an agent

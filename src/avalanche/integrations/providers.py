@@ -9,7 +9,7 @@ connections; the SDK holds a step's temporary pass only in memory.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextvars import ContextVar
 from importlib.metadata import entry_points
 from typing import Literal, Protocol, runtime_checkable
@@ -17,6 +17,7 @@ from typing import Literal, Protocol, runtime_checkable
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from ..policies import NonRetryableError
+from .connections import ConnectionInstance
 from .core import (
     IntegrationNotConnectedError,
     IntegrationReconnectError,
@@ -61,6 +62,9 @@ class CatalogConnection(BaseModel):
     name: str
     state: Literal["connected", "reconnect_needed"]
     connected_at: float | None = None
+    slug: str | None = None
+    kind: Literal["shared", "per_user"] = "shared"
+    user: str | None = None
 
 
 class CatalogConnectionProblem(BaseModel):
@@ -148,6 +152,76 @@ class IntegrationProvider(Protocol):
     def disconnect(self, name: str) -> None: ...
     def connections(self) -> Sequence[CatalogConnection]: ...
     def open_tool_session(self, step: str, names: tuple[str, ...]) -> CatalogToolSession: ...
+
+
+@runtime_checkable
+class NamedIntegrationProvider(IntegrationProvider, Protocol):
+    """Dormant opt-in contract; only the external proof provider implements it.
+
+    All named connections are visible at the local operator's single scope.
+    ``starting_user`` returns the OS user, or the provider's signed-in human;
+    None means no human, never an API token's owner. Workflow input is not identity.
+    ``named_connections`` includes disconnected per-user slots, even without an
+    instance. Binding IDs are provider-owned instance IDs, not credentials.
+    Legacy providers keep the original step-start contract until activation.
+    """
+
+    def starting_user(self) -> str | None: ...
+    def named_connections(self) -> Sequence[NamedCatalogConnection]: ...
+    def start_login(
+        self,
+        name: str,
+        *,
+        slug: str | None = None,
+        kind: Literal["shared", "per_user"] = "shared",
+    ) -> CatalogLogin: ...
+    def open_bound_tool_session(
+        self, step: str, bindings: Mapping[str, ConnectionInstance]
+    ) -> CatalogToolSession: ...
+
+
+class NamedCatalogConnection(BaseModel):
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+
+    name: str
+    slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    kind: Literal["shared", "per_user"]
+    user: str | None
+    instance_id: str
+    state: Literal["connected", "reconnect_needed", "disconnected"]
+
+
+CatalogBindings = dict[tuple[str, str | None], ConnectionInstance]
+
+
+_CATALOG_BINDINGS: ContextVar[CatalogBindings | None] = ContextVar(
+    "avalanche_catalog_bindings", default=None
+)
+
+
+def install_catalog_bindings(bindings: CatalogBindings) -> None:
+    """Install the admitting local operator's account selection, never run input."""
+    _CATALOG_BINDINGS.set(bindings)
+
+
+def catalog_bindings() -> CatalogBindings | None:
+    return _CATALOG_BINDINGS.get()
+
+
+def named_integration_provider() -> NamedIntegrationProvider | None:
+    """Load only a provider explicitly advertising the dormant extension.
+
+    Merely installing a legacy provider must not introduce admission-time login
+    or network work. Only the proof distribution advertises this group today.
+    """
+    selected = os.environ.get("AVALANCHE_INTEGRATION_PROVIDER")
+    if selected is None or not any(
+        entry.name == selected
+        for entry in entry_points(group="avalanche.named_integration_providers")
+    ):
+        return None
+    provider = integration_provider()
+    return provider if isinstance(provider, NamedIntegrationProvider) else None
 
 
 def integration_provider() -> IntegrationProvider:

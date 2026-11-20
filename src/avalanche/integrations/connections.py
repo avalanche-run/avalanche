@@ -129,7 +129,7 @@ def resolve(
     ``starter`` is the starting human user, or None; identity and API-token
     policy belong to the admitting host, with no token-owner fallback here.
     ``triggered`` describes the flow's configured trigger, including at deploy.
-    This helper is deliberately not called by either host yet.
+    The local operator calls this only for an opted-in named provider.
     """
     by_slug = {connection.slug: connection for connection in connections}
     by_instance = {(item.connection_id, item.user_id): item for item in instances}

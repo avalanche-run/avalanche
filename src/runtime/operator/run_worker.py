@@ -33,6 +33,7 @@ from avalanche.classifier.models import ClassifierInvocation
 from avalanche.dag import MapFuture, Workflow
 from avalanche.evaluation_capture import capture_evaluations
 from avalanche.integrations.accounts import install_account_source
+from avalanche.integrations.providers import CatalogBindings, install_catalog_bindings
 from avalanche.machine import Machine
 from avalanche.mapping import NodesExpanded
 from avalanche.policies import Event
@@ -108,6 +109,7 @@ def run_worker(
     resume_results: dict[str, str] | None = None,
     accounts_connection: Connection | None = None,
     rerun_assignment_json: str | None = None,
+    catalog_bindings: CatalogBindings | None = None,
 ) -> None:
     """Detach exactly one inode-bound bundle capability and close it on exit."""
     bundle_descriptor: int | None = None
@@ -137,6 +139,7 @@ def run_worker(
             resume_results,
             accounts_connection,
             rerun_assignment_json,
+            catalog_bindings,
         )
     finally:
         if bundle_descriptor is not None:
@@ -164,6 +167,7 @@ def _run_worker(
     resume_results: dict[str, str] | None = None,
     accounts_connection: Connection | None = None,
     rerun_assignment_json: str | None = None,
+    catalog_bindings: CatalogBindings | None = None,
 ) -> None:
     """Import/build exactly once, prepare, wait for the parent, and execute."""
     event_queue = _SealableEventQueue(event_queue)
@@ -271,6 +275,8 @@ def _run_worker(
 
     try:
         executor = LocalExecutor()
+        if catalog_bindings is not None:
+            install_catalog_bindings(catalog_bindings)
         if accounts_connection is not None:
             # Steps that declare integrations ask the operator for their accounts
             # when they start; the run started below inherits this source.

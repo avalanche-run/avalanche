@@ -226,6 +226,7 @@ class _McpServer:
         expired: Path | None = None,
         *,
         server: Path = _MCP_SERVER,
+        marker: str = "",
     ) -> None:
         self.journal = journal
         port = _free_port()
@@ -235,6 +236,7 @@ class _McpServer:
             env={
                 **os.environ,
                 "MCP_TEST_SERVER_JOURNAL": str(journal),
+                "CATALOG_ACCOUNT_MARKER": marker,
                 **({"MCP_TEST_EXPIRED_PASS": str(expired)} if expired is not None else {}),
             },
             stdout=subprocess.DEVNULL,
@@ -1088,6 +1090,11 @@ class _CatalogService:
             server=server,
         )
         self.mode = "ready"
+        self.user: str | None = "user-a"
+        self.named: list[dict] = []
+        self.named_relays: dict[str, _McpServer] = {}
+        self.bound_sessions: list[dict] = []
+        self.named_logins: dict[str, dict] = {}
         self.connected = False
         self.connected_at: float | None = None
         self.sessions: list[dict[str, str | float]] = []
@@ -1116,6 +1123,10 @@ class _CatalogService:
                             }
                         ]
                     )
+                elif url.path == "/user":
+                    body = json.dumps(service.user)
+                elif url.path == "/named-connections":
+                    body = json.dumps(service.named)
                 elif url.path == "/connections":
                     body = json.dumps(
                         [
@@ -1130,6 +1141,48 @@ class _CatalogService:
                         if service.connected
                         else []
                     )
+                elif url.path == "/named-login":
+                    login_id = str(len(service.logins) + 1)
+                    slug, kind = query["slug"][0], query["kind"][0]
+                    user = service.user if kind == "per_user" else None
+                    service.logins[login_id] = "waiting"
+                    service.named_logins[login_id] = {
+                        "name": query["name"][0],
+                        "slug": slug,
+                        "kind": kind,
+                        "user": user,
+                        "instance_id": f"{slug}:{user}",
+                        "state": "connected",
+                    }
+                    body = service.login_view(login_id)
+                elif url.path == "/bound-session":
+                    bindings = json.loads(query["bindings"][0])
+                    (instance,) = bindings.values()
+                    current = next(
+                        (
+                            row
+                            for row in service.named
+                            if (row["instance_id"], row["slug"], row["user"], row["state"])
+                            == (
+                                instance["id"],
+                                instance["connection_id"],
+                                instance["user_id"],
+                                "connected",
+                            )
+                        ),
+                        None,
+                    )
+                    if current is None:
+                        code = 409
+                    else:
+                        service.bound_sessions.append(bindings)
+                        body = json.dumps(
+                            {
+                                "url": service.named_relays[instance["id"]].url,
+                                "pass_value": _KB_KEY,
+                                "expires_at": time.time() + 3600.0,
+                            }
+                        )
                 elif url.path == "/login":
                     login_id = str(len(service.logins) + 1)
                     service.logins[login_id] = "waiting"
@@ -1140,6 +1193,15 @@ class _CatalogService:
                     service.connected = True
                     service.connected_at = time.time()
                     service.logins[query["id"][0]] = "connected"
+                    if query["id"][0] in service.named_logins:
+                        row = service.named_logins[query["id"][0]]
+                        service.named = [
+                            existing
+                            for existing in service.named
+                            if (existing["slug"], existing["user"])
+                            != (row["slug"], row["user"])
+                        ]
+                        service.named.append(row)
                 elif url.path == "/status":
                     body = service.login_view(query["id"][0])
                 elif url.path == "/disconnect":
@@ -1437,6 +1499,199 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
     finally:
         service.close()
         models.close()
+    _prove_named_catalog_accounts(tmp_path, catalog_provider_path)
+
+
+def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) -> None:
+    """The same installed provider opts in; all calls still cross real gRPC/MCP."""
+    root = tmp_path / "named"
+    root.mkdir()
+    service = _CatalogService(root)
+    relays: list[_McpServer] = []
+    state_db, log = root / "state.db", root / "operator.log"
+    journal = root / "body.txt"
+    address = f"127.0.0.1:{_free_port()}"
+    fixture = _FIXTURES / "named_catalog_tools_flow.py"
+    environment = {
+        "PYTHONPATH": os.pathsep.join(
+            filter(None, [catalog_provider_path, os.environ.get("PYTHONPATH")])
+        ),
+        "AVALANCHE_INTEGRATION_PROVIDER": "proof",
+        "CATALOG_PROOF_NAMED": "1",
+        "CATALOG_PROOF_URL": service.url,
+    }
+
+    def slot(slug: str, kind: str = "shared", user: str | None = None) -> dict:
+        return {
+            "name": "asana",
+            "slug": slug,
+            "kind": kind,
+            "user": user,
+            "instance_id": f"{slug}:{user}",
+            "state": "connected",
+        }
+
+    def refusal(provider: GrpcStateProvider, flow: str, reason: str, run_id: str) -> None:
+        before = journal.read_text() if journal.exists() else ""
+        sessions = len(service.bound_sessions)
+        with pytest.raises(OperatorCallError, match=reason) as error:
+            # Caller-controlled context is not a starting identity.
+            provider.start_run(
+                flow,
+                run_id=run_id,
+                input={"journal": str(journal)},
+                context={"user": "user-a", "created_by": "user-a"},
+            )
+        assert error.value.status is grpc.StatusCode.FAILED_PRECONDITION
+        assert provider.get_run(run_id) is None
+        assert (journal.read_text() if journal.exists() else "") == before
+        assert len(service.bound_sessions) == sessions
+
+    completed: dict[str, list[str]] = {}
+
+    def result(provider: GrpcStateProvider, flow: str) -> list[str]:
+        run = _finished(provider, flow, journal, {"journal": str(journal)})
+        assert run.status is RunStatus.SUCCESS, (
+            [node.error for node in run.nodes.values()],
+            log.read_text(),
+        )
+        answers = provider.get_run_result(run.run_id)
+        completed[run.run_id] = answers
+        return answers
+
+    try:
+        service.named = [
+            slot("office"),
+            slot("partner"),
+            slot("schedule-slot"),
+            {**slot("my-asana", "per_user"), "state": "disconnected"},
+        ]
+        for marker, instance in (
+            ("office-", "office:None"),
+            ("partner-", "partner:None"),
+            ("alice-", "my-asana:user-a"),
+            ("bob-", "my-asana:user-b"),
+        ):
+            relay = _McpServer(
+                root / f"{marker}calls.jsonl",
+                _KB_KEY,
+                server=_FIXTURES / "catalog_test_server.py",
+                marker=marker,
+            )
+            relays.append(relay)
+            service.named_relays[instance] = relay
+        service.named_relays["schedule-slot:None"] = relays[0]
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            # Missing per-user instance is rejected at admission: no run record,
+            # no body and no temporary tool session.
+            refusal(provider, "personal", "Connect your asana", "missing-a")
+            assert not journal.exists()
+            refusal(provider, "ambiguous", "connections are assigned", "ambiguous")
+            answers = result(provider, "shared_accounts")
+            assert "office-refunds-0" in answers[0] and "partner-refunds-0" in answers[1]
+            assert all(len(relay.entries("call")) == 1 for relay in relays[:2])
+
+            # Exercise the extended provider login contract through its installed
+            # entry point. Public CLI slug flags are deliberately a later change.
+            connected = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    "import urllib.request; "
+                    "from avalanche.integrations.providers import integration_provider; "
+                    "p = integration_provider(); "
+                    "login = p.start_login('asana', slug='my-asana', kind='per_user'); "
+                    "urllib.request.urlopen(login.authorization_url, timeout=30).read(); "
+                    "assert p.login_status(login.login_id).status == 'connected'",
+                ],
+                env={**os.environ, **environment},
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            assert connected.returncode == 0, connected.stderr
+            assert "alice-refunds-0" in result(provider, "personal")[0]
+            service.user = "user-b"
+            refusal(provider, "personal", "Connect your asana", "missing-b")
+            service.user = None
+            refusal(provider, "personal", "Connect your asana", "no-human")
+            service.user = "user-b"
+
+            # Registration was shared; a later provider change to per-user must
+            # also be refused when enabling, before changing stored schedule state.
+            schedule_slot = next(row for row in service.named if row["slug"] == "schedule-slot")
+            schedule_slot["kind"] = "per_user"
+            refusal(provider, "scheduled", "Assign a shared connection", "scheduled-manual")
+            with pytest.raises(OperatorCallError, match="Assign a shared connection") as error:
+                provider.set_schedule_enabled("scheduled", True, {"journal": str(journal)})
+            assert error.value.status is grpc.StatusCode.FAILED_PRECONDITION
+            scheduled = next(
+                flow for flow in provider.list_workflows() if flow.name == "scheduled"
+            )
+            assert not scheduled.schedule_enabled
+            schedule_slot["kind"] = "shared"
+
+        # The second process reads the same records and the same provider state:
+        # B is still missing, A still works and earlier successful runs survive.
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            for run_id, answers in completed.items():
+                assert provider.get_run(run_id).status is RunStatus.SUCCESS
+                assert provider.get_run_result(run_id) == answers
+            refusal(provider, "personal", "Connect your asana", "missing-b-restart")
+            service.user = "user-a"
+            assert "alice-refunds-0" in result(provider, "personal")[0]
+            assert "office-refunds-0" in result(provider, "shared_accounts")[0]
+            service.user = "user-b"
+            service.named.append(slot("my-asana", "per_user", "user-b"))
+            assert "bob-refunds-0" in result(provider, "personal")[0]
+            # Even a connected user cannot register a per-user schedule.
+            schedule_slot["kind"] = "per_user"
+            with pytest.raises(OperatorCallError, match="triggered run has no user"):
+                provider.set_schedule_enabled("scheduled", True, {"journal": str(journal)})
+
+        # Initial registration must refuse too, not just the enable RPC. The
+        # state lock is released, so fixing the provider makes startup work again.
+        refused = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "ava_cli",
+                "operator",
+                str(fixture),
+                "--no-web",
+                "--port",
+                address.rsplit(":", 1)[1],
+                "--webhook-port",
+                "0",
+                "--state-db",
+                str(state_db),
+            ],
+            cwd=root,
+            env={**os.environ, **environment},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert refused.returncode != 0
+        assert "Assign a shared connection" in refused.stderr
+        schedule_slot["kind"] = "shared"
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            for run_id, answers in completed.items():
+                assert provider.get_run(run_id).status is RunStatus.SUCCESS
+                assert provider.get_run_result(run_id) == answers
+            assert "bob-refunds-0" in result(provider, "personal")[0]
+            assert "partner-refunds-0" in result(provider, "shared_accounts")[1]
+        assert len(journal.read_text().splitlines()) == 7
+        stored = _stored_text_outside_accounts(state_db)
+        assert _KB_KEY not in stored and _KB_KEY not in log.read_text()
+        with sqlite3.connect(state_db) as database:
+            assert database.execute("SELECT COUNT(*) FROM integration_accounts").fetchone() == (
+                0,
+            )
+    finally:
+        for relay in relays:
+            relay.close()
+        service.close()
 
 
 def _prove_connection_resolution(named: WorkflowInfo, bare: WorkflowInfo) -> None:

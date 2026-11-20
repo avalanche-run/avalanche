@@ -6,6 +6,7 @@ Custom MCP scenarios keep their separate knowledge-base search tool.
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Annotated
 
@@ -43,7 +44,10 @@ def search_tasks_in_workspace(
     )
     return SearchResult(
         tasks=[
-            Task(gid=str(1202775892569400 + index), name=f"refunds-{index}")
+            Task(
+                gid=str(1202775892569400 + index),
+                name=f"{os.environ.get('CATALOG_ACCOUNT_MARKER', '')}refunds-{index}",
+            )
             for index in range(limit)
         ]
     )

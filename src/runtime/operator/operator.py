@@ -55,6 +55,7 @@ from avalanche.integrations.declaration import CatalogDeclaration
 from avalanche.integrations.providers import IntegrationProvider, integration_provider
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
+from avalanche.policies import NonRetryableError
 from avalanche.references import read_stored_trees
 from avalanche.reruns import RerunRefusal, RerunRefusedError, SavedOutputIndex
 from avalanche.run_status import EMPTY_WAITING_ON, WAIT_KIND_SLOT, error_message, error_step
@@ -62,6 +63,7 @@ from avalanche.runtime import Rerun
 from avalanche.step_interface import StepInterface
 
 from ._signals import shutdown_cleanup
+from .catalog_connections import resolve_catalog_connections
 from .discovery import (
     DEFAULT_DISCOVERY_TIMEOUT,
     WorkflowDiscoveryError,
@@ -2068,6 +2070,7 @@ class Operator:
         with self._scheduler.reconciliation_boundary():
             descriptor = self._scheduled_descriptor(selector)
             if enabled:
+                resolve_catalog_connections(descriptor, triggered="schedule")
                 # Every cron run would fail without its required fields.
                 missing = missing_required_input(
                     descriptor.input_schema_json,
@@ -2167,6 +2170,14 @@ class Operator:
             with self._state_store.transaction() as connection:
                 request = RunsTable.read_request(connection, _machine_state_entry.run_id)
             input, context = request.input, request.context
+        catalog_bindings = resolve_catalog_connections(
+            descriptor,
+            triggered="schedule"
+            if descriptor.cron is not None or triggered_by is TriggerKind.SCHEDULED
+            else "webhook"
+            if descriptor.webhook_path is not None or triggered_by is TriggerKind.WEBHOOK
+            else None,
+        )
         import_root, workflow_relative_module_file = resolve_live_source(
             configured_root, descriptor.locator
         )
@@ -2228,6 +2239,7 @@ class Operator:
                         None
                         if rerun_assignment is None
                         else rerun_assignment.model_dump_json(),
+                        catalog_bindings,
                     ),
                     name=f"avalanche-run-{run_id}",
                     daemon=False,
@@ -3244,9 +3256,10 @@ class Operator:
             try:
                 self._scheduler.reconcile(view.by_id.values())
                 self._reconcile_webhooks(view.by_id.values())
-            except OSError as exc:
+            except (NonRetryableError, OSError) as exc:
                 self._registry.restore_view(view, previous)
-                self._scheduler.reconcile(previous.by_id.values())
+                if isinstance(exc, OSError):
+                    self._scheduler.reconcile(previous.by_id.values())
                 self._reconcile_webhooks(previous.by_id.values())
                 message = (
                     "Workflow reload reconciliation failed: "

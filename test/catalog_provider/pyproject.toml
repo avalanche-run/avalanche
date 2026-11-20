@@ -6,6 +6,9 @@ requires-python = ">=3.13,<3.14"
 [project.entry-points."avalanche.integration_providers"]
 proof = "avalanche_test_catalog_provider:Provider"
 
+[project.entry-points."avalanche.named_integration_providers"]
+proof = "avalanche_test_catalog_provider:Provider"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/avalanche_test_catalog_provider"]
 

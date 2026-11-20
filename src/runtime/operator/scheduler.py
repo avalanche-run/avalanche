@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Callable, Iterable, Iterator
 from croniter import CroniterBadDateError, croniter
 from pydantic import JsonValue
 
+from .catalog_connections import resolve_catalog_connections
 from .models import TriggerKind, WorkflowDescriptor
 from .state.errors import StateStoreError
 from .state.schedule_input_files import ScheduleInputFile
@@ -99,6 +100,8 @@ class Scheduler:
             for descriptor in descriptors
             if descriptor.cron is not None
         }
+        for descriptor in registrations.values():
+            resolve_catalog_connections(descriptor, triggered="schedule")
         with self._dispatch_lock:
             with self._lock:
                 self._revision += 1

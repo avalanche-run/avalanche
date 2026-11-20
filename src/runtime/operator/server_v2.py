@@ -28,6 +28,7 @@ from avalanche.integrations.providers import (
     ProviderSelectionError,
     ProviderUnavailableError,
 )
+from avalanche.policies import NonRetryableError
 from avalanche.reruns import RerunRefusedError
 from avalanche.runtime import File, Rerun
 
@@ -1303,7 +1304,7 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
                 context.abort(grpc.StatusCode.INVALID_ARGUMENT, _ambiguous_detail(exc))
             except UnknownWorkflow as exc:
                 context.abort(grpc.StatusCode.NOT_FOUND, exc.args[0])
-            except (OSError, RuntimeError, TimeoutError, ValueError) as exc:
+            except (NonRetryableError, OSError, RuntimeError, TimeoutError, ValueError) as exc:
                 context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
 
     def SetScheduleEnabled(self, request, context):  # noqa: N802
@@ -1340,7 +1341,7 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, _ambiguous_detail(exc))
         except UnknownWorkflow as exc:
             context.abort(grpc.StatusCode.NOT_FOUND, exc.args[0])
-        except (NoScheduleError, InputFileStorageError) as exc:
+        except (NonRetryableError, NoScheduleError, InputFileStorageError) as exc:
             context.abort(grpc.StatusCode.FAILED_PRECONDITION, str(exc))
         except ValueError as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))

@@ -53,6 +53,8 @@ from .core import (
 )
 from .providers import (
     CatalogToolSession,
+    NamedIntegrationProvider,
+    catalog_bindings,
     catalog_connection_problem,
     delivered_tool_session,
     integration_provider,
@@ -141,6 +143,7 @@ class MCPConnections:
         self._declarations = tuple(servers)
         self._accounts = accounts
         self._delivered = delivered_tool_session()
+        self._bindings = catalog_bindings()
         self._servers: tuple[_Server, ...] = ()
         self._resolved: concurrent.futures.Future[tuple[_Server, ...]] = (
             concurrent.futures.Future()
@@ -160,11 +163,17 @@ class MCPConnections:
         step_name, servers, accounts = self._step_name, self._declarations, self._accounts
         builtins = tuple(server.name for server in servers if isinstance(server, Catalog))
         session = None
+        named_provider: NamedIntegrationProvider | None = None
         delivered = self._delivered
         if builtins and delivered is not None:
             session, names = delivered
             if not set(builtins) <= set(names):
                 raise IntegrationError("The host did not authorize this step’s built-ins.")
+        elif builtins and self._bindings is not None:
+            provider = integration_provider()
+            if not isinstance(provider, NamedIntegrationProvider):
+                raise IntegrationError("The provider no longer supports catalog bindings.")
+            named_provider = provider
         elif builtins:
             provider = integration_provider()
             problem = catalog_connection_problem(builtins, provider.connections())
@@ -180,6 +189,14 @@ class MCPConnections:
         resolved: list[_Server] = []
         for server in servers:
             if isinstance(server, Catalog):
+                if named_provider is not None:
+                    assert self._bindings is not None
+                    key = server.connection if server.connection is not None else server.name
+                    # The provider checks the selected instance again at step start.
+                    # One scoped session per key lets two slugs reach different accounts.
+                    session = named_provider.open_bound_tool_session(
+                        step_name, {key: self._bindings[(server.name, server.connection)]}
+                    )
                 assert session is not None
                 resolved.append(
                     _Server(
