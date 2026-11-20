@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- A flow run with a skipped step (map items aside) now ends **skipped** instead
+  of succeeded on the local operator; a failure or a cancellation still wins.
+  Its result is kept: `ava result` downloads it and an `ava.call` parent gets it.
+  The operator UI and TUI show the status. The state database migrates to
+  version 18, which an older Avalanche cannot open.
+
 ## 0.20.25
 
 ## 0.20.24
@@ -27,9 +33,9 @@
   trace views by the rules the local operator applies (turn, duration, failure,
   tool call count; status, completeness and the usage header).
 
-- A run whose steps were skipped stays succeeded and now says so: the operator
-  UI's run list and run view, and the TUI's run history, show how many steps
-  were skipped (map items aside) and the first reason.
+- A run whose steps were skipped says so: the operator UI's run list and run
+  view, and the TUI's run history, show how many steps were skipped (map items
+  aside) and the first reason.
 
 - The operator UI draws an `ava.call` as one node instead of a `start_run`
   node followed by a wait node. Its status is the start's until the child run

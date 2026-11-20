@@ -73,7 +73,7 @@ per-item drill-down rather than drawing the maximum number of slots.
 ## Skip a step
 
 A step that finds it should not do its work calls `ava.skip("reason")`. It ends
-at once as skipped, is not retried, and the run still succeeds. A later step that
+at once as skipped and is not retried; the run ends skipped, not failed. A later step that
 reads its output gets `None` where that input is typed `X | None`, and runs;
 otherwise it is skipped in turn. For example, scorers skip an unqualified
 applicant, while the decision step, typed `scores: Scores | None`, still decides.

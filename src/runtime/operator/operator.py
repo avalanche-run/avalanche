@@ -101,6 +101,8 @@ from .integration_logins import (
 )
 from .machine_host import CatalogReloaded, MachineHost, StateEntryFinished
 from .models import (
+    RESULT_RUN_STATUSES,
+    TERMINAL_RUN_STATUSES,
     AgentEvent,
     AgentEventAppended,
     AgentEventDescriptor,
@@ -651,11 +653,7 @@ class Operator:
                 roots = self._registry.configured_roots
                 repairable_paths = set()
                 for record in machines:
-                    if record.run_status in {
-                        RunStatus.SUCCESS,
-                        RunStatus.FAILED,
-                        RunStatus.CANCELLED,
-                    }:
+                    if record.run_status in TERMINAL_RUN_STATUSES:
                         continue
                     relative_file = record.machine.rsplit("::", 1)[0]
                     for root in roots:
@@ -1986,7 +1984,7 @@ class Operator:
                     RunStatus.WAITING,
                 }:
                     raise RunResultNotReadyError(f"Run {run_id} is not terminal")
-                if status != RunStatus.SUCCESS:
+                if status not in RESULT_RUN_STATUSES:
                     raise RunResultUnavailableError(
                         f"Run {run_id} ended with status {status.value}"
                     )
@@ -2769,6 +2767,8 @@ class Operator:
                     if node.status == NodeStatus.REUSED and node_id in prepared_run.nodes
                 }
                 run.nodes = prepared_run.nodes | reused
+                # The resumed run re-runs its steps: their skips are counted again.
+                run.recount_skips()
                 if handle.cancel_event.is_set():
                     run.status = RunStatus.CANCELLED
                     run.ended_at = time.monotonic()
@@ -2815,11 +2815,7 @@ class Operator:
         )
         with self._lock:
             run = self._runs.get(run_id)
-            if run is None or run.status in {
-                RunStatus.SUCCESS,
-                RunStatus.FAILED,
-                RunStatus.CANCELLED,
-            }:
+            if run is None or run.status in TERMINAL_RUN_STATUSES:
                 notifications = None
             else:
                 if not isinstance(handle, _MachineRunHandle):
@@ -2851,11 +2847,7 @@ class Operator:
         with self._lock:
             if run_id not in self._runs:
                 raise WaitRefusalError("unknown_run", 404)
-            closed = self._runs[run_id].status in {
-                RunStatus.SUCCESS,
-                RunStatus.FAILED,
-                RunStatus.CANCELLED,
-            }
+            closed = self._runs[run_id].status in TERMINAL_RUN_STATUSES
             if closed or (
                 self._runs[run_id].status == RunStatus.WAITING
                 and run_id not in self._active_runs
@@ -2922,11 +2914,7 @@ class Operator:
 
     def cancel_run(self, run_id: str) -> None:
         run = self.get_run(run_id)
-        if run is None or run.status in {
-            RunStatus.SUCCESS,
-            RunStatus.FAILED,
-            RunStatus.CANCELLED,
-        }:
+        if run is None or run.status in TERMINAL_RUN_STATUSES:
             return
         with self._state_store.transaction() as connection:
             children = RunCallsTable.links(connection, run_id, parents=False)
@@ -3687,11 +3675,7 @@ class Operator:
                             summary_changed = True
                             mutated = True
                     elif event_type in {"wait_armed", "wait_resolved"}:
-                        if run.status in {
-                            RunStatus.SUCCESS,
-                            RunStatus.FAILED,
-                            RunStatus.CANCELLED,
-                        }:
+                        if run.status in TERMINAL_RUN_STATUSES:
                             return False  # Cancellation can race already queued wait events.
                         node_id = event["node_id"]
                         owner = node_id if node_id in run.nodes else node_id.split("[", 1)[0]
@@ -3853,11 +3837,7 @@ class Operator:
                             status_node_ids = ()
                             mutated = True
                     elif event_type == "log":
-                        if run.status in {
-                            RunStatus.SUCCESS,
-                            RunStatus.FAILED,
-                            RunStatus.CANCELLED,
-                        }:
+                        if run.status in TERMINAL_RUN_STATUSES:
                             return False
                         log_node_id = event["node_id"]
                         if log_node_id not in run.nodes:
@@ -3919,8 +3899,11 @@ class Operator:
                                     )
                             elif stored_result is not None:
                                 discard_stored_result = True
+                            # A step skipped with a reason ends the run SKIPPED, not
+                            # SUCCESS; its result is kept either way. Failed and
+                            # cancelled win.
                             run.status = {
-                                "success": RunStatus.SUCCESS,
+                                "success": run.ended_status,
                                 "failed": RunStatus.FAILED,
                                 "cancelled": RunStatus.CANCELLED,
                             }[effective_status]
@@ -4213,11 +4196,7 @@ class Operator:
         node_id: str,
         invocation: ClassifierInvocation,
     ) -> ClassifierEvent | None:
-        if run.terminal_seal is not None or run.status in {
-            RunStatus.SUCCESS,
-            RunStatus.FAILED,
-            RunStatus.CANCELLED,
-        }:
+        if run.terminal_seal is not None or run.status in TERMINAL_RUN_STATUSES:
             return None
         if node_id not in run.nodes:
             raise _CoordinatorProtocolError(
@@ -4388,11 +4367,7 @@ class Operator:
         )
         with self._lock:
             run = self._runs.get(run_id)
-            if run is None or run.status in {
-                RunStatus.SUCCESS,
-                RunStatus.FAILED,
-                RunStatus.CANCELLED,
-            }:
+            if run is None or run.status in TERMINAL_RUN_STATUSES:
                 notifications = None
             else:
                 run.status = (
@@ -4514,7 +4489,7 @@ class Operator:
         if self._notification_stop_enqueued:
             raise RuntimeError("Operator notification dispatcher is closed")
 
-        if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}:
+        if run.status in TERMINAL_RUN_STATUSES:
             run.open_waits = EMPTY_WAITING_ON
             run.running_outside_wait = 0
             if run.status != RunStatus.FAILED:
@@ -4543,11 +4518,7 @@ class Operator:
             terminal_seal_appended = False
             if (
                 run.status
-                in {
-                    RunStatus.SUCCESS,
-                    RunStatus.FAILED,
-                    RunStatus.CANCELLED,
-                }
+                in TERMINAL_RUN_STATUSES
                 and run.terminal_seal is None
             ):
                 terminal_sequence = self._run_activity_sequences.get(run.run_id, 0)
@@ -4777,7 +4748,7 @@ class Operator:
             rollback.restore(self, run)
             raise
         self._sequence = publication_sequence
-        if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}:
+        if run.status in TERMINAL_RUN_STATUSES:
             self._summary_reducers.pop(run.run_id, None)
         self._stream_history.extend(updates)
 

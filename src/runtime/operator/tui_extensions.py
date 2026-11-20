@@ -51,7 +51,7 @@ from tui.state import (
 )
 
 from .client import OperatorCallError
-from .models import RunStatus, TriggerKind
+from .models import RESULT_RUN_STATUSES, TERMINAL_RUN_STATUSES, TriggerKind
 from .proto import operator_pb2 as pb
 
 if TYPE_CHECKING:
@@ -155,11 +155,7 @@ class OperatorTuiExtensions:
                     raise TuiExtensionError(
                         "not_found", "Run does not belong to selected flow", context=context
                     )
-                active = snapshot.summary.status not in {
-                    RunStatus.SUCCESS,
-                    RunStatus.FAILED,
-                    RunStatus.CANCELLED,
-                }
+                active = snapshot.summary.status not in TERMINAL_RUN_STATUSES
                 actions.append(
                     ActionDescriptor(
                         "run.cancel",
@@ -181,7 +177,7 @@ class OperatorTuiExtensions:
                         read_only=provider._read_only,
                     )
                 )
-                if snapshot.summary.status == RunStatus.SUCCESS:
+                if snapshot.summary.status in RESULT_RUN_STATUSES:
                     actions.append(
                         ActionDescriptor(
                             "artifact.download",

@@ -34,7 +34,6 @@ from ..models import (
     NodeState,
     NodeStatus,
     RunInput,
-    RunSkips,
     RunState,
     RunStatus,
     TerminalSealDescriptor,
@@ -561,7 +560,7 @@ def _loaded_run(row: _RunRow, node_rows: Collection[_NodeRow]) -> LoadedRun:
             else json_column(StepIo, node.step_io_json, table=_NODES, column="step_io_json"),
         )
         node_revisions[node.node_id] = node.revision
-    run.skips = RunSkips.of(run.nodes.values())
+    run.recount_skips()
     return LoadedRun(
         stored=StoredRun(
             run=run,

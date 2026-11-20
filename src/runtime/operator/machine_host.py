@@ -38,6 +38,8 @@ from .machine_validation import (
     validate_native,
 )
 from .models import (
+    RESULT_RUN_STATUSES,
+    TERMINAL_RUN_STATUSES,
     NodeStatus,
     RunState,
     RunStatus,
@@ -181,7 +183,7 @@ class MachineHost:
         self.op.on_run_update(
             lambda run: (
                 self.queue.put(RunChanged(run.run_id))
-                if run.status in {RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED}
+                if run.status in TERMINAL_RUN_STATUSES
                 else None
             )
         )
@@ -431,7 +433,7 @@ class MachineHost:
                 run.running_outside_wait = 0
                 run.error_code = run.error_step = run.error_message = None
             record.run_status = status
-            if status in {RunStatus.SUCCESS, RunStatus.CANCELLED, RunStatus.FAILED}:
+            if status in TERMINAL_RUN_STATUSES:
                 self._definition_retries.pop(record.machine, None)
                 self._inbox_retries.pop(record.run_id, None)
                 run.ended_at = time.monotonic()
@@ -1214,11 +1216,7 @@ class MachineHost:
         for row in rows:
             address = (row["parent_run_id"], row["node_id"])
             parent = self.op.get_run(row["parent_run_id"])
-            if parent is None or parent.status in {
-                RunStatus.SUCCESS,
-                RunStatus.FAILED,
-                RunStatus.CANCELLED,
-            }:
+            if parent is None or parent.status in TERMINAL_RUN_STATUSES:
                 self.run_waiters.pop(address, None)
                 continue
             response = (
@@ -1239,7 +1237,8 @@ class MachineHost:
                 code = None
                 detail = ""
                 output = None
-                if child.status == RunStatus.SUCCESS:
+                # A skipped child still has its result, as a success does.
+                if child.status in RESULT_RUN_STATUSES:
                     try:
                         output = RunResult.from_payload(
                             child.run_id, self.op._get_run_result_payload(child.run_id)

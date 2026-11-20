@@ -38,6 +38,7 @@ export class RerunRefusedError extends Error {
 const STOPPED_RUN_STATUSES = new Set([
   "success",
   "succeeded",
+  "skipped",
   "failed",
   "cancelled",
   "rejected",

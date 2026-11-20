@@ -1581,7 +1581,7 @@ export class GrpcWebOperatorApi implements OperatorApi {
       activity.eventKind ||
       activity.trace ||
       !seal ||
-      !["success", "failed", "cancelled"].includes(seal.terminalStatus)
+      !["success", "skipped", "failed", "cancelled"].includes(seal.terminalStatus)
     ) {
       throw new Error("Terminal seal activity is not a complete typed descriptor");
     }

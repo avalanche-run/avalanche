@@ -22,6 +22,7 @@ from avalanche.run_status import WAITING_ON_SLOTS
 from avalanche.run_steps import RunOpSpec
 
 from .models import (
+    TERMINAL_RUN_STATUSES,
     AgentEventAppended,
     AgentEventDescriptor,
     AgentEventKind,
@@ -72,7 +73,7 @@ from .step_io import StepIo, StepParameterPreview, StepValuePreview, StepValuePr
 DETAIL_URI_SCHEME = "local://detail/"
 TRACE_URI_SCHEME = "local://trace/"
 RESULT_URI_SCHEME = "local://result/"
-_TERMINAL_SEAL_STATUSES = frozenset({RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED})
+_TERMINAL_SEAL_STATUSES = frozenset(TERMINAL_RUN_STATUSES)
 
 
 # The StartRunTriggerV2 value for each trigger kind a StartRun caller may claim.

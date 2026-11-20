@@ -573,6 +573,32 @@ MIGRATIONS += (
     ),
 )
 
+# A run with a skipped step ends 'skipped'. SQLite cannot change a CHECK, so the
+# table is rebuilt as in version 8, with the columns later versions added, in order.
+_RUNS_V8 = next(m for m in MIGRATIONS if m.version == 8).statements[0]
+MIGRATIONS += (
+    Migration(
+        version=18,
+        name="skipped runs",
+        statements=(
+            _RUNS_V8.replace(
+                "'cancelled', 'waiting')", "'cancelled', 'waiting', 'skipped')"
+            ).replace(
+                "CHECK (read_state IN ('retained', 'expired')),",
+                "CHECK (read_state IN ('retained', 'expired')), "
+                "open_waits TEXT NOT NULL DEFAULT '[0,0,0,0,0]', "
+                "running_outside_wait INTEGER NOT NULL DEFAULT 0, "
+                "error_code TEXT, error_step TEXT, error_message TEXT, rerun_of_run_id TEXT,",
+            ),
+            "INSERT INTO runs_replacement SELECT * FROM runs",
+            "DROP TABLE runs",
+            "ALTER TABLE runs_replacement RENAME TO runs",
+            "CREATE INDEX runs_by_created_sequence ON runs (created_sequence)",
+            "CREATE UNIQUE INDEX runs_by_key ON runs (workflow_id, key) WHERE key IS NOT NULL",
+        ),
+    ),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 
@@ -675,7 +701,7 @@ def migrate(
                 "different --state-db."
             )
     for migration in migrations[len(applied) :]:
-        rebuild_runs = migration.version == 8
+        rebuild_runs = migration.version in (8, 18)
         if rebuild_runs:
             connection.execute("PRAGMA foreign_keys = OFF")
         try:

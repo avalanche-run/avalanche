@@ -334,7 +334,9 @@ function outcomeEntry(
         ? "danger"
         : status === "cancelled"
           ? "warn"
-          : "neutral";
+          : status === "skipped"
+            ? "muted"
+            : "neutral";
   return {
     id: "outcome",
     kind: "outcome",

@@ -484,6 +484,7 @@ class UIStore:
                 RunStatus.WAITING: "WAITING",
                 RunStatus.FAILED: "FAILED",
                 RunStatus.SUCCESS: "DONE",
+                RunStatus.SKIPPED: "SKIPPED",
                 RunStatus.CANCELLED: "IDLE",
             },
             status_label(status),

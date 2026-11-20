@@ -62,8 +62,18 @@ class RunStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
+    # Ended without failing, but a step (map items aside) was skipped with a reason.
+    # Its result is kept, as for SUCCESS. Only flow runs end SKIPPED.
+    SKIPPED = "skipped"
     FAILED = "failed"
     CANCELLED = "cancelled"
+
+
+TERMINAL_RUN_STATUSES = frozenset(
+    {RunStatus.SUCCESS, RunStatus.SKIPPED, RunStatus.FAILED, RunStatus.CANCELLED}
+)
+# A finished run whose result is kept: a skipped run's result reads like a success.
+RESULT_RUN_STATUSES = frozenset({RunStatus.SUCCESS, RunStatus.SKIPPED})
 
 
 def _require_finite(value: JsonValue) -> None:
@@ -373,23 +383,43 @@ class RunState:
             None
             if any(
                 self.status is status
-                for status in (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED)
+                for status in TERMINAL_RUN_STATUSES
             )
             else self.open_waits
         )
     rerun_of_run_id: str | None = None
     # Steps skipped with a reason (ava.skip or an upstream skip), map items aside.
     skips: RunSkips | None = None
+    # The steps counted in skips: a step skipped again (a resumed run re-runs it)
+    # counts once.
+    skipped_steps: set[str] = field(default_factory=set, repr=False, compare=False)
 
     def note_skip(self, node: NodeState) -> None:
         """Count a step that just ended skipped with a reason."""
-        if node.map_parent is not None or node.skip_reason is None:
+        if (node.map_parent is not None or node.skip_reason is None
+                or node.node_id in self.skipped_steps):
             return
+        self.skipped_steps.add(node.node_id)
         self.skips = (
             RunSkips(1, node.node_id, node.skip_reason)
             if self.skips is None
             else replace(self.skips, count=self.skips.count + 1)
         )
+
+    def recount_skips(self) -> None:
+        """Rebuild skips from the nodes: once at load, or when a resume replaces them."""
+        self.skips = RunSkips.of(self.nodes.values())
+        self.skipped_steps = {
+            node_id for node_id, node in self.nodes.items()
+            if node.status is NodeStatus.SKIPPED and node.skip_reason is not None
+            and node.map_parent is None
+        }
+
+    @property
+    def ended_status(self) -> RunStatus:
+        """How a flow run that ended without failing reads: SKIPPED when a step
+        (map items aside) was skipped with a reason, else SUCCESS."""
+        return RunStatus.SKIPPED if self.kind == "flow" and self.skips else RunStatus.SUCCESS
 
     @property
     def elapsed(self) -> float | None:

@@ -64,7 +64,8 @@ class RunCallsTable:
         rows = connection.execute(
             "SELECT w.parent_run_id, w.child_run_id FROM run_waits w "
             "JOIN runs r ON r.run_id=w.parent_run_id "
-            "WHERE w.response_json IS NULL AND r.status NOT IN ('success','failed','cancelled')"
+            "WHERE w.response_json IS NULL "
+            "AND r.status NOT IN ('success','skipped','failed','cancelled')"
         ).fetchall()
         waiting: dict[str, set[str]] = {}
         for row in rows:

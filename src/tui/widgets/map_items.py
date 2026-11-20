@@ -7,7 +7,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Label, OptionList
 from textual.widgets.option_list import Option
 
-from runtime.operator.models import RunStatus
+from runtime.operator.models import TERMINAL_RUN_STATUSES
 
 from ..theme import node_status_display, node_wait_kind
 
@@ -54,7 +54,7 @@ class MapItemsScreen(ModalScreen[str | None]):
         options = self.query_one(OptionList)
         highlighted = options.highlighted
         options.clear_options()
-        terminal = run.status in (RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED)
+        terminal = run.status in TERMINAL_RUN_STATUSES
         placeholder = "not run" if terminal else "not started"
         for i in range(n):
             item = items.get(i)
