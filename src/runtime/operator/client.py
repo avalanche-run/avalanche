@@ -3135,8 +3135,15 @@ class GrpcStateProvider:
                             retained_count + 1,
                             retained_bytes + change.event.size_bytes,
                         )
+                        # The retained list must hold every event up to its watermark:
+                        # hydration reads only events after it. An event that does not
+                        # follow the watermark (the first one after an eviction or a
+                        # resync) drops the list so the next hydration reads the node
+                        # in full, instead of retaining a list that starts mid-stream.
+                        contiguous = change.event.event_sequence == known_sequence + 1
                         if (
-                            replacement[0] > self._max_retained_detail_count
+                            not contiguous
+                            or replacement[0] > self._max_retained_detail_count
                             or replacement[1] > self._max_retained_detail_bytes
                         ):
                             self._evict_detail_cache_locked(cache_key)
