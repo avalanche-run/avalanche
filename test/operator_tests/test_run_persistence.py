@@ -1376,7 +1376,11 @@ def test_send_storm_owner_latency(tmp_path):
         op.close()
 
 
-@pytest.mark.parametrize("failure", ["timeout", "unknown", "exit", "signal"])
+@pytest.mark.parametrize(
+    "failure",
+    # timeout misses its deadline under parallel load; the gate runs it alone.
+    [pytest.param("timeout", marks=pytest.mark.serial), "unknown", "exit", "signal"],
+)
 def test_timer_inbox_validation_failure_is_bounded(tmp_path, monkeypatch, failure):
     """Real timer delivery, SQLite inbox and validation children, including crashes."""
     from runtime.operator import machine_validation

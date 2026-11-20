@@ -146,6 +146,7 @@ def test_terminal_runs_discovered_workflow(tmp_path):
         )
 
 
+@pytest.mark.serial  # misses its deadline under parallel load; the gate runs it alone
 @pytest.mark.asyncio
 async def test_operator_tui_extensions_live_pilot(tmp_path):
     """Real CLI daemon, real gRPC provider and Pilot; no mocked transport/data."""

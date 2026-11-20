@@ -111,6 +111,7 @@ testpaths = ["test"]
 asyncio_mode = "strict"
 markers = [
     "tmux: tests that require a tmux session (real terminal rendering)",
+    "serial: misses its deadline under parallel load; the gate runs these after the parallel pass",
 ]
 
 [tool.ruff]
