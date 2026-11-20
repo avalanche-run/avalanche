@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.28
+
 - **Breaking:** the legacy Iceberg and Lance tables and `ava.Stream` are
   removed: `avalanche.iceberg`, `avalanche.lance`, `ava.Stream`,
   `ava.ModelStream`, `ava.Cursor`, `ava.ProgressStore`, `ava.AppendResult`,
