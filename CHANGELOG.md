@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.26
+
 - Add a host-neutral built-in Slack example that reads team info with a scripted
   agent, needs no model key, and returns only a small summary.
 
