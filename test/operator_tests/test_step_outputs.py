@@ -37,7 +37,7 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-import pandas as pd
+import polars as pl
 from pydantic import BaseModel, Field
 
 import avalanche as ava
@@ -70,12 +70,12 @@ def chain():
 
 
 @ava.source
-def a_frame() -> pd.DataFrame:
-    return pd.DataFrame({"a": [1]})
+def a_frame() -> pl.DataFrame:
+    return pl.DataFrame({"a": [1]})
 
 
 @ava.step
-def frame_height(frame: pd.DataFrame) -> int:
+def frame_height(frame: pl.DataFrame) -> int:
     return len(frame)
 
 

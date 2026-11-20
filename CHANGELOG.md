@@ -11,7 +11,8 @@
   `avalanche.iceberg` or `avalanche.lance`, or using `ava.Stream`, now raises
   one error saying tables and streams are being rebuilt in the Linear project
   "Tables and streams in Avalanche and Delta". Reruns no longer report
-  `stream_not_replayable`.
+  `stream_not_replayable`. `Machine.test()` still runs steps after the
+  removal, and the SDK's own tests no longer need `pandas`.
 
 - operator-ui exports `liveAgentTrace`, which lists a running agent step's trace
   from the live events a host has received, in progress as the local operator

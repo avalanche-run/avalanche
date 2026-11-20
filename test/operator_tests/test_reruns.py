@@ -276,8 +276,8 @@ def with_run_workspace():
 
 
 @ava.source
-def numbers() -> list[int]:
-    ran("numbers")
+def pair() -> list[int]:
+    ran("pair")
     return [1, 2]
 
 
@@ -295,7 +295,7 @@ def last(total: int) -> int:
 
 @ava.workflow
 def with_numbers():
-    return last(between(numbers()))
+    return last(between(pair()))
 
 
 @ava.source
@@ -894,12 +894,12 @@ def test_a_rerun_of_a_rerun_goes_straight_to_the_run_holding_each_output(env, op
 def test_a_rerun_of_a_rerun_keeps_the_saved_output_holder(env, operator):
     first = _run(operator, "with_numbers")
     assert first.status is RunStatus.SUCCESS
-    entry = operator.saved_output_index(first.run_id).outputs["numbers"]
+    entry = operator.saved_output_index(first.run_id).outputs["pair"]
 
     second = _rerun(operator, "with_numbers", first, "last")
     assert second.status is RunStatus.SUCCESS
     # `second` never read the list, and still has to say which run holds it.
-    carried = operator.saved_output_index(second.run_id).outputs["numbers"]
+    carried = operator.saved_output_index(second.run_id).outputs["pair"]
     assert carried.run_id == first.run_id
     assert type(carried) is type(entry)
 

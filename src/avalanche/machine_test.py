@@ -502,7 +502,7 @@ class MachineTest:
             if name not in runtime and name not in providers
         }
         args, kwargs = _resolve_input_refs(args, kwargs, self.input, node.name, work.name)
-        if not ref.args and not plan.has_explicit_provider_selectors:
+        if not ref.args:
             upstream = _collect_implicit_parent_results(
                 ref, work.nodes, self._values, dependencies, ref.future_id
             )
@@ -526,14 +526,10 @@ class MachineTest:
             from .types import ParamContext
 
             for name, provider in providers.items():
-                selector = plan.provider_selectors.get(name)
                 parents = dependencies.get(ref.future_id, [])
                 parent_results = [self._values[parent] for parent in parents]
                 slugs = [work.node_slugs[parent] for parent in parents]
                 position = _data_param_position(node.fn, name, skipped, consuming)
-                if selector is not None:
-                    parent_results = [_resolve_to_ref(selector, self._values)]
-                    slugs, position = [work.node_slugs[selector.future_id]], 0
                 resolved = provider.resolve(
                     inspected[name],
                     ParamContext(
