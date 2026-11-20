@@ -27,8 +27,10 @@ import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Literal, TypedDict
 from urllib.parse import parse_qs, urlsplit
 
 import grpc
@@ -40,7 +42,7 @@ from avalanche.integrations import (
     MCPDeclaration,
 )
 from runtime.operator.client import GrpcStateProvider, OperatorCallError
-from runtime.operator.models import NodeStatus, RunState, RunStatus
+from runtime.operator.models import NodeStatus, RunState, RunStatus, WorkflowInfo
 from runtime.operator.proto import operator_pb2 as pb
 from runtime.operator.proto import operator_pb2_grpc as pb_grpc
 
@@ -1437,6 +1439,157 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
         models.close()
 
 
+def _prove_connection_resolution(named: WorkflowInfo, bare: WorkflowInfo) -> None:
+    from avalanche.integrations.connections import (
+        Connection,
+        ConnectionAmbiguousError,
+        ConnectionInstance,
+        ConnectionNotAssignedError,
+        ConnectionNotFoundError,
+        ConnectionNotResolvedError,
+        ConnectionPerUserTriggeredError,
+        ConnectionUserNotConnectedError,
+        FlowAssignment,
+        OrgAssignment,
+        ProjectAssignment,
+        resolve,
+    )
+    from avalanche.integrations.core import IntegrationReconnectError
+    from avalanche.policies import NonRetryableError
+
+    org = Connection("org", "org-slack", "slack", "shared")
+    project = Connection("project", "acme-hq", "slack", "shared")
+    flow = Connection("flow", "partner-ws", "slack", "shared")
+    connections = [org, project, flow]
+    instances = [
+        ConnectionInstance(item.id, item.id, None, "connected") for item in connections
+    ]
+    assignments = [
+        OrgAssignment(org.id),
+        ProjectAssignment(project.id, "project-a"),
+        FlowAssignment(flow.id, "project-a", bare.name),
+    ]
+
+    class Context(TypedDict):
+        flow: str
+        project: str
+        starter: str | None
+        triggered: Literal["schedule", "webhook"] | None
+
+    context: Context = {
+        "flow": bare.name,
+        "project": "project-a",
+        "starter": "ada",
+        "triggered": None,
+    }
+    # The first occupied level wins, even with ambiguous lower levels. A flow
+    # slug in another project is not the same flow, and duplicate assignments
+    # do not turn one connection into two candidates.
+    assert resolve(
+        bare.integration_declarations, connections, assignments, instances, **context
+    ) == {"unbound_tools_1": {"slack": instances[2]}}
+    project_only = [*assignments[:2], FlowAssignment(flow.id, "project-b", bare.name)]
+    assert resolve(
+        bare.integration_declarations, connections, project_only, instances, **context
+    ) == {"unbound_tools_1": {"slack": instances[1]}}
+    org_only = [assignments[0], assignments[0], ProjectAssignment(project.id, "project-b")]
+    assert resolve(
+        bare.integration_declarations, connections, org_only, instances, **context
+    ) == {"unbound_tools_1": {"slack": instances[0]}}
+    ambiguous = [*assignments[:2], ProjectAssignment(flow.id, "project-a")]
+    # More-specific flow assignment settles otherwise ambiguous project accounts.
+    assert resolve(
+        bare.integration_declarations,
+        connections,
+        [*ambiguous, assignments[2]],
+        instances,
+        **context,
+    ) == {"unbound_tools_1": {"slack": instances[2]}}
+    with pytest.raises(ConnectionAmbiguousError) as refused:
+        resolve(bare.integration_declarations, connections, ambiguous, instances, **context)
+    assert refused.value.code == "connection_ambiguous"
+    assert isinstance(refused.value, NonRetryableError)
+    assert str(refused.value) == (
+        f"Flow {bare.name!r} uses slack, and two slack connections are assigned "
+        "to its project: 'acme-hq' and 'partner-ws'. Remove one, or name one with "
+        "ava.catalog.slack(connection=...)."
+    )
+    with pytest.raises(ConnectionNotResolvedError, match="no slack connection is assigned"):
+        resolve(bare.integration_declarations, connections, [], instances, **context)
+
+    context["flow"] = named.name
+    # Naming both slugs bypasses same-level ambiguity and preserves TWO instances.
+    assert resolve(
+        named.integration_declarations, connections, ambiguous, instances, **context
+    ) == {"named_tools_1": {"acme-hq": instances[1], "partner-ws": instances[2]}}
+    with pytest.raises(ConnectionNotAssignedError) as refused:
+        resolve(
+            named.integration_declarations, connections, [assignments[0]], instances, **context
+        )
+    assert str(refused.value) == (
+        f"Flow {named.name!r} names connection 'acme-hq', which is not assigned to the flow, "
+        "its project or the organization."
+    )
+    for unavailable in (connections[:1], [org, replace(project, integration="gmail"), flow]):
+        with pytest.raises(ConnectionNotFoundError) as refused:
+            resolve(
+                named.integration_declarations, unavailable, ambiguous, instances, **context
+            )
+        assert str(refused.value) == (
+            f"Flow {named.name!r} names connection 'acme-hq', which does not exist "
+            "(or is not a slack connection)."
+        )
+    per_user = [org, replace(project, kind="per_user"), flow]
+    ada = ConnectionInstance("ada-account", project.id, "ada", "connected")
+    grace = ConnectionInstance("grace-account", project.id, "grace", "connected")
+    accounts = [*instances, ada, grace]
+    assert resolve(
+        named.integration_declarations, per_user, ambiguous, accounts, **context
+    ) == {"named_tools_1": {"acme-hq": ada, "partner-ws": instances[2]}}
+    for trigger in ("schedule", "webhook"):
+        with pytest.raises(ConnectionPerUserTriggeredError) as refused:
+            resolve(
+                named.integration_declarations,
+                per_user,
+                ambiguous,
+                accounts,
+                **{**context, "triggered": trigger},
+            )
+        assert str(refused.value) == (
+            f"Flow {named.name!r} has a schedule or webhook, and its slack connection "
+            "'acme-hq' is per user. A triggered run has no user. Assign a shared connection."
+        )
+    # No anonymous/token-owner fallback, no other user's account, no shared
+    # instance fallback, and no acceptance of an instance needing reconnect.
+    for starter, current in (
+        (None, accounts),
+        ("new-user", accounts),
+        ("ada", instances),
+        ("ada", [*instances, replace(ada, state="reconnect_needed")]),
+    ):
+        with pytest.raises(ConnectionUserNotConnectedError) as refused:
+            resolve(
+                named.integration_declarations,
+                per_user,
+                ambiguous,
+                current,
+                **{**context, "starter": starter},
+            )
+        assert str(refused.value) == (
+            f"Connect your slack account ('acme-hq') to run flow {named.name!r}, "
+            "then start the run again."
+        )
+    reconnect = [instances[0], replace(instances[1], state="reconnect_needed"), instances[2]]
+    with pytest.raises(
+        IntegrationReconnectError, match="connection 'acme-hq' requires a new login"
+    ):
+        resolve(named.integration_declarations, connections, ambiguous, reconnect, **context)
+    with pytest.raises(IntegrationNotConnectedError, match="acme-hq"):
+        resolve(
+            named.integration_declarations, connections, ambiguous, instances[:1], **context
+        )
+
+
 def test_catalog_connection_slugs_prefix_tools_and_refuse_conflicts(
     tmp_path, catalog_provider_path
 ):
@@ -1511,6 +1664,14 @@ class Research(ava.Signature):
 async def named_tools(*, agent: ava.Agent) -> list[str]:
     return (await agent(topic="refunds")).outputs.findings
 
+@ava.agent_step(Research, integrations=[slack], retries=0)
+async def unbound_tools(*, agent: ava.Agent):
+    pass
+
+@ava.workflow
+def unbound_catalog():
+    return unbound_tools()
+
 @ava.workflow
 def named_catalog():
     return named_tools()
@@ -1538,7 +1699,11 @@ def named_catalog():
         # A second operator reads the persisted definition after a restart.
         for _ in range(2):
             with _operator(state_db, address, environment, log, fixture) as provider:
-                (flow,) = provider.list_workflows()
+                flows = {item.name: item for item in provider.list_workflows()}
+                flow = flows["named_catalog"]
+                # Resolve the operator's real discovered/stored declarations, not
+                # handwritten declarations. The helper remains dormant in hosts.
+                _prove_connection_resolution(flow, flows["unbound_catalog"])
                 declared = flow.integration_declarations["named_tools_1"].integrations
                 for entry, expected in zip(
                     declared,
@@ -1549,14 +1714,17 @@ def named_catalog():
                     assert (entry.name, entry.connection, entry.allow) == expected
                 run = _ended(provider, provider.start_run("named_catalog"))
                 assert run.status is RunStatus.SUCCESS, (
-                    [node.error for node in run.nodes.values()], log.read_text()
+                    [node.error for node in run.nodes.values()],
+                    log.read_text(),
                 )
                 answers = provider.get_run_result(run.run_id)
                 assert "refunds-0" in answers[0] and "pong" in answers[1]
                 assert set(models.offered["openai"]) == {name for name, _ in calls}
         assert [(call["tool"], call.get("query")) for call in service.mcp.entries("call")] == [
-            ("search", "refunds"), ("ping", None),
-            ("search", "refunds"), ("ping", None),
+            ("search", "refunds"),
+            ("ping", None),
+            ("search", "refunds"),
+            ("ping", None),
         ]
         stored = _stored_text_outside_accounts(state_db)
         assert '"name":"acme_hq__search"' in stored
