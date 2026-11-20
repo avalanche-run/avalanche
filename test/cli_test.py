@@ -12,6 +12,7 @@ import time
 import pytest
 
 
+@pytest.mark.serial  # misses its deadline under parallel load; the gate runs it alone
 def test_ava_web_exits_cleanly_after_interrupt():
     with socket.socket() as target_socket:
         target_socket.bind(("127.0.0.1", 0))
