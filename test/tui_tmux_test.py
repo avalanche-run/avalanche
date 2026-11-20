@@ -23,11 +23,37 @@ def _tmux(*args: str) -> str:
     ).stdout
 
 
-def _wait_for(session: str, predicate, timeout: float = 15, *, stable: bool = False) -> str:
+def _style_before(line: str, label: str) -> str | None:
+    """The last SGR escape before label on a styled tmux line."""
+    at = line.find(label)
+    return None if at < 0 else (re.findall(r"\x1b\[[0-9;:]*m", line[:at]) or [""])[-1]
+
+
+def _plain(styled: str) -> str:
+    return re.sub(r"\x1b\[[0-9;:]*m", "", styled)
+
+
+def _key_enabled(styled: str, label: str) -> bool:
+    """A legend key is drawn in the same style as the always-enabled [↑↓] Select."""
+    for line in styled.splitlines():
+        style = _style_before(line, label)
+        if style is not None:
+            return style == _style_before(line, "[↑↓] Select")
+    return False
+
+
+def _wait_for(
+    session: str,
+    predicate,
+    timeout: float = 15,
+    *,
+    stable: bool = False,
+    styled: bool = False,
+) -> str:
     deadline = time.monotonic() + timeout
     previous = None
     while True:
-        screen = _tmux("capture-pane", "-t", session, "-p")
+        screen = _tmux("capture-pane", "-t", session, "-p", *(["-e"] if styled else []))
         if predicate(screen) and (not stable or screen == previous):
             return screen
         previous = screen
@@ -240,7 +266,16 @@ def test_terminal_rerun_from_a_step_shows_reused_steps_and_refusals(tmp_path, mo
         flow.write_text(_FIXED_C)
         executed.write_text("")
         _tmux("send-keys", "-t", session, "Right", "Right", "Right")
-        _wait_for(session, lambda text: re.search(r"› c\b", text))
+        # R works once step c's rerun action has loaded; the app redraws the
+        # selection and the legend in the same refresh, so c selected with an
+        # enabled [R] key means the action is there.
+        _wait_for(
+            session,
+            lambda text: (
+                re.search(r"› c\b", _plain(text)) and _key_enabled(text, "[R] Rerun step")
+            ),
+            styled=True,
+        )
         _tmux("send-keys", "-t", session, "R")
         _wait_for(session, lambda text: "Only this step" in text)
         _tmux("send-keys", "-t", session, "Enter")
@@ -271,7 +306,16 @@ def test_terminal_rerun_from_a_step_shows_reused_steps_and_refusals(tmp_path, mo
         flow.write_text(_RENAMED_B)
         executed.write_text("")
         _tmux("send-keys", "-t", session, "Right")
-        _wait_for(session, lambda text: re.search(r"› c\b", text))
+        # R works once step c's rerun action has loaded; the app redraws the
+        # selection and the legend in the same refresh, so c selected with an
+        # enabled [R] key means the action is there.
+        _wait_for(
+            session,
+            lambda text: (
+                re.search(r"› c\b", _plain(text)) and _key_enabled(text, "[R] Rerun step")
+            ),
+            styled=True,
+        )
         _tmux("send-keys", "-t", session, "R")
         _wait_for(session, lambda text: "Only this step" in text)
         _tmux("send-keys", "-t", session, "Enter")
