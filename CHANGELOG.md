@@ -2,10 +2,14 @@
 
 ## Unreleased
 
-- Prepare local catalog account selection behind a provider-only proof opt-in:
-  resolve shared and personal accounts before a run starts, carry the selected
-  accounts to tool sessions, and refuse personal accounts on schedules. Installed
-  providers and the public CLI stay unchanged until activation.
+- Connect several accounts for one built-in with `ava connect NAME --slug SLUG`
+  and `--per-user` on a named-capable provider. Select accounts with
+  `ava.catalog.slack(connection="acme-hq")`; named tools use `acme_hq__` prefixes.
+  The operator UI lists slugs, kinds, account states and operator assignments,
+  and creates, reconnects and disconnects named connections. Run admission
+  refuses ambiguous or missing accounts and personal accounts on schedules.
+  Connection refusal errors and the shared resolver are now public. Legacy
+  providers retain their single-account behavior; hosted support is separate.
 
 ## 0.20.22
 

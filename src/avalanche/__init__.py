@@ -97,6 +97,12 @@ _LAZY_EXPORTS: dict[str, str] = {
     "agent_step": "agent",
     # Integrations: the HTTP stack loads with the first client, not with avalanche.
     "Client": "integrations",
+    "ConnectionAmbiguousError": "integrations",
+    "ConnectionNotAssignedError": "integrations",
+    "ConnectionNotFoundError": "integrations",
+    "ConnectionNotResolvedError": "integrations",
+    "ConnectionPerUserTriggeredError": "integrations",
+    "ConnectionUserNotConnectedError": "integrations",
     # Classifier
     "Classifier": "classifier",
     "ClassificationResult": "classifier",
@@ -141,6 +147,12 @@ def __dir__() -> list[str]:
 
 __all__ = [
     "MapFuture",
+    "ConnectionAmbiguousError",
+    "ConnectionNotAssignedError",
+    "ConnectionNotFoundError",
+    "ConnectionNotResolvedError",
+    "ConnectionPerUserTriggeredError",
+    "ConnectionUserNotConnectedError",
     "MapItemFailure",
     "MapItemsFailed",
     "DEFAULT_MAX_ITEMS",

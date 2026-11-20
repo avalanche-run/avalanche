@@ -12,6 +12,7 @@ from avalanche.integrations.connections import (
 )
 from avalanche.integrations.providers import (
     CatalogBindings,
+    ProviderSelectionError,
     named_integration_provider,
 )
 
@@ -28,6 +29,13 @@ def resolve_catalog_connections(
         return None
     provider = named_integration_provider()
     if provider is None:
+        if any(
+            entry.connection is not None
+            for step in declared.values()
+            for entry in step.integrations
+            if entry.kind == "catalog"
+        ):
+            raise ProviderSelectionError("This provider does not support named connections.")
         return None
     records = provider.named_connections()
     connections = {

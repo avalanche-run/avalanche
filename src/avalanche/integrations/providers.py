@@ -156,14 +156,17 @@ class IntegrationProvider(Protocol):
 
 @runtime_checkable
 class NamedIntegrationProvider(IntegrationProvider, Protocol):
-    """Dormant opt-in contract; only the external proof provider implements it.
+    """Provider capability for named shared and per-user catalog connections.
 
     All named connections are visible at the local operator's single scope.
     ``starting_user`` returns the OS user, or the provider's signed-in human;
     None means no human, never an API token's owner. Workflow input is not identity.
     ``named_connections`` includes disconnected per-user slots, even without an
     instance. Binding IDs are provider-owned instance IDs, not credentials.
-    Legacy providers keep the original step-start contract until activation.
+    ``disconnect(slug)`` removes the connection and its operator assignment.
+    Slugs are unique across integrations and immutable. Providers must enforce
+    uniqueness atomically and persist IDs, slugs, kinds and instances across restart.
+    Legacy providers retain their original single-account step-start contract.
     """
 
     def starting_user(self) -> str | None: ...
@@ -208,19 +211,22 @@ def catalog_bindings() -> CatalogBindings | None:
     return _CATALOG_BINDINGS.get()
 
 
-def named_integration_provider() -> NamedIntegrationProvider | None:
-    """Load only a provider explicitly advertising the dormant extension.
-
-    Merely installing a legacy provider must not introduce admission-time login
-    or network work. Only the proof distribution advertises this group today.
-    """
+def named_integration_provider(
+    provider: IntegrationProvider | None = None,
+) -> NamedIntegrationProvider | None:
+    """Load a provider advertising named connections, without probing legacy logins."""
     selected = os.environ.get("AVALANCHE_INTEGRATION_PROVIDER")
-    if selected is None or not any(
+    if selected is None:
+        installed = entry_points(group="avalanche.integration_providers")
+        if len(installed) != 1:
+            return None
+        selected = next(iter(installed)).name
+    if not any(
         entry.name == selected
         for entry in entry_points(group="avalanche.named_integration_providers")
     ):
         return None
-    provider = integration_provider()
+    provider = integration_provider() if provider is None else provider
     return provider if isinstance(provider, NamedIntegrationProvider) else None
 
 

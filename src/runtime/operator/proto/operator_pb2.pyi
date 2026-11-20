@@ -120,10 +120,12 @@ class IntegrationLoginV2(_message.Message):
     def __init__(self, login_json: _Optional[str] = ...) -> None: ...
 
 class DisconnectIntegrationRequestV2(_message.Message):
-    __slots__ = ("name",)
+    __slots__ = ("name", "connection_slug")
     NAME_FIELD_NUMBER: _ClassVar[int]
+    CONNECTION_SLUG_FIELD_NUMBER: _ClassVar[int]
     name: str
-    def __init__(self, name: _Optional[str] = ...) -> None: ...
+    connection_slug: str
+    def __init__(self, name: _Optional[str] = ..., connection_slug: _Optional[str] = ...) -> None: ...
 
 class GetIntegrationIconRequestV2(_message.Message):
     __slots__ = ("name",)

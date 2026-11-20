@@ -162,6 +162,12 @@ class MCPConnections:
         # MCP thread's event loop, never nested inside the agent's running loop.
         step_name, servers, accounts = self._step_name, self._declarations, self._accounts
         builtins = tuple(server.name for server in servers if isinstance(server, Catalog))
+        if self._bindings is None and any(
+            isinstance(server, Catalog) and server.connection is not None for server in servers
+        ):
+            raise IntegrationError(
+                "Named catalog connections require a named-capable local operator."
+            )
         session = None
         named_provider: NamedIntegrationProvider | None = None
         delivered = self._delivered
@@ -176,6 +182,10 @@ class MCPConnections:
             named_provider = provider
         elif builtins:
             provider = integration_provider()
+            if isinstance(provider, NamedIntegrationProvider):
+                raise IntegrationError(
+                    "Named catalog connections require a named-capable local operator."
+                )
             problem = catalog_connection_problem(builtins, provider.connections())
             command = accounts.connect_command or "ava connect"
             if problem is not None:
@@ -435,9 +445,7 @@ class MCPConnections:
             offered.append(
                 _OfferedTool(
                     server_name=tool.name,
-                    agent_name=tool_prefix
-                    + "__"
-                    + _NOT_A_NAME_CHARACTER.sub("_", tool.name),
+                    agent_name=tool_prefix + "__" + _NOT_A_NAME_CHARACTER.sub("_", tool.name),
                     description=tool.description,
                     input_schema=schema,
                 )

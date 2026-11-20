@@ -8,6 +8,7 @@ import { workflowInputDraft } from "./workflowInput";
 import type { OperatorProjection } from "./state";
 import { isUnknownRecord } from "./guards";
 import { runStatusLive, runStatusTerminal } from "./runStatus";
+import { useIntegrationsView } from "./integrationsView";
 
 interface RunControlsProps {
   workflow?: FlowInfoMsg;
@@ -96,6 +97,8 @@ export function RunControls({
     return true;
   };
   const [error, setError] = useState<string>();
+  const integrations = useIntegrationsView();
+  const personalConnection = error?.match(/Connect your ([a-z0-9-]+) account \('/)?.[1];
   const workflowId = workflow?.workflowId;
   useLayoutEffect(() => {
     setShowSchedule(false);
@@ -302,6 +305,15 @@ export function RunControls({
               className="action-error flex items-baseline gap-3 rounded border border-error-line bg-error-surface px-[18px] py-2 text-xs text-error-ink"
             >
               <span className="min-w-0 flex-1">{error}</span>
+              {personalConnection && integrations.openIntegrations && (
+                <button
+                  type="button"
+                  className="shrink-0 underline"
+                  onClick={() => integrations.openIntegrations?.()}
+                >
+                  Connect account
+                </button>
+              )}
               {takesInput && onEditInput && (
                 <button
                   type="button"

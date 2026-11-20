@@ -327,6 +327,15 @@ methods; a host without them is unchanged and shows no integration UI:
   (`{ kind: "api_key", key, header? }`) and `disconnectIntegration(name)` removes
   it. Both return the integration's new status. Without them the screen is
   read-only.
+- Named-capable hosts set `named_connections` and include `connections` on each
+  catalog status: slug, shared/per-user kind, viewer state, instance count and
+  assignment chips. The shared panel creates named connections, reconnects the
+  same slug/kind, and confirms that disconnect removes the operator assignment.
+  `IntegrationLoginClient.slug` and `.kind` carry the connection selection;
+  `disconnectIntegration(name, slug?)` removes that connection without overloading
+  the integration name. Hosts omitting the capability keep the single-account UI.
+  Catalog declarations accept optional `connection` and use its slug as the tool
+  prefix; the connection tables never receive tokens or instance credentials.
 - `startIntegrationLogin(name, client?)` starts a browser login and returns an
   `IntegrationLogin` with the consent page to open (`authorization_url`);
   `client` carries the client ID and secret a person typed for a Connector's

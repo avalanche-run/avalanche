@@ -1181,7 +1181,9 @@ class OperatorV2Servicer(pb_grpc.OperatorServiceV2Servicer):
         from .integration_accounts import UnknownIntegrationError
 
         try:
-            status = self._op.disconnect_integration(request.name)
+            status = self._op.disconnect_integration(
+                request.name, slug=request.connection_slug or None
+            )
         except UnknownIntegrationError as exc:
             context.abort(grpc.StatusCode.NOT_FOUND, str(exc))
         except (

@@ -53,6 +53,13 @@ def search_tasks_in_workspace(
     )
 
 
+@server.tool(name="get-team-info")
+def get_team_info() -> dict[str, str]:
+    """Return the workspace identity of this account service."""
+    _journal(event="call", tool="get-team-info")
+    return {"team": os.environ["CATALOG_ACCOUNT_MARKER"] + "refunds-0"}
+
+
 if __name__ == "__main__":
     uvicorn.run(
         _RequireKey(server.streamable_http_app(), sys.argv[3]),

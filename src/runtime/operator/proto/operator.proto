@@ -107,7 +107,11 @@ message GetIntegrationLoginRequestV2 {
 // stored. Provider setup errors use FAILED_PRECONDITION; outages UNAVAILABLE.
 // DisconnectIntegration accepts every kind, including catalog.
 message IntegrationLoginV2 { string login_json = 1; }
-message DisconnectIntegrationRequestV2 { string name = 1; }
+message DisconnectIntegrationRequestV2 {
+  string name = 1;
+  // Catalog connection slug; empty for the legacy single-account contract.
+  string connection_slug = 2;
+}
 message GetIntegrationIconRequestV2 { string name = 1; }
 // media_type is one of the image types the operator serves, such as image/png.
 message IntegrationIconV2 {

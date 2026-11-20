@@ -7,6 +7,7 @@ import getpass
 import json
 import sys
 import webbrowser
+from typing import Literal
 
 from avalanche.integrations.accounts import ApiKeyCredential
 from avalanche.integrations.declaration import (
@@ -65,6 +66,10 @@ def add_connect_command(
         action="store_true",
         help="print the login address instead of opening a browser",
     )
+    command.add_argument("--slug", help="immutable catalog connection slug (defaults to NAME)")
+    command.add_argument(
+        "--per-user", action="store_true", help="connect the starting human's account"
+    )
     command.add_argument("--json", action="store_true", help="emit JSON")
     command.set_defaults(handler=_handle)
 
@@ -74,6 +79,7 @@ def add_disconnect_command(
 ) -> None:
     command = subcommands.add_parser("disconnect", help="disconnect a declared integration")
     command.add_argument("name", help="integration name")
+    command.add_argument("--slug", help="catalog connection to disconnect")
     command.add_argument("--connect", default="localhost:7433", help="operator address")
     command.add_argument("--json", action="store_true", help="emit JSON")
     command.set_defaults(handler=_handle_disconnect)
@@ -84,7 +90,7 @@ def _handle_disconnect(args: argparse.Namespace) -> int:
 
     provider = _make_provider(args.connect)
     try:
-        status = provider.disconnect_integration(args.name)
+        status = provider.disconnect_integration(args.name, slug=args.slug)
         print(json.dumps(_record(status)) if args.json else f"Disconnected {status.name}.")
         return 0
     except (OperatorCallError, ValueError) as exc:
@@ -116,6 +122,8 @@ def _record(status: IntegrationStatus) -> dict[str, object]:
         "account_state": status.account_state,
         "icon_url": status.icon_url,
         "provider_error": status.provider_error,
+        "connections": [item.model_dump(mode="json") for item in status.connections],
+        "named_connections": status.named_connections,
         "used_by": [f"{use.workflow}/{use.node_id}" for use in status.used_by],
     }
 
@@ -160,9 +168,11 @@ def _connect_in_browser(
     client_secret: str | None,
     open_browser: bool,
     quiet: bool,
+    slug: str | None = None,
+    kind: Literal["shared", "per_user"] = "shared",
 ) -> IntegrationStatus:
     login = provider.start_integration_login(
-        status.name, client_id=client_id, client_secret=client_secret
+        status.name, client_id=client_id, client_secret=client_secret, slug=slug, kind=kind
     )
     label = status.display_name or status.name
     # Progress goes to standard error, so --json prints only the result.
@@ -189,8 +199,8 @@ def _handle(args: argparse.Namespace) -> int:
     try:
         statuses = provider.list_integrations()
         if args.name is None:
-            if use_key or args.client_secret:
-                raise ValueError("--api-key, --header and --client-secret need a name")
+            if use_key or args.client_secret or args.slug is not None or args.per_user:
+                raise ValueError("Connection options need an integration name.")
             if args.json:
                 print(json.dumps([_record(status) for status in statuses]))
             elif not statuses:
@@ -202,6 +212,11 @@ def _handle(args: argparse.Namespace) -> int:
                     print(
                         f"{status.name}\t{status.declaration.kind}\t{_label(status)}\t{steps}"
                     )
+                    for connection in status.connections:
+                        print(
+                            f"  {connection.slug}\t{connection.kind}\t{connection.state}"
+                            f"\tassigned to {', '.join(connection.assignments)}"
+                        )
             return 0
         matches = [status for status in statuses if status.name == args.name]
         if not matches:
@@ -211,6 +226,10 @@ def _handle(args: argparse.Namespace) -> int:
                 f"Declared integrations: {known}."
             )
         status = matches[0]
+        if (args.slug is not None or args.per_user) and not isinstance(
+            status.declaration, CatalogDeclaration
+        ):
+            raise ValueError("--slug and --per-user are for catalog integrations only.")
         match status.declaration:
             case CatalogDeclaration():
                 if use_key or args.client_secret:
@@ -220,6 +239,8 @@ def _handle(args: argparse.Namespace) -> int:
                     status,
                     client_id=None,
                     client_secret=None,
+                    slug=args.slug,
+                    kind="per_user" if args.per_user else "shared",
                     open_browser=not args.no_browser,
                     quiet=args.json,
                 )

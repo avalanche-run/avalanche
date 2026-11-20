@@ -1176,6 +1176,11 @@ class _CatalogService:
                         code = 409
                     else:
                         service.bound_sessions.append(bindings)
+                        with service.journal.open("a") as journal:
+                            journal.write(
+                                json.dumps({"event": "bound-session", "bindings": bindings})
+                                + "\n"
+                            )
                         body = json.dumps(
                             {
                                 "url": service.named_relays[instance["id"]].url,
@@ -1205,6 +1210,9 @@ class _CatalogService:
                 elif url.path == "/status":
                     body = service.login_view(query["id"][0])
                 elif url.path == "/disconnect":
+                    service.named = [
+                        row for row in service.named if row["slug"] != query["name"][0]
+                    ]
                     service.connected = False
                     service.connected_at = None
                 elif url.path == "/expire-pass":
@@ -1353,6 +1361,11 @@ def test_catalog_provider_connect_run_restart_and_failures(tmp_path, catalog_pro
             assert "ava connect asana" in refused_login.stderr
             shown.append(refused_login.stderr)
             service.mode = "ready"
+            unsupported = _connect(address, "asana", "--slug", "office", "--no-browser")
+            assert unsupported.returncode == 1
+            assert unsupported.stderr.splitlines()[-1] == (
+                "INVALID_ARGUMENT: This provider does not support named connections."
+            )
 
             # --no-browser prints the address and waits until the real consent URL is opened.
             waiting = subprocess.Popen(
@@ -1506,7 +1519,7 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
     """The same installed provider opts in; all calls still cross real gRPC/MCP."""
     root = tmp_path / "named"
     root.mkdir()
-    service = _CatalogService(root)
+    service = _CatalogService(root, integration="slack")
     relays: list[_McpServer] = []
     state_db, log = root / "state.db", root / "operator.log"
     journal = root / "body.txt"
@@ -1523,7 +1536,7 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
 
     def slot(slug: str, kind: str = "shared", user: str | None = None) -> dict:
         return {
-            "name": "asana",
+            "name": "slack",
             "slug": slug,
             "kind": kind,
             "user": user,
@@ -1541,6 +1554,11 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
                 run_id=run_id,
                 input={"journal": str(journal)},
                 context={"user": "user-a", "created_by": "user-a"},
+            )
+        if reason == "Connect your slack":
+            assert error.value.details == (
+                "Connect your slack account ('my-slack') to run flow 'personal', "
+                "then start the run again."
             )
         assert error.value.status is grpc.StatusCode.FAILED_PRECONDITION
         assert provider.get_run(run_id) is None
@@ -1560,17 +1578,21 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
         return answers
 
     try:
+        browser = root / "browser"
+        browser.write_text(
+            f"#!{sys.executable}\nimport sys, urllib.request\n"
+            "urllib.request.urlopen(sys.argv[1], timeout=30).read()\n"
+        )
+        browser.chmod(0o755)
         service.named = [
-            slot("office"),
-            slot("partner"),
             slot("schedule-slot"),
-            {**slot("my-asana", "per_user"), "state": "disconnected"},
+            {**slot("my-slack", "per_user"), "state": "disconnected"},
         ]
         for marker, instance in (
-            ("office-", "office:None"),
-            ("partner-", "partner:None"),
-            ("alice-", "my-asana:user-a"),
-            ("bob-", "my-asana:user-b"),
+            ("acme-hq-", "acme-hq:None"),
+            ("partner-ws-", "partner-ws:None"),
+            ("alice-", "my-slack:user-a"),
+            ("bob-", "my-slack:user-b"),
         ):
             relay = _McpServer(
                 root / f"{marker}calls.jsonl",
@@ -1582,39 +1604,47 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
             service.named_relays[instance] = relay
         service.named_relays["schedule-slot:None"] = relays[0]
         with _operator(state_db, address, environment, log, fixture) as provider:
+            for slug in ("acme-hq", "partner-ws"):
+                connected = _connect(address, "slack", "--slug", slug, browser=browser)
+                assert connected.returncode == 0, connected.stderr
+            listed = _connect(address, "--json")
+            assert listed.returncode == 0, listed.stderr
+            text = _connect(address)
+            assert text.returncode == 0 and "assigned to operator" in text.stdout
+            rows = json.loads(listed.stdout)[0]["connections"]
+            assert {(row["slug"], row["kind"], tuple(row["assignments"])) for row in rows} == {
+                ("acme-hq", "shared", ("operator",)),
+                ("partner-ws", "shared", ("operator",)),
+                ("schedule-slot", "shared", ("operator",)),
+                ("my-slack", "per_user", ("operator",)),
+            }
             # Missing per-user instance is rejected at admission: no run record,
             # no body and no temporary tool session.
-            refusal(provider, "personal", "Connect your asana", "missing-a")
+            refusal(provider, "personal", "Connect your slack", "missing-a")
             assert not journal.exists()
             refusal(provider, "ambiguous", "connections are assigned", "ambiguous")
             answers = result(provider, "shared_accounts")
-            assert "office-refunds-0" in answers[0] and "partner-refunds-0" in answers[1]
+            assert "acme-hq-refunds-0" in answers[0] and "partner-ws-refunds-0" in answers[1]
             assert all(len(relay.entries("call")) == 1 for relay in relays[:2])
 
-            # Exercise the extended provider login contract through its installed
-            # entry point. Public CLI slug flags are deliberately a later change.
-            connected = subprocess.run(
-                [
-                    sys.executable,
-                    "-c",
-                    "import urllib.request; "
-                    "from avalanche.integrations.providers import integration_provider; "
-                    "p = integration_provider(); "
-                    "login = p.start_login('asana', slug='my-asana', kind='per_user'); "
-                    "urllib.request.urlopen(login.authorization_url, timeout=30).read(); "
-                    "assert p.login_status(login.login_id).status == 'connected'",
-                ],
-                env={**os.environ, **environment},
-                capture_output=True,
-                text=True,
-                timeout=60,
+            connected = _connect(
+                address, "slack", "--slug", "my-slack", "--per-user", browser=browser
             )
             assert connected.returncode == 0, connected.stderr
+            immutable = _connect(address, "slack", "--slug", "acme-hq", "--per-user")
+            assert immutable.returncode == 1
+            assert "already exists; its integration and kind are immutable" in immutable.stderr
             assert "alice-refunds-0" in result(provider, "personal")[0]
             service.user = "user-b"
-            refusal(provider, "personal", "Connect your asana", "missing-b")
+            refusal(provider, "personal", "Connect your slack", "missing-b")
             service.user = None
-            refusal(provider, "personal", "Connect your asana", "no-human")
+            refusal(provider, "personal", "Connect your slack", "no-human")
+            no_human = _connect(address, "slack", "--slug", "my-slack", "--per-user")
+            assert no_human.returncode == 1
+            assert no_human.stderr.splitlines()[-1] == (
+                "INVALID_ARGUMENT: A per-user connection requires a starting human. "
+                "Sign in, then connect again."
+            )
             service.user = "user-b"
 
             # Registration was shared; a later provider change to per-user must
@@ -1625,6 +1655,11 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
             with pytest.raises(OperatorCallError, match="Assign a shared connection") as error:
                 provider.set_schedule_enabled("scheduled", True, {"journal": str(journal)})
             assert error.value.status is grpc.StatusCode.FAILED_PRECONDITION
+            assert error.value.details == (
+                "Flow 'scheduled' has a schedule or webhook, and its slack connection "
+                "'schedule-slot' is per user. A triggered run has no user. "
+                "Assign a shared connection."
+            )
             scheduled = next(
                 flow for flow in provider.list_workflows() if flow.name == "scheduled"
             )
@@ -1634,15 +1669,21 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
         # The second process reads the same records and the same provider state:
         # B is still missing, A still works and earlier successful runs survive.
         with _operator(state_db, address, environment, log, fixture) as provider:
+            assert {item.slug for item in provider.list_integrations()[0].connections} == {
+                "acme-hq",
+                "partner-ws",
+                "my-slack",
+                "schedule-slot",
+            }
             for run_id, answers in completed.items():
                 assert provider.get_run(run_id).status is RunStatus.SUCCESS
                 assert provider.get_run_result(run_id) == answers
-            refusal(provider, "personal", "Connect your asana", "missing-b-restart")
+            refusal(provider, "personal", "Connect your slack", "missing-b-restart")
             service.user = "user-a"
             assert "alice-refunds-0" in result(provider, "personal")[0]
-            assert "office-refunds-0" in result(provider, "shared_accounts")[0]
+            assert "acme-hq-refunds-0" in result(provider, "shared_accounts")[0]
             service.user = "user-b"
-            service.named.append(slot("my-asana", "per_user", "user-b"))
+            service.named.append(slot("my-slack", "per_user", "user-b"))
             assert "bob-refunds-0" in result(provider, "personal")[0]
             # Even a connected user cannot register a per-user schedule.
             schedule_slot["kind"] = "per_user"
@@ -1676,11 +1717,45 @@ def _prove_named_catalog_accounts(tmp_path: Path, catalog_provider_path: str) ->
         assert "Assign a shared connection" in refused.stderr
         schedule_slot["kind"] = "shared"
         with _operator(state_db, address, environment, log, fixture) as provider:
+            assert {item.slug for item in provider.list_integrations()[0].connections} == {
+                "acme-hq",
+                "partner-ws",
+                "my-slack",
+                "schedule-slot",
+            }
             for run_id, answers in completed.items():
                 assert provider.get_run(run_id).status is RunStatus.SUCCESS
                 assert provider.get_run_result(run_id) == answers
             assert "bob-refunds-0" in result(provider, "personal")[0]
-            assert "partner-refunds-0" in result(provider, "shared_accounts")[1]
+            assert "partner-ws-refunds-0" in result(provider, "shared_accounts")[1]
+            default = _connect(address, "slack", browser=browser)
+            assert default.returncode == 0, default.stderr
+            assert "slack" in {
+                item.slug for item in provider.list_integrations()[0].connections
+            }
+            disconnected = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "ava_cli",
+                    "disconnect",
+                    "slack",
+                    "--slug",
+                    "partner-ws",
+                    "--connect",
+                    address,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            assert disconnected.returncode == 0, disconnected.stderr
+            assert {item.slug for item in provider.list_integrations()[0].connections} == {
+                "acme-hq",
+                "my-slack",
+                "schedule-slot",
+                "slack",
+            }
         assert len(journal.read_text().splitlines()) == 7
         stored = _stored_text_outside_accounts(state_db)
         assert _KB_KEY not in stored and _KB_KEY not in log.read_text()
@@ -1934,9 +2009,20 @@ def named_catalog():
     )
     calls = [("acme_hq__search", {"query": "refunds"}), ("partner_ws__ping", {})]
     models = ScriptedModelApis(calls, answer_field="findings")
-    # This is the existing provider contract, not named-account resolution:
-    # both declarations use the same loopback relay and its connected account.
+    # Reuse the prefix scenario with resolved named accounts after activation.
     service = _CatalogService(tmp_path, integration="slack", server=_MCP_SERVER)
+    service.named = [
+        {
+            "name": "slack",
+            "slug": slug,
+            "kind": "shared",
+            "user": None,
+            "instance_id": slug,
+            "state": "connected",
+        }
+        for slug in ("acme-hq", "partner-ws")
+    ]
+    service.named_relays = {slug: service.mcp for slug in ("acme-hq", "partner-ws")}
     service.connected = True
     service.connected_at = time.time()
     environment = {
@@ -1951,13 +2037,20 @@ def named_catalog():
     state_db, log = tmp_path / "catalog.db", tmp_path / "operator.log"
     address = f"127.0.0.1:{_free_port()}"
     try:
+        # Legacy providers must never silently map explicit slugs onto one account.
+        with _operator(state_db, address, environment, log, fixture) as provider:
+            with pytest.raises(OperatorCallError, match="does not support named connections"):
+                provider.start_run("named_catalog", run_id="legacy-named")
+            assert provider.get_run("legacy-named") is None
+            assert not service.sessions and not service.bound_sessions
+        environment["CATALOG_PROOF_NAMED"] = "1"
         # A second operator reads the persisted definition after a restart.
         for _ in range(2):
             with _operator(state_db, address, environment, log, fixture) as provider:
                 flows = {item.name: item for item in provider.list_workflows()}
                 flow = flows["named_catalog"]
                 # Resolve the operator's real discovered/stored declarations, not
-                # handwritten declarations. The helper remains dormant in hosts.
+                # handwritten declarations; hosts use this same resolver.
                 _prove_connection_resolution(flow, flows["unbound_catalog"])
                 declared = flow.integration_declarations["named_tools_1"].integrations
                 for entry, expected in zip(

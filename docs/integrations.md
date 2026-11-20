@@ -60,8 +60,11 @@ one. Implement the public `IntegrationProvider` protocol from
 catalog models from the same module. The provider owns persistent connections
 and sign-in guidance. No provider implementation ships in the SDK.
 
-The SDK opens one tool session per step start, reuses MCP tool naming, allow
-selection, argument checks and teardown, and keeps the temporary bearer pass
+The SDK opens one tool session per step start for a legacy provider, or one
+bound session per declared connection for a named provider. Named catalog
+declarations require a named-capable local operator, not standalone `Workflow.run()`.
+It reuses MCP tool naming, allow selection, argument checks and teardown, and
+keeps each temporary bearer pass
 in memory only. An expired pass fails the next call as retryable unavailable;
 it is never renewed in place. Missing connections and revoked logins fail
 before the body without retries. Missing provider, provider not signed in,
@@ -81,6 +84,110 @@ not to the host-neutral SDK or to custom MCP servers and Connectors.
 The checked-in `catalog_entries.json` drives `scripts/generate_catalog.py`.
 Regenerate offline with `uv run python scripts/generate_catalog.py`; the
 release gate uses `--check` to reject stale imports.
+
+## Named built-in connections
+
+A provider implementing `NamedIntegrationProvider` can keep several accounts for
+one built-in. With that provider installed and a workflow declaring Slack:
+
+```sh
+ava connect slack --slug acme-hq
+ava connect slack --slug partner-ws
+ava connect slack --slug my-slack --per-user
+ava connect
+ava connect --json
+ava disconnect slack --slug partner-ws
+```
+
+`--slug` defaults to the integration name. A slug uses lowercase letters and
+digits joined by single hyphens, is unique across the operator's catalog
+connections, and cannot be renamed. Reconnecting the same slug and kind keeps
+its identity and assignment. Its integration and kind cannot be changed.
+Disconnecting a slug removes the connection, all its accounts and its operator
+assignment; it does not remove other connections of that integration.
+`--slug` and `--per-user` are for built-ins, not Connectors or custom MCP servers.
+A legacy provider refuses these options and named run admission with
+`This provider does not support named connections.`
+
+Name both connections on a step to use two accounts:
+
+```python
+@ava.agent_step(Research, integrations=[
+    ava.catalog.slack(connection="acme-hq"),
+    ava.catalog.slack(connection="partner-ws"),
+])
+async def research(topic: str, *, agent: ava.Agent) -> list[str]:
+    return (await agent(topic=topic)).outputs.findings
+```
+
+`ava.Catalog("slack", connection="acme-hq", allow=["get-team-info"])` is the
+explicit form. A named declaration gets tools such as `acme_hq__get_team_info`:
+replace slug hyphens with underscores, then append `__` and the tool name.
+Without `connection=`, tools keep names such as `slack__get_team_info`.
+Two declarations of the same integration on a step must both name different
+slugs. Mixing named and unnamed declarations is refused; prefix collisions
+are refused too. `allow` still takes the provider's original tool names.
+
+Every local connection is assigned to the operator; there are no local project
+or flow assignment editors. The CLI's text and JSON lists and the UI's
+**Integrations** connection tables show slug, shared/per-user kind, the starting
+human's state and operator assignment. JSON and the UI also show instance counts. Each named step declaration has its
+own slug-labelled badge, account state and tool attribution. A refused personal
+run offers **Connect account**, which opens the connection view. **New connection** asks
+for slug and kind; a connection's **Reconnect** (or **Connect your account**)
+keeps them fixed. **Disconnect** names the assignment it removes before asking
+for confirmation. The provider persists catalog records; the operator persists
+run history in SQLite. Both remain available after an operator restart.
+
+With a named provider, resolution happens before a run is created, with the
+same pure resolver exported as `avalanche.integrations.resolve`. An unnamed
+built-in binds only when exactly one connection of that integration is
+assigned; more than one is ambiguous. A missing named connection, missing
+account or revoked account refuses admission. Step start checks again as a
+backstop. Legacy providers keep their single-account, step-start behavior.
+
+A shared connection uses its shared account. A per-user connection uses only
+the provider's starting human (its signed-in user or local OS user). Caller
+input/context and an API token's owner are never identity fallbacks. For flow
+`personal` and slug `my-slack`, a missing human account is refused verbatim:
+
+```text
+Connect your slack account ('my-slack') to run flow 'personal', then start the run again.
+```
+
+A per-user login without a starting human is refused verbatim:
+
+```text
+A per-user connection requires a starting human. Sign in, then connect again.
+```
+
+A scheduled flow cannot bind a per-user connection, even if the current human
+is connected. Registration, enabling and run start refuse it. The shared
+resolver also refuses webhook-triggered resolution. For flow `scheduled` and
+slug `schedule-slot`, the message is:
+
+```text
+Flow 'scheduled' has a schedule or webhook, and its slack connection 'schedule-slot' is per user. A triggered run has no user. Assign a shared connection.
+```
+
+The public refusal classes are available from `avalanche` and
+`avalanche.integrations`: `ConnectionNotResolvedError`,
+`ConnectionAmbiguousError`, `ConnectionNotAssignedError`,
+`ConnectionNotFoundError`, `ConnectionPerUserTriggeredError` and
+`ConnectionUserNotConnectedError`. All are `NonRetryableError` subclasses.
+
+Providers opt in by registering their factory in both
+`avalanche.integration_providers` and `avalanche.named_integration_providers`,
+under the same entry name. Implement `NamedIntegrationProvider` from
+`avalanche.integrations.providers`: `starting_user()`, `named_connections()`,
+`start_login(name, *, slug=None, kind="shared")` and
+`open_bound_tool_session(step, bindings)`, as well as the original protocol.
+`disconnect(slug)` removes the whole named connection. Named records include
+missing per-user slots and provider-owned instance IDs, never credentials.
+The provider must enforce immutable, operator-wide unique slugs atomically,
+persist connections and instances, and keep their IDs on reauthorization.
+Session bindings select instance IDs, not user input. No provider implementation
+ships in Avalanche; provider-specific hosted support is separate.
 
 ## Write a Connector
 
@@ -161,10 +268,12 @@ tools only: it never receives the Connector, its client or the key.
 
 These mistakes are errors when the workflow is defined, before anything runs:
 
-- two integrations on one step with the same name, or names that differ only by
+- two integrations on one step with the same name (except built-ins naming distinct
+  connections), or names that differ only by
   `-` and `_`;
 - an integration tool named like one of the step's own `tools=`;
-- one name declared in two different ways in one workflow;
+- one name (and, for a built-in, the same connection) declared in two different
+  ways in one workflow;
 - an `ava.MCP` on a plain step (MCP tools are for agent steps only).
 
 What an MCP server offers is known only when a step connects to it, so a clash
@@ -185,8 +294,8 @@ def plans(email: str) -> tuple[str, str]:
 
 ## Connect an account
 
-Accounts live in the local operator, one per integration name. Start the
-operator (`ava operator` or `ava dev`), then:
+Connector and custom MCP accounts live in the local operator, one per integration
+name. Start the operator (`ava operator` or `ava dev`), then:
 
 ```bash
 ava connect             # list declared integrations and whether each is connected
@@ -372,7 +481,8 @@ The operator's browser UI shows the same accounts:
 
 The UI never shows a stored key, in full or in part: it shows only whether an
 account exists and since when. Opening the UI and listing integrations starts
-no process and calls no outside service.
+no tool process and makes no tool call; provider metadata and account states may
+be fetched from the provider.
 
 `icon` is a path inside the folder the operator scans (the folder you gave
 `ava operator`, or the folder of the file you gave it). The file must be an

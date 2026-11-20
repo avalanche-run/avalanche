@@ -376,7 +376,7 @@ export interface OperatorApi {
   /** How far a browser login is. It may wait some seconds for the login to end. */
   getIntegrationLogin?(loginId: string, signal?: AbortSignal): Promise<IntegrationLogin>;
   /** Remove the stored account of a declared integration. */
-  disconnectIntegration?(name: string): Promise<IntegrationStatus>;
+  disconnectIntegration?(name: string, slug?: string): Promise<IntegrationStatus>;
   /**
    * A URL of the integration's declared icon. It is used only as the source of
    * an `<img>` element, where an SVG file cannot run script. Rejects when the
@@ -982,6 +982,7 @@ export class GrpcWebOperatorApi implements OperatorApi {
         name,
         client_id: client?.clientId ?? null,
         client_secret: client?.clientSecret ?? null,
+        ...(client?.slug === undefined ? {} : { slug: client.slug, kind: client.kind }),
       }),
     }).response;
     return parseIntegrationLogin(response.loginJson);
@@ -995,8 +996,11 @@ export class GrpcWebOperatorApi implements OperatorApi {
     return parseIntegrationLogin(response.loginJson);
   }
 
-  async disconnectIntegration(name: string): Promise<IntegrationStatus> {
-    const response = await this.client.disconnectIntegration({ name }).response;
+  async disconnectIntegration(name: string, slug?: string): Promise<IntegrationStatus> {
+    const response = await this.client.disconnectIntegration({
+      name,
+      connectionSlug: slug ?? "",
+    }).response;
     return parseIntegrationStatus(response.statusJson);
   }
 

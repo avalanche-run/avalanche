@@ -2119,7 +2119,13 @@ class GrpcStateProvider:
         return IntegrationStatus.model_validate_json(response.status_json)
 
     def start_integration_login(
-        self, name: str, *, client_id: str | None = None, client_secret: str | None = None
+        self,
+        name: str,
+        *,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        slug: str | None = None,
+        kind: Literal["shared", "per_user"] = "shared",
     ) -> IntegrationLogin:
         """Start a browser login for the declared integration ``name``."""
         if self._read_only:
@@ -2129,7 +2135,7 @@ class GrpcStateProvider:
         from .integration_logins import IntegrationLogin, StartIntegrationLoginRequest
 
         request = StartIntegrationLoginRequest(
-            name=name, client_id=client_id, client_secret=client_secret
+            name=name, client_id=client_id, client_secret=client_secret, slug=slug, kind=kind
         )
         response = self._call(
             self._stub.StartIntegrationLogin,
@@ -2151,7 +2157,9 @@ class GrpcStateProvider:
         )
         return IntegrationLogin.model_validate_json(response.login_json)
 
-    def disconnect_integration(self, name: str) -> IntegrationStatus:
+    def disconnect_integration(
+        self, name: str, *, slug: str | None = None
+    ) -> IntegrationStatus:
         """Remove the stored account of the declared integration ``name``."""
         if self._read_only:
             from tui.state import TuiExtensionError
@@ -2160,7 +2168,8 @@ class GrpcStateProvider:
         from .integration_accounts import IntegrationStatus
 
         response = self._call(
-            self._stub.DisconnectIntegration, pb.DisconnectIntegrationRequestV2(name=name)
+            self._stub.DisconnectIntegration,
+            pb.DisconnectIntegrationRequestV2(name=name, connection_slug=slug or ""),
         )
         return IntegrationStatus.model_validate_json(response.status_json)
 

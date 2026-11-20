@@ -52,6 +52,7 @@ const catalogDeclaration = z.strictObject({
   kind: z.literal("catalog"),
   name: z.string(),
   allow: z.array(z.string()).nullable(),
+  connection: z.string().nullable().optional(),
 });
 
 const integrationDeclaration = z.discriminatedUnion("kind", [
@@ -77,6 +78,18 @@ const integrationStatus = z.strictObject({
   icon_url: z.string().url().nullable().optional(),
   account_state: accountState.optional(),
   provider_error: z.string().nullable().optional(),
+  named_connections: z.boolean().optional(),
+  connections: z
+    .array(
+      z.strictObject({
+        slug: z.string(),
+        kind: z.enum(["shared", "per_user"]),
+        state: z.enum(["connected", "reconnect_needed", "disconnected"]),
+        instances: z.number(),
+        assignments: z.array(z.literal("operator")),
+      }),
+    )
+    .optional(),
   /** Epoch seconds. */
   connected_at: z.number().nullable(),
   used_by: z.array(
@@ -114,6 +127,8 @@ export type IntegrationLoginKind = IntegrationStatus["login"][number];
 export interface IntegrationLoginClient {
   clientId?: string;
   clientSecret?: string;
+  slug?: string;
+  kind?: "shared" | "per_user";
 }
 
 /** What a person supplies to connect an account. It is sent once and never read back. */
@@ -176,7 +191,16 @@ export function integrationTakesAccount(declaration: IntegrationDeclaration): bo
 export type IntegrationAccountState = z.infer<typeof accountState>;
 
 /** `none`: a Connector without auth or a local-process MCP server; there is no account to connect. */
-export function integrationAccountState(status: IntegrationStatus): IntegrationAccountState {
+export function integrationAccountState(
+  status: IntegrationStatus,
+  declaration?: IntegrationDeclaration,
+): IntegrationAccountState {
+  if (status.named_connections && declaration?.kind === "catalog" && declaration.connection) {
+    const state = status.connections?.find(
+      (item) => item.slug === declaration.connection,
+    )?.state;
+    return state === undefined || state === "disconnected" ? "missing" : state;
+  }
   if (status.account_state !== undefined) return status.account_state;
   if (status.connected) return "connected";
   return integrationTakesAccount(status.declaration) ? "missing" : "none";
@@ -196,7 +220,9 @@ export function integrationForTool(
   return declarations.find((declaration) =>
     declaration.kind === "connector"
       ? declaration.tools.some((tool) => tool.name === toolName)
-      : toolName.startsWith(`${declaration.name.replaceAll("-", "_")}__`),
+      : toolName.startsWith(
+          `${(declaration.kind === "catalog" ? (declaration.connection ?? declaration.name) : declaration.name).replaceAll("-", "_")}__`,
+        ),
   );
 }
 
@@ -223,10 +249,11 @@ export function integrationsMissingAccount(
   return declarations.filter((declaration) => {
     const status = known.get(declaration.name);
     if (status?.account_state === undefined) return inferred.includes(declaration);
+    const state = integrationAccountState(status, declaration);
     return (
-      status.account_state === "reconnect_needed" ||
-      (status.account_state === "missing" &&
-        (status.requires_account || inferred.includes(declaration)))
+      state === "reconnect_needed" ||
+      (state === "missing" &&
+        (status.requires_account || status.named_connections || inferred.includes(declaration)))
     );
   });
 }

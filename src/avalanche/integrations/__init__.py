@@ -22,6 +22,20 @@ from .accounts import (
     install_account_source,
     use_accounts,
 )
+from .connections import (
+    Connection,
+    ConnectionAmbiguousError,
+    ConnectionInstance,
+    ConnectionNotAssignedError,
+    ConnectionNotFoundError,
+    ConnectionNotResolvedError,
+    ConnectionPerUserTriggeredError,
+    ConnectionUserNotConnectedError,
+    FlowAssignment,
+    OrgAssignment,
+    ProjectAssignment,
+    resolve,
+)
 from .core import (
     MCP,
     ApiKey,
@@ -63,6 +77,18 @@ def __getattr__(name: str):
 
 __all__ = [
     "MCP",
+    "Connection",
+    "ConnectionInstance",
+    "FlowAssignment",
+    "ProjectAssignment",
+    "OrgAssignment",
+    "ConnectionAmbiguousError",
+    "ConnectionNotAssignedError",
+    "ConnectionNotFoundError",
+    "ConnectionNotResolvedError",
+    "ConnectionPerUserTriggeredError",
+    "ConnectionUserNotConnectedError",
+    "resolve",
     "AccessTokenCredential",
     "AccountLoginExpiredError",
     "AccountSource",

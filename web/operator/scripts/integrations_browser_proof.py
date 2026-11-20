@@ -15,6 +15,7 @@ Run from ``pkgs/avalanche`` after ``make web-build``:
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import os
 import socket
@@ -83,9 +84,7 @@ def free_port() -> int:
 class KbServer:
     """The MCP test server as a separate process that serves HTTP and wants a key."""
 
-    def __init__(
-        self, journal: Path, *, key: str = KB_KEY, server: Path = MCP_SERVER
-    ) -> None:
+    def __init__(self, journal: Path, *, key: str = KB_KEY, server: Path = MCP_SERVER) -> None:
         self._journal = journal
         port = free_port()
         self.url = f"http://127.0.0.1:{port}/mcp"
@@ -439,7 +438,7 @@ def scenario(
             else None
         ),
     )
-    page.goto(url)
+    page.goto(url, wait_until="domcontentloaded")
     open_workflow(page, "agent_only")
 
     # 1. Node badges: one per declared integration, on the step's own card. The
@@ -624,7 +623,7 @@ def catalog_scenario(
     service: CatalogService,
     grpc_port: int,
 ) -> None:
-    page.goto(url)
+    page.goto(url, wait_until="domcontentloaded")
     open_workflow(page, "on_predict_rlm")
     node = node_card(page, "research_on_predict_rlm_1")
     badge = node.locator('[data-integration="asana"]')
@@ -736,7 +735,7 @@ def after_restart(
     catalog: bool = False,
 ) -> None:
     """The account connected in the browser was stored: a new operator has it."""
-    page.goto(url)
+    page.goto(url, wait_until="domcontentloaded")
     panel = open_integrations(page)
     if catalog:
         row = panel.locator('.integration-row[data-integration="asana"]')
@@ -752,6 +751,139 @@ def after_restart(
         "data-account", "missing"
     )
     shoot(page, shown, evidence, "07-after-restart")
+
+
+def named_connections_scenario(page: Page, evidence: Path, provider_path: str) -> None:
+    # Reuse the operator E2E's external HTTP account service, not its plug-in implementation.
+    tests = PACKAGE / "test/operator_tests"
+    sys.path.insert(0, str(tests.parent))
+    helpers = importlib.import_module("operator_tests.test_integrations_e2e")
+    root = evidence / "named"
+    root.mkdir(exist_ok=True)
+    service = helpers._CatalogService(root, integration="slack")
+    service.named = [
+        {
+            "name": "slack",
+            "slug": "schedule-slot",
+            "kind": "shared",
+            "user": None,
+            "instance_id": "schedule-slot:None",
+            "state": "connected",
+        }
+    ]
+    environment = {
+        "PYTHONPATH": provider_path,
+        "CATALOG_PROOF_URL": service.url,
+        "CATALOG_PROOF_NAMED": "1",
+        "AVALANCHE_INTEGRATION_PROVIDER": "proof",
+    }
+    grpc_port, web_port = free_port(), free_port()
+    shown = Shown(page)
+    try:
+        for restart in (False, True):
+            with operator(
+                root / "state.db",
+                grpc_port,
+                web_port,
+                "",
+                "",
+                root / "operator.log",
+                fixture=PACKAGE / "test/fixtures/named_catalog_tools_flow.py",
+                environment=environment,
+            ) as url:
+                page.goto(url, wait_until="domcontentloaded")
+                panel = open_integrations(page)
+                if not restart:
+                    # The public form creates two shared connections and one personal account.
+                    for slug, personal in (
+                        ("acme-hq", False),
+                        ("partner-ws", False),
+                        ("my-slack", True),
+                    ):
+                        row = panel.locator('.integration-row[data-integration="slack"]')
+                        row.get_by_role(
+                            "button", name="New connection for Slack proof", exact=True
+                        ).click()
+                        form = row.locator('form[data-login="browser"]')
+                        form.get_by_label("Connection slug").fill(slug)
+                        form.get_by_label("Per user", exact=True).set_checked(personal)
+                        with page.expect_popup() as popup:
+                            form.locator('button[type="submit"]').click()
+                        popup.value.wait_for_url(
+                            service.url + "/approve?*", wait_until="domcontentloaded"
+                        )
+                        popup.value.close()
+                        expect(form).not_to_be_visible()
+                for slug in ("acme-hq", "partner-ws", "my-slack"):
+                    connection = panel.locator(f'[data-connection="{slug}"]')
+                    expect(connection).to_be_visible()
+                    expect(connection).to_contain_text("operator")
+                expect(panel.locator('[data-connection="my-slack"]')).to_contain_text(
+                    "Per user"
+                )
+                shoot(
+                    page,
+                    shown,
+                    evidence,
+                    "28-named-connections-restart" if restart else "27-named-connections",
+                )
+                if restart:
+                    personal = panel.locator('[data-connection="my-slack"]')
+                    personal.get_by_role("button", name="Reconnect", exact=True).click()
+                    form = panel.get_by_role("form", name="Connect my-slack", exact=True)
+                    expect(form.get_by_label("Connection slug")).to_have_attribute(
+                        "readonly", ""
+                    )
+                    expect(form.get_by_label("Per user", exact=True)).to_be_disabled()
+                    with page.expect_popup() as popup:
+                        form.locator('button[type="submit"]').click()
+                    popup.value.wait_for_url(
+                        service.url + "/approve?*", wait_until="domcontentloaded"
+                    )
+                    popup.value.close()
+                    expect(form).not_to_be_visible()
+                    assert (
+                        len([item for item in service.named if item["slug"] == "my-slack"]) == 1
+                    )
+                    page.once("dialog", lambda dialog: dialog.accept())
+                    panel.locator('[data-connection="partner-ws"]').get_by_role(
+                        "button", name="Disconnect", exact=True
+                    ).click()
+                    expect(panel.locator('[data-connection="partner-ws"]')).not_to_be_visible()
+                    expect(panel.locator('[data-connection="acme-hq"]')).to_be_visible()
+                    open_workflow(page, "shared_accounts")
+                    node = node_card(page, "two_accounts_1")
+                    expect(node.locator(".node-integration-badge")).to_have_count(2)
+                    expect(node).to_contain_text("acme-hq")
+                    expect(node).to_contain_text("partner-ws")
+                    shoot(page, shown, evidence, "29-named-node-badges")
+                    service.user = "user-b"
+                    page.reload(wait_until="domcontentloaded")
+                    open_workflow(page, "personal")
+                    page.get_by_role("button", name="Inspect workflow input Topic").click()
+                    inputs = page.get_by_role(
+                        "complementary", name="Workflow input declaration"
+                    )
+                    inputs.get_by_label("journal value", exact=True).fill(
+                        str(root / "refused.txt")
+                    )
+                    inputs.get_by_role("button", name="Close", exact=True).click()
+                    page.get_by_role("button", name="Run", exact=True).click()
+                    refusal = page.locator(".action-error")
+                    expect(refusal).to_contain_text(
+                        "Connect your slack account ('my-slack') to run flow 'personal', "
+                        "then start the run again."
+                    )
+                    assert not (root / "refused.txt").exists() and not service.bound_sessions
+                    refusal.get_by_role("button", name="Connect account", exact=True).click()
+                    expect(
+                        page.locator('[data-connection="my-slack"]').get_by_role(
+                            "button", name="Connect your account", exact=True
+                        )
+                    ).to_be_visible()
+                    shoot(page, shown, evidence, "30-personal-connect-link")
+    finally:
+        service.close()
 
 
 def main() -> None:
@@ -777,7 +909,8 @@ def main() -> None:
     crm = CrmService()
     kb = KbServer(kb_journal)
     catalog_kb = KbServer(
-        evidence / "catalog-kb.jsonl", key=CATALOG_PASS,
+        evidence / "catalog-kb.jsonl",
+        key=CATALOG_PASS,
         server=PACKAGE / "test/fixtures/catalog_test_server.py",
     )
     catalog = CatalogService(catalog_kb, evidence / "provider.jsonl")
@@ -818,7 +951,7 @@ def main() -> None:
             with operator(
                 catalog_db, grpc_port, web_port, crm.url, kb.url, log, fixture=catalog_fixture
             ) as url:
-                page.goto(url)
+                page.goto(url, wait_until="domcontentloaded")
                 panel = open_integrations(page)
                 row = panel.locator('.integration-row[data-integration="asana"]')
                 message = json.loads(ava_connect(grpc_port, "--json"))[0]["provider_error"]
@@ -848,6 +981,7 @@ def main() -> None:
             ) as url:
                 after_restart(page, url, shown, evidence, catalog=True)
                 assert stored_accounts(grpc_port) == {"asana": True}
+            named_connections_scenario(page, evidence, provider_path)
             browser.close()
         assert errors == [], errors
         assert outside == [], outside

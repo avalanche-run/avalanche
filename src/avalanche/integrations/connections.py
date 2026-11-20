@@ -1,4 +1,4 @@
-"""Dormant, host-neutral named-connection resolution; no I/O or provider loading."""
+"""Host-neutral named-connection resolution; no I/O or provider loading."""
 
 from __future__ import annotations
 

@@ -57,6 +57,8 @@ class StartIntegrationLoginRequest(BaseModel):
     )
 
     name: str
+    slug: str | None = Field(default=None, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+    kind: Literal["shared", "per_user"] = "shared"
     # A Connector's app at the service. An MCP server's client comes from the
     # server or its declaration; only its secret, when it has one, is given here.
     client_id: str | None = None

@@ -57,7 +57,7 @@ export interface IntegrationsView {
     onPage: (url: string) => void,
     signal: AbortSignal,
   ) => Promise<void>;
-  disconnect?: (name: string) => Promise<void>;
+  disconnect?: (name: string, slug?: string) => Promise<void>;
   /** Shows the integrations screen, on one integration when named. */
   openIntegrations?: (name?: string) => void;
 }
@@ -194,9 +194,9 @@ export function IntegrationsProvider({
     [api],
   );
   const disconnect = useCallback(
-    async (name: string) => {
+    async (name: string, slug?: string) => {
       if (!api.disconnectIntegration) throw new Error("This host cannot remove accounts");
-      const status = await api.disconnectIntegration(name);
+      const status = await api.disconnectIntegration(name, slug);
       setListed((current) => replaceStatus(current, status));
     },
     [api],

@@ -126,6 +126,12 @@ export interface DisconnectIntegrationRequestV2 {
      * @generated from protobuf field: string name = 1
      */
     name: string;
+    /**
+     * Catalog connection slug; empty for the legacy single-account contract.
+     *
+     * @generated from protobuf field: string connection_slug = 2
+     */
+    connectionSlug: string;
 }
 /**
  * @generated from protobuf message avalanche.operator.GetIntegrationIconRequestV2
@@ -3026,12 +3032,14 @@ export const IntegrationLoginV2 = new IntegrationLoginV2$Type();
 class DisconnectIntegrationRequestV2$Type extends MessageType<DisconnectIntegrationRequestV2> {
     constructor() {
         super("avalanche.operator.DisconnectIntegrationRequestV2", [
-            { no: 1, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
+            { no: 1, name: "name", kind: "scalar", T: 9 /*ScalarType.STRING*/ },
+            { no: 2, name: "connection_slug", kind: "scalar", T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<DisconnectIntegrationRequestV2>): DisconnectIntegrationRequestV2 {
         const message = globalThis.Object.create((this.messagePrototype!));
         message.name = "";
+        message.connectionSlug = "";
         if (value !== undefined)
             reflectionMergePartial<DisconnectIntegrationRequestV2>(this, message, value);
         return message;
@@ -3043,6 +3051,9 @@ class DisconnectIntegrationRequestV2$Type extends MessageType<DisconnectIntegrat
             switch (fieldNo) {
                 case /* string name */ 1:
                     message.name = reader.string();
+                    break;
+                case /* string connection_slug */ 2:
+                    message.connectionSlug = reader.string();
                     break;
                 default:
                     let u = options.readUnknownField;
@@ -3059,6 +3070,9 @@ class DisconnectIntegrationRequestV2$Type extends MessageType<DisconnectIntegrat
         /* string name = 1; */
         if (message.name !== "")
             writer.tag(1, WireType.LengthDelimited).string(message.name);
+        /* string connection_slug = 2; */
+        if (message.connectionSlug !== "")
+            writer.tag(2, WireType.LengthDelimited).string(message.connectionSlug);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

@@ -1,4 +1,4 @@
-"""Dormant named-provider proof: real catalog calls on the local operator."""
+"""Named-provider proof: real catalog calls on the local operator."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from dspy.utils import DummyLM
 from predict_rlm.backends import DirectPythonBackend
 
 import avalanche as ava
-from avalanche.catalog import asana
 
 
 class Topic(ava.BaseInput):
@@ -22,10 +21,7 @@ class Research(ava.Signature):
 
 
 def _runtime(*keys: str) -> ava.runtimes.PredictRLM:
-    calls = ", ".join(
-        f"str(await {key}__search_tasks_in_workspace(workspace_gid='workspace', limit=1))"
-        for key in keys
-    )
+    calls = ", ".join(f"str(await {key}__get_team_info())" for key in keys)
     model = DummyLM(
         [{"plan": "Call each account.", "code": f"SUBMIT(findings=[{calls}])"}],
         adapter=JSONAdapter(),
@@ -43,8 +39,11 @@ async def _research(payload: Topic, agent: ava.Agent) -> list[str]:
 
 @ava.agent_step(
     Research,
-    runtime=_runtime("office", "partner"),
-    integrations=[asana(connection="office"), asana(connection="partner")],
+    runtime=_runtime("acme_hq", "partner_ws"),
+    integrations=[
+        ava.catalog.slack(connection="acme-hq"),
+        ava.catalog.slack(connection="partner-ws"),
+    ],
     retries=0,
 )
 async def two_accounts(payload: Topic, *, agent: ava.Agent) -> list[str]:
@@ -53,8 +52,8 @@ async def two_accounts(payload: Topic, *, agent: ava.Agent) -> list[str]:
 
 @ava.agent_step(
     Research,
-    runtime=_runtime("my_asana"),
-    integrations=[asana(connection="my-asana")],
+    runtime=_runtime("my_slack"),
+    integrations=[ava.catalog.slack(connection="my-slack")],
     retries=0,
 )
 async def personal_account(payload: Topic, *, agent: ava.Agent) -> list[str]:
@@ -64,14 +63,16 @@ async def personal_account(payload: Topic, *, agent: ava.Agent) -> list[str]:
 @ava.agent_step(
     Research,
     runtime=_runtime("schedule_slot"),
-    integrations=[asana(connection="schedule-slot")],
+    integrations=[ava.catalog.slack(connection="schedule-slot")],
     retries=0,
 )
 async def scheduled_account(payload: Topic, *, agent: ava.Agent) -> list[str]:
     return await _research(payload, agent)
 
 
-@ava.agent_step(Research, runtime=_runtime("asana"), integrations=[asana], retries=0)
+@ava.agent_step(
+    Research, runtime=_runtime("slack"), integrations=[ava.catalog.slack], retries=0
+)
 async def bare_account(payload: Topic, *, agent: ava.Agent) -> list[str]:
     return await _research(payload, agent)
 

@@ -30,11 +30,13 @@ from avalanche.integrations.declaration import CatalogDeclaration, IntegrationDe
 from avalanche.integrations.providers import (
     CatalogConnection,
     CatalogEntry,
+    NamedCatalogConnection,
     ProviderNotInstalledError,
     ProviderNotSignedInError,
     ProviderSelectionError,
     ProviderUnavailableError,
     integration_provider,
+    named_integration_provider,
 )
 
 from .models import WorkflowDescriptor
@@ -138,6 +140,18 @@ class IntegrationUse(BaseModel):
     node_id: str
 
 
+class ConnectionStatus(BaseModel):
+    """One named connection, with the starting human's state and no credentials."""
+
+    model_config = ConfigDict(strict=True, frozen=True, extra="forbid")
+
+    slug: str
+    kind: Literal["shared", "per_user"]
+    state: Literal["connected", "reconnect_needed", "disconnected"]
+    instances: int
+    assignments: tuple[Literal["operator"], ...] = ("operator",)
+
+
 class IntegrationStatus(BaseModel):
     """A declared integration and whether it has an account; never the credential.
 
@@ -159,6 +173,8 @@ class IntegrationStatus(BaseModel):
     icon_url: str | None = None
     account_state: Literal["connected", "missing", "none", "reconnect_needed"] = "missing"
     provider_error: str | None = None
+    connections: tuple[ConnectionStatus, ...] = ()
+    named_connections: bool = False
 
 
 class IntegrationStatusList(BaseModel):
@@ -204,11 +220,38 @@ def integration_statuses(
     entries: dict[str, CatalogEntry] = {}
     connections: dict[str, CatalogConnection] = {}
     provider_error = None
+    named: dict[str, list[ConnectionStatus]] = {}
+    supports_named = False
     if any(isinstance(item, CatalogDeclaration) for item in declarations.values()):
         try:
             provider = integration_provider()
             entries = {entry.name: entry for entry in provider.entries()}
             connections = {item.name: item for item in provider.connections()}
+            named_provider = named_integration_provider(provider)
+            supports_named = named_provider is not None
+            if named_provider is not None:
+                records = named_provider.named_connections()
+                user = named_provider.starting_user()
+                by_slug: dict[str, list[NamedCatalogConnection]] = {}
+                for item in records:
+                    by_slug.setdefault(item.slug, []).append(item)
+                for slug, instances in sorted(by_slug.items()):
+                    first = instances[0]
+                    own = next(
+                        (item for item in instances if user is not None and item.user == user),
+                        None,
+                    )
+                    account = first if first.kind == "shared" else own
+                    named.setdefault(first.name, []).append(
+                        ConnectionStatus(
+                            slug=slug,
+                            kind=first.kind,
+                            state="disconnected" if account is None else account.state,
+                            instances=sum(item.user is not None for item in instances)
+                            if first.kind == "per_user"
+                            else len(instances),
+                        )
+                    )
         except (
             ProviderNotInstalledError,
             ProviderNotSignedInError,
@@ -233,6 +276,13 @@ def integration_statuses(
             if requires or connect.declaration_login_kinds(declaration)
             else "none"
         )
+        if builtin and supports_named:
+            states = {item.state for item in named.get(name, ())}
+            state = (
+                "connected"
+                if "connected" in states
+                else ("reconnect_needed" if "reconnect_needed" in states else "missing")
+            )
         statuses.append(
             IntegrationStatus(
                 name=name,
@@ -252,6 +302,8 @@ def integration_statuses(
                 icon_url=None if entry is None else entry.icon_url,
                 account_state=state,
                 provider_error=provider_error if builtin else None,
+                connections=tuple(named.get(name, ())) if builtin else (),
+                named_connections=builtin and supports_named,
             )
         )
     return tuple(statuses)

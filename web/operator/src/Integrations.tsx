@@ -66,8 +66,23 @@ export function IntegrationIcon({
 
 function accountState(
   status: IntegrationStatus | undefined,
+  declaration: IntegrationDeclaration,
 ): IntegrationAccountState | undefined {
-  return status ? integrationAccountState(status) : undefined;
+  return status ? integrationAccountState(status, declaration) : undefined;
+}
+
+function declarationKey(declaration: IntegrationDeclaration): string {
+  return `${declaration.name}:${declaration.kind === "catalog" ? (declaration.connection ?? "") : ""}`;
+}
+
+function declarationLabel(
+  declaration: IntegrationDeclaration,
+  status?: IntegrationStatus,
+): string {
+  const label = integrationLabel(declaration, status);
+  return declaration.kind === "catalog" && declaration.connection
+    ? `${label} (${declaration.connection})`
+    : label;
 }
 
 /** One badge per integration a step declares, drawn on its node card. */
@@ -86,15 +101,19 @@ export function NodeIntegrationBadges({
     >
       {declarations.map((declaration) => {
         const status = view.status(declaration.name);
-        const state = accountState(status);
+        const state = accountState(status, declaration);
         // Only an account a step cannot start without is flagged on the graph.
         const blocking =
           state === "reconnect_needed" ||
-          (state === "missing" && status?.requires_account === true);
-        const label = integrationLabel(declaration, status);
+          (state === "missing" &&
+            (status?.requires_account === true || status?.named_connections === true));
+        const label = declarationLabel(declaration, status);
         return (
           <li
-            key={declaration.name}
+            key={declarationKey(declaration)}
+            data-connection={
+              declaration.kind === "catalog" ? declaration.connection : undefined
+            }
             data-integration={declaration.name}
             data-account={state}
             title={`${label} · ${integrationKindLabel(declaration)}${state ? ` · ${ACCOUNT_LABELS[state]}` : ""}`}
@@ -142,7 +161,7 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
   if (declarations.length === 0) return null;
   const missing = integrationsMissingAccount(error, declarations, view.statuses);
   const label = (declaration: IntegrationDeclaration) =>
-    integrationLabel(declaration, view.status(declaration.name));
+    declarationLabel(declaration, view.status(declaration.name));
   return (
     <section
       aria-label="Integrations"
@@ -162,7 +181,7 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
             <p className="m-0 mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
               {missing.map((declaration) => (
                 <button
-                  key={declaration.name}
+                  key={declarationKey(declaration)}
                   type="button"
                   className={LINK_BUTTON}
                   onClick={() => view.openIntegrations?.(declaration.name)}
@@ -177,13 +196,17 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
       <ul className="m-0 grid list-none gap-2.5 p-0">
         {declarations.map((declaration) => {
           const status = view.status(declaration.name);
-          const state = accountState(status);
+          const state = accountState(status, declaration);
           return (
-            <li key={declaration.name} data-integration={declaration.name} className="min-w-0">
+            <li
+              key={declarationKey(declaration)}
+              data-integration={declaration.name}
+              className="min-w-0"
+            >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                 <IntegrationIcon declaration={declaration} className="size-4" />
                 <strong className="min-w-0 text-xs text-ink [overflow-wrap:anywhere]">
-                  {integrationLabel(declaration, view.status(declaration.name))}
+                  {declarationLabel(declaration, view.status(declaration.name))}
                 </strong>
                 <span className="rounded border border-line px-1.5 py-px font-mono text-[8px] tracking-[.08em] text-secondary uppercase">
                   {integrationKindLabel(declaration)}
@@ -202,7 +225,7 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
                   </summary>
                   <ul
                     className="m-0 mt-1.5 grid list-none gap-1.5 p-0"
-                    aria-label={`${integrationLabel(declaration, view.status(declaration.name))} tools`}
+                    aria-label={`${declarationLabel(declaration, view.status(declaration.name))} tools`}
                   >
                     {declaration.tools.map((tool) => (
                       <li key={tool.name} className="min-w-0">
@@ -249,7 +272,7 @@ export function ToolIntegrationTag({ toolName }: { toolName: string }) {
     >
       <IntegrationIcon declaration={declaration} className="size-2.5" />
       <span className="truncate">
-        {integrationLabel(declaration, view.status(declaration.name))}
+        {declarationLabel(declaration, view.status(declaration.name))}
       </span>
     </span>
   );
@@ -342,7 +365,9 @@ function BrowserLoginForm({
   choice,
   onLogin,
   onClose,
+  connection,
 }: {
+  connection?: NonNullable<IntegrationStatus["connections"]>[number];
   status: IntegrationStatus;
   label: string;
   choice: ReactNode;
@@ -351,6 +376,8 @@ function BrowserLoginForm({
 }) {
   const clientIdId = useId();
   const secretId = useId();
+  const [slug, setSlug] = useState(connection?.slug ?? status.name);
+  const [perUser, setPerUser] = useState(connection?.kind === "per_user");
   const [clientId, setClientId] = useState("");
   const [secret, setSecret] = useState("");
   const [waiting, setWaiting] = useState(false);
@@ -381,6 +408,7 @@ function BrowserLoginForm({
       {
         clientId: asksClientId ? clientId.trim() : undefined,
         clientSecret: asksSecret && secret ? secret : undefined,
+        ...(status.named_connections ? { slug, kind: perUser ? "per_user" : "shared" } : {}),
       },
       (url) => {
         opened = true;
@@ -414,6 +442,30 @@ function BrowserLoginForm({
       onSubmit={submit}
     >
       {choice}
+      {status.named_connections && (
+        <>
+          <label className="grid gap-1 text-xs text-secondary">
+            Connection slug
+            <input
+              className={FIELD}
+              value={slug}
+              required
+              pattern="[a-z0-9]+(-[a-z0-9]+)*"
+              readOnly={connection !== undefined}
+              onChange={(event) => setSlug(event.target.value)}
+            />
+          </label>
+          <label className="text-xs text-secondary">
+            <input
+              type="checkbox"
+              checked={perUser}
+              disabled={connection !== undefined}
+              onChange={(event) => setPerUser(event.target.checked)}
+            />{" "}
+            Per user
+          </label>
+        </>
+      )}
       <div className="flex min-w-0 flex-wrap items-end gap-3">
         {asksClientId && (
           <label
@@ -654,7 +706,7 @@ function IntegrationRow({
   const state = integrationAccountState(status);
   const label = integrationLabel(declaration, status);
   const takesAccount = integrationTakesAccount(declaration);
-  const steps = status.used_by.map((use) => `${use.workflow} / ${use.node_id}`);
+  const steps = [...new Set(status.used_by.map((use) => `${use.workflow} / ${use.node_id}`))];
   const canConnect = status.login.some((kind) =>
     kind === "api_key" ? view.connect !== undefined : view.login !== undefined,
   );
@@ -732,20 +784,23 @@ function IntegrationRow({
             <button
               type="button"
               className={status.connected ? SECONDARY_BUTTON : PRIMARY_BUTTON}
-              aria-label={`${state === "reconnect_needed" ? "Reconnect" : status.connected ? `${again} of` : "Connect"} ${label}`}
+              aria-label={`${status.named_connections ? "New connection for" : state === "reconnect_needed" ? "Reconnect" : status.connected ? `${again} of` : "Connect"} ${label}`}
               onClick={() => {
                 setConfirming(false);
                 onConnecting(true);
               }}
             >
-              {state === "reconnect_needed"
-                ? "Reconnect"
-                : status.connected
-                  ? again
-                  : "Connect"}
+              {status.named_connections
+                ? "New connection"
+                : state === "reconnect_needed"
+                  ? "Reconnect"
+                  : status.connected
+                    ? again
+                    : "Connect"}
             </button>
           )}
-          {(status.connected || state === "reconnect_needed") &&
+          {!status.named_connections &&
+            (status.connected || state === "reconnect_needed") &&
             view.disconnect &&
             !confirming && (
               <button
@@ -762,6 +817,7 @@ function IntegrationRow({
             )}
         </div>
       </div>
+      {status.named_connections && <NamedConnections status={status} />}
       {status.provider_error && (
         <p role="alert" className="m-0 mt-2 text-[11px] text-error-ink">
           {status.provider_error}
@@ -808,6 +864,88 @@ function IntegrationRow({
   );
 }
 
+/** Shared rendering for the local operator and hosts embedding the panel. */
+function NamedConnections({ status }: { status: IntegrationStatus }) {
+  const view = useIntegrationsView();
+  const [selected, setSelected] = useState<string>();
+  const [error, setError] = useState<string>();
+  const connection = status.connections?.find((item) => item.slug === selected);
+  return (
+    <section
+      aria-label={`${status.name} connections`}
+      className="mt-3 overflow-x-auto text-xs text-secondary"
+    >
+      <table className="w-full text-left [&_td]:px-2 [&_th]:px-2 [&_th]:py-2">
+        <thead>
+          <tr>
+            <th>Slug</th>
+            <th>Kind</th>
+            <th>Your state</th>
+            <th>Instances</th>
+            <th>Assignments</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {status.connections?.map((item) => (
+            <tr key={item.slug} data-connection={item.slug}>
+              <td className="py-2 font-mono">{item.slug}</td>
+              <td>{item.kind === "per_user" ? "Per user" : "Shared"}</td>
+              <td>{item.state.replaceAll("_", " ")}</td>
+              <td>{item.instances}</td>
+              <td>{item.assignments.join(", ")}</td>
+              <td className="space-x-2 whitespace-nowrap">
+                {view.login && (
+                  <button
+                    type="button"
+                    className={SECONDARY_BUTTON}
+                    onClick={() => setSelected(item.slug)}
+                  >
+                    {item.kind === "per_user" && item.state === "disconnected"
+                      ? "Connect your account"
+                      : "Reconnect"}
+                  </button>
+                )}
+                {view.disconnect && (
+                  <button
+                    type="button"
+                    className={DANGER_BUTTON}
+                    onClick={() => {
+                      if (
+                        window.confirm(
+                          `Disconnect '${item.slug}'? This removes its operator assignment and all accounts.`,
+                        )
+                      ) {
+                        view
+                          .disconnect?.(status.name, item.slug)
+                          .catch((failure: unknown) => setError(failureMessage(failure)));
+                      }
+                    }}
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {connection && view.login && (
+        <BrowserLoginForm
+          key={connection.slug}
+          status={status}
+          connection={connection}
+          label={connection.slug}
+          choice={null}
+          onLogin={view.login}
+          onClose={() => setSelected(undefined)}
+        />
+      )}
+      {error && <p role="alert">{error}</p>}
+    </section>
+  );
+}
+
 interface IntegrationsScreenProps {
   /** Project hosts show only declarations and supply their own grant picker. */
   declaredOnly?: boolean;
@@ -850,7 +988,7 @@ export function IntegrationsScreen({
   onClose,
   declaredOnly = false,
   renderGrant,
-  description = "The outside services the workflows declare. One account is stored per integration name; a stored key is never shown.",
+  description = "The outside services the workflows declare. Built-ins can have named shared or per-user connections, assigned to this operator. Stored credentials are never shown.",
 }: IntegrationsScreenProps) {
   const view = useIntegrationsView();
   const [connectingName, setConnectingName] = useState<string | undefined>(focusName);
@@ -920,10 +1058,16 @@ export function IntegrationsScreen({
                 {reconnect > 0 ? ` · ${reconnect} reconnect needed` : ""}
               </p>
               {!declaredOnly &&
-                view.statuses.some((status) => status.declaration.kind === "catalog") && (
+                view.statuses.some(
+                  (status) =>
+                    status.declaration.kind === "catalog" && !status.named_connections,
+                ) && (
                   <IntegrationVendorGrid
                     vendors={view.statuses
-                      .filter((status) => status.declaration.kind === "catalog")
+                      .filter(
+                        (status) =>
+                          status.declaration.kind === "catalog" && !status.named_connections,
+                      )
                       .map((status) => ({
                         name: status.name,
                         displayName: status.display_name ?? status.name,
@@ -949,10 +1093,15 @@ export function IntegrationsScreen({
                   />
                 )}
               <ul
-                className={`m-0 list-none rounded border-line bg-panel p-0 ${declaredOnly || view.statuses.some((status) => status.declaration.kind !== "catalog") ? "border" : ""}`}
+                className={`m-0 list-none rounded border-line bg-panel p-0 ${declaredOnly || view.statuses.some((status) => status.declaration.kind !== "catalog" || status.named_connections) ? "border" : ""}`}
               >
                 {view.statuses
-                  .filter((status) => declaredOnly || status.declaration.kind !== "catalog")
+                  .filter(
+                    (status) =>
+                      declaredOnly ||
+                      status.declaration.kind !== "catalog" ||
+                      status.named_connections,
+                  )
                   .map((status) =>
                     renderGrant && status.declaration.kind === "catalog" ? (
                       <li

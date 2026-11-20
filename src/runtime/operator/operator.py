@@ -52,7 +52,12 @@ from avalanche.integrations.accounts import (
     OAuthCredential,
 )
 from avalanche.integrations.declaration import CatalogDeclaration
-from avalanche.integrations.providers import IntegrationProvider, integration_provider
+from avalanche.integrations.providers import (
+    IntegrationProvider,
+    NamedIntegrationProvider,
+    integration_provider,
+    named_integration_provider,
+)
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
 from avalanche.policies import NonRetryableError
@@ -2422,6 +2427,7 @@ class Operator:
                 (run_id,),
             ).fetchall()
         return {row[0]: row[1] for row in rows}
+
     def _prepare_rerun(
         self,
         flow_name: str,
@@ -2465,9 +2471,7 @@ class Operator:
             input={**kept_input, **given_input} or None,
             context=merged_context or None,
             input_files=(
-                *self._input_files.restore_used_files(
-                    kept_input.values(), request.input_files
-                ),
+                *self._input_files.restore_used_files(kept_input.values(), request.input_files),
                 *input_files,
             ),
             assignment=self._step_outputs.rerun_assignment(rerun, index),
@@ -2586,13 +2590,39 @@ class Operator:
             if request.client_id is not None or request.client_secret is not None:
                 raise IntegrationLoginError("Catalog logins do not accept client credentials.")
             provider = integration_provider()
-            login = provider.start_login(request.name)
+            named_provider = named_integration_provider(provider)
+            if named_provider is not None:
+                slug = request.slug or request.name
+                for connection in named_provider.named_connections():
+                    if connection.slug == slug and (
+                        connection.name != request.name or connection.kind != request.kind
+                    ):
+                        raise IntegrationLoginError(
+                            f"Connection {slug!r} already exists; "
+                            "its integration and kind are immutable."
+                        )
+                if request.kind == "per_user" and named_provider.starting_user() is None:
+                    raise IntegrationLoginError(
+                        "A per-user connection requires a starting human. "
+                        "Sign in, then connect again."
+                    )
+                login = named_provider.start_login(request.name, slug=slug, kind=request.kind)
+            else:
+                if request.slug is not None or request.kind != "shared":
+                    raise IntegrationLoginError(
+                        "This provider does not support named connections."
+                    )
+                login = provider.start_login(request.name)
             # Prefix the operator's public handle, not the provider's identifier,
             # so provider IDs cannot collide with local browser login IDs.
             login_id = "catalog:" + uuid.uuid4().hex
             with self._catalog_logins_lock:
                 self._catalog_logins[login_id] = (provider, login.login_id)
             return IntegrationLogin(**login.model_dump(exclude={"login_id"}), login_id=login_id)
+        if request.slug is not None or request.kind != "shared":
+            raise IntegrationLoginError(
+                "--slug and --per-user are for catalog integrations only."
+            )
         try:
             login = oauth.declared_login(
                 status.declaration,
@@ -2639,7 +2669,9 @@ class Operator:
             )
         return status
 
-    def disconnect_integration(self, name: str) -> IntegrationStatus:
+    def disconnect_integration(
+        self, name: str, *, slug: str | None = None
+    ) -> IntegrationStatus:
         """Remove the stored account of a declared integration.
 
         A step that declares it fails from its next start; a step already
@@ -2648,9 +2680,22 @@ class Operator:
         """
         status = self._declared_integration(name)
         if isinstance(status.declaration, CatalogDeclaration):
-            integration_provider().disconnect(name)
+            provider = integration_provider()
+            if isinstance(provider, NamedIntegrationProvider):
+                target = slug or name
+                if not any(item.slug == target for item in status.connections):
+                    return status
+                provider.disconnect(target)
+            else:
+                if slug is not None:
+                    raise UnknownIntegrationError(
+                        "This provider does not support named connections."
+                    )
+                provider.disconnect(name)
             self.publish_update(IntegrationAccountsChanged())
-            return self._declared_integration(name)
+            return self._declared_integration(status.name)
+        if slug is not None:
+            raise UnknownIntegrationError("--slug is for catalog integrations only.")
         with self._state_store.transaction() as connection:
             removed = IntegrationAccountsTable.delete(connection, name)
         if removed:
