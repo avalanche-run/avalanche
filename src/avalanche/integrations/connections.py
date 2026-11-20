@@ -108,31 +108,22 @@ class ConnectionUserNotConnectedError(NonRetryableError):
         )
 
 
-def resolve(
+def resolve_connections(
     declared: Mapping[str, StepIntegrations],
     connections: Sequence[Connection],
     assignments: Sequence[OrgAssignment | ProjectAssignment | FlowAssignment],
-    instances: Sequence[ConnectionInstance],
     *,
     flow: str,
     project: str,
-    starter: str | None,
     triggered: Literal["schedule", "webhook"] | None,
-) -> dict[str, dict[str, ConnectionInstance]]:
-    """Bind each step's catalog keys to connected instances, or raise a refusal.
+) -> dict[str, dict[str, Connection]]:
+    """Resolve assignments at deploy/schedule admission, without checking accounts.
 
-    Hosts supply validated records scoped to ONE organization (including its org
-    assignments). Flow assignments are identified by (project, flow slug), not
-    deployment ID. Bindings are grouped by step so keys from different steps do
-    not collide. Connector/MCP declarations are outside this resolver's remit.
-
-    ``starter`` is the starting human user, or None; identity and API-token
-    policy belong to the admitting host, with no token-owner fallback here.
-    ``triggered`` describes the flow's configured trigger, including at deploy.
-    The local operator calls this only for an opted-in named provider.
+    Hosts supply one organization's validated scope. Account readiness and the
+    starting user's instance are run-start decisions, not deployment decisions.
+    Both admission phases use this single assignment/trigger rule.
     """
     by_slug = {connection.slug: connection for connection in connections}
-    by_instance = {(item.connection_id, item.user_id): item for item in instances}
     visible: dict[str, set[str]] = {
         "the flow": set(),
         "its project": set(),
@@ -147,9 +138,9 @@ def resolve(
         elif (assignment.project, assignment.flow) == (project, flow):
             visible["the flow"].add(assignment.connection_id)
     assigned = set().union(*visible.values())
-    result: dict[str, dict[str, ConnectionInstance]] = {}
+    result: dict[str, dict[str, Connection]] = {}
     for step, declarations in declared.items():
-        bindings: dict[str, ConnectionInstance] = {}
+        bindings: dict[str, Connection] = {}
         for entry in declarations.integrations:
             if entry.kind != "catalog":
                 continue
@@ -178,27 +169,58 @@ def resolve(
                         break
                 else:
                     raise ConnectionNotResolvedError(flow, entry.name)
+            if connection.kind == "per_user" and triggered is not None:
+                raise ConnectionPerUserTriggeredError(flow, entry.name, connection.slug)
+            key = entry.connection if entry.connection is not None else entry.name
+            bindings[key] = connection
+        result[step] = bindings
+    return result
+
+
+def resolve(
+    declared: Mapping[str, StepIntegrations],
+    connections: Sequence[Connection],
+    assignments: Sequence[OrgAssignment | ProjectAssignment | FlowAssignment],
+    instances: Sequence[ConnectionInstance],
+    *,
+    flow: str,
+    project: str,
+    starter: str | None,
+    triggered: Literal["schedule", "webhook"] | None,
+) -> dict[str, dict[str, ConnectionInstance]]:
+    """Bind the resolved connections to connected instances at run admission.
+
+    Hosts supply ONE organization's scope. Flow identity is (project, flow slug).
+    ``starter`` is the starting human, or None; token-owner policy belongs to the
+    host, with no identity fallback here. Connector/MCP declarations are ignored.
+    """
+    selected = resolve_connections(
+        declared, connections, assignments, flow=flow, project=project, triggered=triggered
+    )
+    by_instance = {(item.connection_id, item.user_id): item for item in instances}
+    result: dict[str, dict[str, ConnectionInstance]] = {}
+    for step, resolved in selected.items():
+        bindings: dict[str, ConnectionInstance] = {}
+        for key, connection in resolved.items():
             if connection.kind == "per_user":
-                if triggered is not None:
-                    raise ConnectionPerUserTriggeredError(flow, entry.name, connection.slug)
                 instance = (
                     by_instance.get((connection.id, starter)) if starter is not None else None
                 )
                 if instance is None or instance.state != "connected":
-                    raise ConnectionUserNotConnectedError(flow, entry.name, connection.slug)
+                    raise ConnectionUserNotConnectedError(
+                        flow, connection.integration, connection.slug
+                    )
             else:
                 instance = by_instance.get((connection.id, None))
                 if instance is not None and instance.state == "reconnect_needed":
                     raise IntegrationReconnectError(
                         step,
-                        entry.name,
+                        connection.integration,
                         "ava connect",
                         f"connection {connection.slug!r} requires a new login",
                     )
                 if instance is None or instance.state != "connected":
                     raise IntegrationNotConnectedError(step, [connection.slug], "ava connect")
-            bindings[entry.connection if entry.connection is not None else entry.name] = (
-                instance
-            )
+            bindings[key] = instance
         result[step] = bindings
     return result

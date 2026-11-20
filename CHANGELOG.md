@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Shared connection resolution separates assignment/trigger checks at deployment
+  from account readiness at run admission; both use the same selection rules.
+
 - Connect several accounts for one built-in with `ava connect NAME --slug SLUG`
   and `--per-user` on a named-capable provider. Select accounts with
   `ava.catalog.slack(connection="acme-hq")`; named tools use `acme_hq__` prefixes.

@@ -1783,6 +1783,7 @@ def _prove_connection_resolution(named: WorkflowInfo, bare: WorkflowInfo) -> Non
         OrgAssignment,
         ProjectAssignment,
         resolve,
+        resolve_connections,
     )
     from avalanche.integrations.core import IntegrationReconnectError
     from avalanche.policies import NonRetryableError
@@ -1870,6 +1871,26 @@ def _prove_connection_resolution(named: WorkflowInfo, bare: WorkflowInfo) -> Non
             "(or is not a slack connection)."
         )
     per_user = [org, replace(project, kind="per_user"), flow]
+    # Deploy/schedule admission selects connections, not a starting human's
+    # accounts: no invented connected instances or login-state validation.
+    assert resolve_connections(
+        named.integration_declarations,
+        per_user,
+        ambiguous,
+        flow=named.name,
+        project="project-a",
+        triggered=None,
+    ) == {"named_tools_1": {"acme-hq": per_user[1], "partner-ws": flow}}
+    for trigger in ("schedule", "webhook"):
+        with pytest.raises(ConnectionPerUserTriggeredError):
+            resolve_connections(
+                named.integration_declarations,
+                per_user,
+                ambiguous,
+                flow=named.name,
+                project="project-a",
+                triggered=trigger,
+            )
     ada = ConnectionInstance("ada-account", project.id, "ada", "connected")
     grace = ConnectionInstance("grace-account", project.id, "grace", "connected")
     accounts = [*instances, ada, grace]
