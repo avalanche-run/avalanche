@@ -278,13 +278,13 @@ export function ToolIntegrationTag({ toolName }: { toolName: string }) {
   );
 }
 
-const FIELD =
+export const FIELD =
   "h-8 min-w-0 rounded border border-line-strong bg-panel px-2 font-mono text-[11px] text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acid";
-const SECONDARY_BUTTON =
+export const SECONDARY_BUTTON =
   "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded border border-line-strong bg-panel px-3 text-[11px] font-medium text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid disabled:cursor-default disabled:opacity-60";
-const PRIMARY_BUTTON =
+export const PRIMARY_BUTTON =
   "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded border border-acid bg-acid px-3 text-[11px] font-bold text-on-accent hover:border-acid-hover hover:bg-acid-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid disabled:cursor-default disabled:opacity-60";
-const DANGER_BUTTON =
+export const DANGER_BUTTON =
   "inline-flex h-8 cursor-pointer items-center gap-1.5 rounded border border-cancel-line bg-panel px-3 text-[11px] font-medium text-cancel-ink hover:bg-cancel-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid disabled:cursor-default disabled:opacity-60";
 
 function failureMessage(error: unknown): string {

@@ -30,6 +30,18 @@ export type {
   IntegrationGrantProject,
 } from "./IntegrationCatalog";
 export type { IntegrationsPanelProps } from "./Integrations";
+export { OrganizationConnectionsPanel, ProjectConnectionsPanel } from "./OrgConnections";
+export type {
+  ConnectionKind,
+  ConnectionInstanceState,
+  ConnectionTarget,
+  OrgConnection,
+  OrgConnectionAssignment,
+  OrgConnectionInstance,
+  OrgConnectionsApi,
+  OrgConnectionsDocument,
+  ProjectConnectionRow,
+} from "./OrgConnections";
 export type { IntegrationsApi } from "./integrationsView";
 export {
   integrationAccountState,
