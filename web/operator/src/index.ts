@@ -85,7 +85,7 @@ export type {
 } from "./WorkflowWorkspace";
 export * from "./model";
 // A trace a host holds as recorded bodies, listed as the local operator lists one.
-export { recordedAgentTrace } from "./agentTrace/recorded";
+export { liveAgentTrace, recordedAgentTrace } from "./agentTrace/recorded";
 export type { RecordedAgentTrace } from "./agentTrace/recorded";
 export type * from "./machine";
 // Machine run pieces, for hosts composing the run page (the console port).

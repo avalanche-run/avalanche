@@ -13,6 +13,10 @@
   "Tables and streams in Avalanche and Delta". Reruns no longer report
   `stream_not_replayable`.
 
+- operator-ui exports `liveAgentTrace`, which lists a running agent step's trace
+  from the live events a host has received, in progress as the local operator
+  shows one before its final body.
+
 ## 0.20.27
 
 ## 0.20.26

@@ -130,3 +130,35 @@ export function recordedAgentTrace(
     bodies,
   };
 }
+
+/**
+ * The trace of an agent invocation still running, from the live events a host has
+ * received so far: in progress (an error once an event failed), with no final body
+ * yet, as the local operator describes a trace before it is sealed.
+ */
+export function liveAgentTrace(
+  events: readonly unknown[],
+  token: string,
+  revision: string,
+): RecordedAgentTrace {
+  const bodies = new Map<string, unknown>();
+  const descriptors = events.map((body, index) => {
+    const bodyToken = `${token}#${index + 1}`;
+    bodies.set(bodyToken, body);
+    return eventDescriptor(body, index + 1, bodyToken);
+  });
+  const eventCount = String(descriptors.length);
+  return {
+    trace: {
+      status: descriptors.some((event) => event.error) ? "error" : "in_progress",
+      revision,
+      available: false,
+      complete: false,
+      eventCount,
+      sizeBytes: "0",
+      latestEventSequence: eventCount,
+    },
+    events: descriptors,
+    bodies,
+  };
+}
