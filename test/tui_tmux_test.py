@@ -254,7 +254,8 @@ def test_terminal_rerun_from_a_step_shows_reused_steps_and_refusals(tmp_path, mo
         while executed.read_text().split() != ["c"]:
             assert time.monotonic() < deadline, executed.read_text()
             time.sleep(0.05)
-        screen = _wait_for(session, lambda text: "(reused)" in text)
+        # Both reused rows, not just the first one drawn.
+        screen = _wait_for(session, lambda text: text.count("(reused)") == 2)
         assert screen.count("(reused)") == 2
 
         # Following the link from a reused step opens the run that holds its output.

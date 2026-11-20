@@ -7,12 +7,10 @@ import socket
 import subprocess
 import sys
 import threading
-import time
 
 import pytest
 
 
-@pytest.mark.serial  # misses its deadline under parallel load; the gate runs it alone
 def test_ava_web_exits_cleanly_after_interrupt():
     with socket.socket() as target_socket:
         target_socket.bind(("127.0.0.1", 0))
@@ -38,15 +36,17 @@ def test_ava_web_exits_cleanly_after_interrupt():
             text=True,
         )
         try:
-            deadline = time.monotonic() + 10
-            while True:
-                assert process.poll() is None
-                try:
-                    with socket.create_connection(("127.0.0.1", web_port), timeout=0.1):
-                        break
-                except OSError:
-                    assert time.monotonic() < deadline, "browser proxy did not become ready"
-                    time.sleep(0.05)
+            # Ready means this process printed its endpoint after binding; any other
+            # listener that took the released port would not print it.
+            ready: list[str] = []
+            reader = threading.Thread(
+                target=lambda: ready.append(process.stdout.readline()), daemon=True
+            )
+            reader.start()
+            reader.join(timeout=10)
+            assert ready and ready[0].startswith("Avalanche web UI:"), (
+                "browser proxy did not become ready"
+            )
 
             process.send_signal(signal.SIGINT)
 
