@@ -74,8 +74,11 @@ Connectors and MCP servers need no catalog provider.
 When using the Delta provider, the local operator and hosted runs use the same
 server-enforced tool set, one read-only vendor endpoint per tool, returning the
 vendor's JSON as is: Slack `get-team-info` and `list-channels`, HubSpot
-`list-deals`, Linear `graphql`, Notion `search`, and Jira
-`list-accessible-sites` and `list-projects`. Your `allow` can narrow that set,
+`list-deals`, Linear `graphql`, Notion `search`, Jira
+`list-accessible-sites` and `list-projects`, Gmail (`catalog.gmail`)
+`get-profile`, `list-labels`, `list-messages`, `get-message` and
+`get-thread`, and Google Drive (`catalog.google_drive`) `list-files`,
+`get-file` and `export-file`. Your `allow` can narrow that set,
 not expand it. Slack consent requests `team:read`, `channels:read`,
 `groups:read`, `im:read` and `mpim:read` (all conversation types supported by
 the listing endpoint). The provider applies each vendor's scopes on connect and

@@ -9,5 +9,17 @@ linear = Catalog("linear")
 github = Catalog("github")
 jira = Catalog("jira")
 asana = Catalog("asana")
+gmail = Catalog("gmail")
+google_drive = Catalog("google_drive")
 
-__all__ = ['slack', 'notion', 'hubspot', 'linear', 'github', 'jira', 'asana']
+__all__ = [
+    'slack',
+    'notion',
+    'hubspot',
+    'linear',
+    'github',
+    'jira',
+    'asana',
+    'gmail',
+    'google_drive',
+]
