@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+## 0.20.29
+
 - Named-connection resolution errors expose integration and connection slug for
   host diagnostics. Hosts can supply their own connect action without changing
   Avalanche's selection rules or local operator behavior.
+- The local operator's read-only flow graph keeps a lone step card-sized
+  instead of zooming it to fill the canvas.
 
 ## 0.20.28
 
