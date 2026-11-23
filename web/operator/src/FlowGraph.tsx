@@ -3,6 +3,11 @@ import { useMemo } from "react";
 import { GraphCanvas } from "./GraphCanvas";
 import { FlowInfoMsg } from "./model";
 
+// A fit never zooms in past the compact cards a typical flow fits at (below the
+// zoom where cards add descriptions and details): a one-step flow shows its step
+// at the size steps have in other flows, centred, not blown up to fill the canvas.
+const FIT_ZOOM_CAP = 0.6;
+
 /** A flow's steps and edges, as a host that holds only its definition has them. */
 export interface FlowGraphDefinition {
   /** The flow's name; the canvas's accessible label. */
@@ -46,7 +51,7 @@ export function FlowGraph({ flow, className = "" }: FlowGraphProps) {
     // The host sizes the outer box; the operator scope fills it (its root takes 100% height).
     <div role="group" aria-label={`${flow.name} steps graph`} className={className}>
       <div className="avalanche-operator-ui avalanche-flow-graph blueprint-canvas relative bg-panel">
-        <GraphCanvas workflow={workflow} />
+        <GraphCanvas workflow={workflow} maxFitZoom={FIT_ZOOM_CAP} />
       </div>
     </div>
   );

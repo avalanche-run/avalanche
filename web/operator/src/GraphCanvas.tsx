@@ -908,12 +908,13 @@ export function firstFrameFor(
   minZoom = MIN_ZOOM,
 ): FirstFrame | undefined {
   if (!canvas?.width || !canvas.height || nodes.length === 0) return undefined;
+  const fitMax = options.maxZoom ?? MAX_ZOOM;
   const viewport = getViewportForBounds(
     nodeBounds(nodes),
     canvas.width,
     canvas.height,
     minZoom,
-    MAX_ZOOM,
+    fitMax,
     options.padding ?? 0.1,
   );
   const below = NODE_DETAIL_ZOOM_STEPS.filter((step) => step <= viewport.zoom);
@@ -924,7 +925,7 @@ export function firstFrameFor(
       ...options,
       minZoom: Math.max(minZoom, ...below),
       // Detail thresholds are inclusive, so stay just under the next one.
-      maxZoom: above.length > 0 ? Math.min(...above) - 0.001 : MAX_ZOOM,
+      maxZoom: Math.min(fitMax, above.length > 0 ? Math.min(...above) - 0.001 : MAX_ZOOM),
     },
   };
 }
@@ -1218,6 +1219,12 @@ interface GraphCanvasProps {
    * state and its transition arc, or a step node. Drawn without re-fitting.
    */
   highlight?: GraphHighlight;
+  /**
+   * The largest zoom a fit picks (default: the controls' maximum). A small graph
+   * then keeps its cards at that size, centred, instead of filling the canvas; the
+   * controls still zoom further.
+   */
+  maxFitZoom?: number;
 }
 
 function GraphCanvasView({
@@ -1239,15 +1246,24 @@ function GraphCanvasView({
   onOpenReusedSource,
   inspectionDisabled = false,
   highlight,
+  maxFitZoom,
 }: GraphCanvasProps) {
   const { containerRef, orientation, toggleOrientation, canvasSize } = useGraphOrientation();
-  const baseFitViewOptions = machine
+  const layoutFitViewOptions = machine
     ? orientation === "vertical"
       ? MACHINE_VERTICAL_FIT_VIEW_OPTIONS
       : MACHINE_FIT_VIEW_OPTIONS
     : orientation === "vertical"
       ? VERTICAL_FIT_VIEW_OPTIONS
       : FIT_VIEW_OPTIONS;
+  // A stable identity: new options re-fit.
+  const baseFitViewOptions = useMemo(
+    () =>
+      maxFitZoom === undefined
+        ? layoutFitViewOptions
+        : { ...layoutFitViewOptions, maxZoom: maxFitZoom },
+    [layoutFitViewOptions, maxFitZoom],
+  );
   const [descriptionsExpanded, setDescriptionsExpanded] = useState(false);
   const isCurrentWorkflow = workflow !== undefined && runTopology === undefined;
   const topology = useMemo<TopologyView | undefined>(() => {
