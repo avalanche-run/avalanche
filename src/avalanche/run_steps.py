@@ -64,7 +64,8 @@ def start_run(
     """Declare a flow or machine run start, with optional runtime conditional skip.
 
     ``when=False`` completes the node with None, without validating other arguments
-    or contacting the host. It satisfies ordering edges; it does not skip children.
+    or contacting the host. The step shows as skipped with the reason ``when=False``,
+    but it satisfies ordering edges and passes None on; it does not skip children.
     A runtime target resolves to a catalog name. Tests register dynamic targets via
     ``workflow.test(targets=(...))``. Outside workflows use the host's normal run client.
     """
@@ -178,6 +179,10 @@ def call(
     result = wait(started)
     result.chain_start = started
     return result
+
+
+# The skip reason a start switched off with when=False shows with.
+SWITCHED_OFF_REASON = "when=False"
 
 
 def operation_enabled(value: JsonValue) -> bool:

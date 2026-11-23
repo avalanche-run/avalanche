@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A call or start switched off with `when=False` now shows as a **skipped** step
+  with the reason `when=False` in the operator UI (graph, step inspector and the
+  run's skipped-steps tag) instead of a green check. Display only: the parent
+  still gets `None`, nothing after it is skipped and the run's status is
+  unchanged.
 - A flow run with a skipped step ends **succeeded** again on the local operator,
   as before 0.20.26: skipped is a step state, never a run status. The run still
   says how many steps were skipped (map items aside) and the first reason, and

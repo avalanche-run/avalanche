@@ -2950,7 +2950,16 @@ class Workflow:
                         result = _reattach_lineage(replacement, resolved_val)
                     else:
                         result = resolved_val
-                    if hooks.on_node_success:
+                    if (
+                        hooks.on_node_skipped
+                        and isinstance(node_ref.node, RunNode)
+                        and _unwrap_lineaged_tree(resolved_val) is None
+                    ):
+                        # Only when=False completes a start with None. It shows as
+                        # skipped, but its None still feeds dependents: nothing
+                        # downstream is skipped.
+                        hooks.on_node_skipped(node_id, SWITCHED_OFF_REASON)
+                    elif hooks.on_node_success:
                         hooks.on_node_success(node_id)
                 result_refs[node_id] = result
                 if execution_services is not None:
@@ -2968,6 +2977,8 @@ class Workflow:
                 raise
 
         from runtime.executor import LocalExecutor
+
+        from .run_steps import SWITCHED_OFF_REASON, RunNode
 
         is_local_executor = isinstance(executor, LocalExecutor)
 

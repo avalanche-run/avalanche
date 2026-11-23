@@ -75,7 +75,8 @@ builder/Workflow target compiles to its catalog name, or a name may arrive from 
 node future. Input and `when` may also be futures. The output is `ava.RunStart`
 (`run_id`, optional key, `created`, `read_state`), or `None` when skipped.
 `when` must resolve to a strict boolean. False skips all other argument validation
-and host effects, satisfies ordering edges, and does not implicitly skip children.
+and host effects, satisfies ordering edges, and does not implicitly skip children:
+the start shows as a skipped step with the reason `when=False`, and passes `None` on.
 No Python conditional should branch on a future. Authoring tests register dynamic
 targets with `workflow.test(targets=(...))`; the embedded runner refuses declared
 start/send operations without a scheduler host. See [state machines](../state-machines.md)

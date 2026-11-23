@@ -201,7 +201,9 @@ def review_and_wait():
 ```
 
 The returned future can feed ordinary steps or be a workflow's return value.
-`when=False` returns `None` without starting or waiting. Calls propagate
+`when=False` returns `None` without starting or waiting; the run view shows the
+call as a skipped step with the reason `when=False`, counted in the run's skipped
+steps. Nothing after it is skipped and the run's status is unchanged. Calls propagate
 `child_run_failed`, `child_run_cancelled`, or `child_run_timeout` with the child
 run ID and stop dependent work. Timeout leaves the child running. Self-instance
 waits (`child_run_self_wait`) and wait cycles (`child_run_wait_cycle`) are refused.

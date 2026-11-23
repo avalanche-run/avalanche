@@ -259,7 +259,14 @@ function AgentAndStepInspector({
   const tabRef = useRef<AgentTab>("trace");
   const tabsId = useId();
 
-  const node: NodeSnapshotMsg | undefined = run?.nodes.find((item) => item.nodeId === nodeId);
+  const runNode = run?.nodes.find((item) => item.nodeId === nodeId);
+  const callStartId = nodeId === undefined ? undefined : workflow?.callStarts?.[nodeId];
+  const callStart = callStartId && run?.nodes.find((item) => item.nodeId === callStartId);
+  // A call switched off with when=False reads as skipped, as on the graph.
+  const node: NodeSnapshotMsg | undefined =
+    runNode && callStart && callStart.status === "skipped"
+      ? { ...runNode, status: "skipped", skipReason: callStart.skipReason }
+      : runNode;
   const runId = run?.summary?.runId;
   const operatorInstanceId = run?.operatorInstanceId ?? "";
   const asOfEventUlid = run?.asOfEventUlid ?? "";

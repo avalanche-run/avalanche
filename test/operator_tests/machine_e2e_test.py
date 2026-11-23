@@ -45,7 +45,13 @@ def test_operator_native_calls(tmp_path):
     tree = local_workspace(source)
     file = ava.File.from_path(tree.path / "data.txt", workspace=tree)
     values = {"id": 10, "document": file.model_dump(), "workspace": tree.model_dump()}
-    op = Operator([str(fixture)], watch=False, schedule=False, state_db=tmp_path / "state.db")
+    op = Operator(
+        [str(fixture)],
+        watch=False,
+        schedule=False,
+        webhook_port=0,
+        state_db=tmp_path / "state.db",
+    )
 
     def wait_for(predicate):
         until = time.monotonic() + 90
@@ -78,6 +84,23 @@ def test_operator_native_calls(tmp_path):
             links = op.run_links(run)["children"]
             assert len(links) == 1 and links[0].created
             assert op.run_links(links[0].child_run_id)["parents"][0].parent_run_id == run
+
+        # A call switched off with when=False shows as skipped, display only: the
+        # step after it runs with its None and the run still succeeds.
+        from runtime.operator.models import NodeStatus
+
+        switched_off = op.start_run("machine_call_state_entry", input={"id": 12})
+        terminal(switched_off)
+        state = op.get_run(switched_off)
+        assert state.status == RunStatus.SUCCESS, state
+        assert decode_workflow_result(op._get_run_result_payload(switched_off))["id"] == 12
+        assert not op.run_links(switched_off)["children"]
+        by_name = {node.name: node for node in state.nodes.values()}
+        assert by_name["start_run"].status == NodeStatus.SKIPPED
+        assert by_name["start_run"].skip_reason == "when=False"
+        assert by_name["call_machine"].status == NodeStatus.SUCCESS
+        assert by_name["echo_result"].status == NodeStatus.SUCCESS
+        assert (state.skips.count, state.skips.first_reason) == (1, "when=False")
 
         # A retained key can outlive its result: fail the call, not the host owner.
         from runtime.operator.state.results import RunResultTable
@@ -253,7 +276,13 @@ def test_operator_native_calls(tmp_path):
         op.close()
 
     # A8: one process owns the same database after the first host shuts down.
-    op = Operator([str(fixture)], watch=False, schedule=False, state_db=tmp_path / "state.db")
+    op = Operator(
+        [str(fixture)],
+        watch=False,
+        schedule=False,
+        webhook_port=0,
+        state_db=tmp_path / "state.db",
+    )
     server = serve(op, port=0, block=False)
     try:
         with grpc.insecure_channel(f"127.0.0.1:{server._avalanche_bound_port}") as channel:
