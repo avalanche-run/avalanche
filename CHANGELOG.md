@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.30
+
 ## 0.20.29
 
 - Named-connection resolution errors expose integration and connection slug for
