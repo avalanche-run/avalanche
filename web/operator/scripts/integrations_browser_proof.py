@@ -284,13 +284,11 @@ def operator(
         "--port", str(grpc_port), "--web-port", str(web_port), "--webhook-port", "0",
         "--state-db", str(state_db),
     ]  # fmt: skip
-    # The agent runs in PredictRLM's sandbox, which records each turn's tool calls.
     environment = {
         **os.environ,
         **(environment or {}),
         "ACME_CRM_URL": crm_url,
         "ACME_KB_URL": kb_url,
-        "INTEGRATIONS_FLOW_SANDBOX": "1",
     }
     url = f"http://127.0.0.1:{web_port}/"
     with log.open("a") as output:

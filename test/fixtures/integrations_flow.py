@@ -101,10 +101,7 @@ def _scripted_agent() -> ava.runtimes.PredictRLM:
         adapter=JSONAdapter(),
     )
     # The direct backend runs the agent's code in this process and needs no
-    # sandbox. It does not record the tools a turn called, so the scenario that
-    # reads tool calls from the trace asks for PredictRLM's own sandbox.
-    if os.environ.get("INTEGRATIONS_FLOW_SANDBOX") == "1":
-        return ava.runtimes.PredictRLM(lm=model, sub_lm=model, max_iterations=1)
+    # sandbox; it records each turn's tool calls like the sandbox does.
     return ava.runtimes.PredictRLM(
         lm=model, sub_lm=model, interpreter=DirectPythonBackend(), max_iterations=1
     )
