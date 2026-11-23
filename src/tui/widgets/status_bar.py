@@ -13,7 +13,6 @@ from ..theme import (
     ICE_BRIGHT,
     ICE_FAIL,
     ICE_FROST,
-    ICE_PURPLE,
     ICE_STEEL,
     ICE_TEAL,
     ICE_WARN,
@@ -35,7 +34,6 @@ _STATUS_STYLES: dict[RunStatus, Style] = {
     RunStatus.RUNNING: Style(color=ICE_BRIGHT, bold=True),
     RunStatus.WAITING: Style(color=ICE_BRIGHT),
     RunStatus.SUCCESS: Style(color=ICE_TEAL, bold=True),
-    RunStatus.SKIPPED: Style(color=ICE_PURPLE, bold=True),
     RunStatus.FAILED: Style(color=ICE_FAIL, bold=True),
     RunStatus.CANCELLED: Style(color=ICE_STEEL),
 }
@@ -44,7 +42,6 @@ _STATUS_ICONS: dict[RunStatus, str] = {
     RunStatus.REQUESTING: "◌",
     RunStatus.PENDING: "○",
     RunStatus.SUCCESS: "✓",
-    RunStatus.SKIPPED: "↷",
     RunStatus.FAILED: "✗",
     RunStatus.CANCELLED: "⊘",
 }

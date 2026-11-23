@@ -1262,7 +1262,7 @@ export interface RunSummaryV2 {
     rerunOfRunId?: string;
     /**
      * Steps skipped with a reason (ava.skip or an upstream skip), map items aside;
-     * unset when none was. Such a flow run ends "skipped", its result kept.
+     * unset when none was. The run itself still succeeds.
      *
      * @generated from protobuf field: optional avalanche.operator.RunSkipsV2 skips = 20
      */

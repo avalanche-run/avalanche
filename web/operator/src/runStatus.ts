@@ -4,13 +4,12 @@ export const HUMAN_STATUSES = [
   "running",
   "waiting",
   "succeeded",
-  "skipped",
   "failed",
   "cancelled",
   "unknown",
 ] as const;
 export const LIVE_STATUSES = ["queued", "running", "unknown", "waiting"] as const;
-export const TERMINAL_STATUSES = ["cancelled", "failed", "skipped", "succeeded"] as const;
+export const TERMINAL_STATUSES = ["cancelled", "failed", "succeeded"] as const;
 export const WAITING_ON_SLOTS = ["operator", "decision", "event", "run", "sleep"] as const;
 export const LOCAL_STATUS_MAP = {
   requesting: "queued",
@@ -18,13 +17,11 @@ export const LOCAL_STATUS_MAP = {
   running: "running",
   waiting: "waiting",
   success: "succeeded",
-  skipped: "skipped",
   failed: "failed",
   cancelled: "cancelled",
 } as const;
 export const LIFECYCLE_STATUS_MAP = {
   succeeded: "succeeded",
-  skipped: "skipped",
   cancelled: "cancelled",
   failed: "failed",
   rejected: "failed",

@@ -10,7 +10,7 @@ import re
 from typing import Literal
 
 HumanStatus = Literal[
-    "queued", "running", "waiting", "succeeded", "skipped", "failed", "cancelled", "unknown"
+    "queued", "running", "waiting", "succeeded", "failed", "cancelled", "unknown"
 ]
 WaitingOn = tuple[int, int, int, int, int]
 HUMAN_STATUSES: tuple[HumanStatus, ...] = (
@@ -18,9 +18,6 @@ HUMAN_STATUSES: tuple[HumanStatus, ...] = (
     "running",
     "waiting",
     "succeeded",
-    # Ended without failing, but at least one step (map items aside) was skipped
-    # with a reason (ava.skip, or an input from a skipped step). Its result is kept.
-    "skipped",
     "failed",
     "cancelled",
     "unknown",
@@ -43,13 +40,11 @@ LOCAL_STATUS_MAP: dict[str, HumanStatus] = {
     "running": "running",
     "waiting": "waiting",
     "success": "succeeded",
-    "skipped": "skipped",
     "failed": "failed",
     "cancelled": "cancelled",
 }
 LIFECYCLE_STATUS_MAP: dict[str, HumanStatus] = {
     "succeeded": "succeeded",
-    "skipped": "skipped",
     "cancelled": "cancelled",
     "failed": "failed",
     "rejected": "failed",

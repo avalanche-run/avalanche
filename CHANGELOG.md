@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A flow run with a skipped step ends **succeeded** again on the local operator,
+  as before 0.20.26: skipped is a step state, never a run status. The run still
+  says how many steps were skipped (map items aside) and the first reason, and
+  `ava.skip` and the rules for the steps after a skipped one are unchanged. The
+  state database migrates to version 19, which turns runs that ended skipped
+  into succeeded ones.
+
 ## 0.20.30
 
 ## 0.20.29

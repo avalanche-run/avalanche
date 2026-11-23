@@ -38,7 +38,6 @@ from .machine_validation import (
     validate_native,
 )
 from .models import (
-    RESULT_RUN_STATUSES,
     TERMINAL_RUN_STATUSES,
     NodeStatus,
     RunState,
@@ -1237,8 +1236,7 @@ class MachineHost:
                 code = None
                 detail = ""
                 output = None
-                # A skipped child still has its result, as a success does.
-                if child.status in RESULT_RUN_STATUSES:
+                if child.status == RunStatus.SUCCESS:
                     try:
                         output = RunResult.from_payload(
                             child.run_id, self.op._get_run_result_payload(child.run_id)

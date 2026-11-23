@@ -95,7 +95,7 @@ Independent branches may overlap; fan-in values follow declaration order, not co
 ## Skipping a step
 
 `ava.skip(reason: str | None = None) -> NoReturn` ends the current step at once as
-skipped (never retried; the flow run ends skipped, its result kept). Use it instead of returning
+skipped (never retried; the run still succeeds). Use it instead of returning
 `None` as a "did nothing" signal. A step reading a skipped step's output gets
 `None` for an input typed `X | None` and runs; an unannotated or non-nullable input
 skips it in turn. A `>>` edge passing no data never skips. A skipped map item is

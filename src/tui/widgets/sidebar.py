@@ -37,7 +37,6 @@ _STATUS_ICONS: dict[RunStatus, str] = {
     RunStatus.RUNNING: "◐",
     RunStatus.WAITING: "◷",
     RunStatus.SUCCESS: "✓",
-    RunStatus.SKIPPED: "↷",
     RunStatus.FAILED: "✗",
     RunStatus.CANCELLED: "⊘",
 }
@@ -48,7 +47,6 @@ _STATUS_STYLES: dict[RunStatus, Style] = {
     RunStatus.RUNNING: Style(color=ICE_BRIGHT, bold=True),
     RunStatus.WAITING: Style(color=ICE_BRIGHT),
     RunStatus.SUCCESS: Style(color=ICE_TEAL, bold=True),
-    RunStatus.SKIPPED: Style(color=ICE_PURPLE, bold=True),
     RunStatus.FAILED: Style(color=ICE_FAIL, bold=True),
     RunStatus.CANCELLED: Style(color=ICE_PURPLE),
 }

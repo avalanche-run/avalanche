@@ -51,7 +51,7 @@ from tui.state import (
 )
 
 from .client import OperatorCallError
-from .models import RESULT_RUN_STATUSES, TERMINAL_RUN_STATUSES, TriggerKind
+from .models import TERMINAL_RUN_STATUSES, RunStatus, TriggerKind
 from .proto import operator_pb2 as pb
 
 if TYPE_CHECKING:
@@ -177,7 +177,7 @@ class OperatorTuiExtensions:
                         read_only=provider._read_only,
                     )
                 )
-                if snapshot.summary.status in RESULT_RUN_STATUSES:
+                if snapshot.summary.status == RunStatus.SUCCESS:
                     actions.append(
                         ActionDescriptor(
                             "artifact.download",

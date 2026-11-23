@@ -62,18 +62,11 @@ class RunStatus(Enum):
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
-    # Ended without failing, but a step (map items aside) was skipped with a reason.
-    # Its result is kept, as for SUCCESS. Only flow runs end SKIPPED.
-    SKIPPED = "skipped"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
 
-TERMINAL_RUN_STATUSES = frozenset(
-    {RunStatus.SUCCESS, RunStatus.SKIPPED, RunStatus.FAILED, RunStatus.CANCELLED}
-)
-# A finished run whose result is kept: a skipped run's result reads like a success.
-RESULT_RUN_STATUSES = frozenset({RunStatus.SUCCESS, RunStatus.SKIPPED})
+TERMINAL_RUN_STATUSES = frozenset({RunStatus.SUCCESS, RunStatus.FAILED, RunStatus.CANCELLED})
 
 
 def _require_finite(value: JsonValue) -> None:
@@ -414,12 +407,6 @@ class RunState:
             if node.status is NodeStatus.SKIPPED and node.skip_reason is not None
             and node.map_parent is None
         }
-
-    @property
-    def ended_status(self) -> RunStatus:
-        """How a flow run that ended without failing reads: SKIPPED when a step
-        (map items aside) was skipped with a reason, else SUCCESS."""
-        return RunStatus.SKIPPED if self.kind == "flow" and self.skips else RunStatus.SUCCESS
 
     @property
     def elapsed(self) -> float | None:

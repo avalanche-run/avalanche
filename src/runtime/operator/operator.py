@@ -101,7 +101,6 @@ from .integration_logins import (
 )
 from .machine_host import CatalogReloaded, MachineHost, StateEntryFinished
 from .models import (
-    RESULT_RUN_STATUSES,
     TERMINAL_RUN_STATUSES,
     AgentEvent,
     AgentEventAppended,
@@ -1984,7 +1983,7 @@ class Operator:
                     RunStatus.WAITING,
                 }:
                     raise RunResultNotReadyError(f"Run {run_id} is not terminal")
-                if status not in RESULT_RUN_STATUSES:
+                if status != RunStatus.SUCCESS:
                     raise RunResultUnavailableError(
                         f"Run {run_id} ended with status {status.value}"
                     )
@@ -3899,11 +3898,10 @@ class Operator:
                                     )
                             elif stored_result is not None:
                                 discard_stored_result = True
-                            # A step skipped with a reason ends the run SKIPPED, not
-                            # SUCCESS; its result is kept either way. Failed and
-                            # cancelled win.
+                            # Skipped steps leave the run succeeded: skipped is a
+                            # step state, and run.skips tags the run with them.
                             run.status = {
-                                "success": run.ended_status,
+                                "success": RunStatus.SUCCESS,
                                 "failed": RunStatus.FAILED,
                                 "cancelled": RunStatus.CANCELLED,
                             }[effective_status]

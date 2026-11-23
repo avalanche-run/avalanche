@@ -359,7 +359,7 @@ export interface RunSkips {
   firstReason: string;
 }
 
-/** One line for a run whose steps were skipped (the run ends skipped, its result kept). */
+/** One line for a run whose steps were skipped; the run itself still succeeded. */
 export function runSkipsNote(skips: RunSkips): string {
   const steps = skips.count === 1 ? "1 step skipped" : `${skips.count} steps skipped`;
   return `↷ ${steps} · ${skips.firstReason}`;
@@ -572,7 +572,7 @@ export const TraceDescriptorMsg = {
   },
 };
 
-export type TerminalSealStatus = "success" | "skipped" | "failed" | "cancelled";
+export type TerminalSealStatus = "success" | "failed" | "cancelled";
 
 export interface TerminalSealMsg {
   /**

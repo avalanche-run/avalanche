@@ -427,8 +427,7 @@ function ClassifierHistory({
   const terminalRun =
     run.summary?.status === "failed" ||
     run.summary?.status === "cancelled" ||
-    run.summary?.status === "succeeded" ||
-    run.summary?.status === "skipped";
+    run.summary?.status === "succeeded";
   return (
     <section
       aria-label="Classifier invocations"
