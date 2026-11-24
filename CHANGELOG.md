@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.32
+
 ## 0.20.31
 
 - A call or start switched off with `when=False` now shows as a **skipped** step
