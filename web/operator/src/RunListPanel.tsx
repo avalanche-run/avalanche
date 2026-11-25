@@ -610,7 +610,7 @@ export function RunListPanel({
                       <Fragment key={summary.runId}>
                         <button
                           type="button"
-                          className={`run-list-row run-list-columns absolute top-0 left-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_100px] items-center gap-x-3 gap-y-1 border-0 border-b border-run-list-line text-left font-mono text-ink leading-none ${expanded ? "pl-[16px] pr-[30px] text-[11px]" : "pl-[16px] pr-[30px] text-[10px]"} ${selectedRunId === summary.runId ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
+                          className={`run-list-row run-list-columns select-none absolute top-0 left-0 grid w-full cursor-pointer grid-cols-[minmax(0,1fr)_100px] items-center gap-x-3 gap-y-1 border-0 border-b border-run-list-line text-left font-mono text-ink leading-none ${expanded ? "pl-[16px] pr-[30px] text-[11px]" : "pl-[16px] pr-[30px] text-[10px]"} ${selectedRunId === summary.runId ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
                           onClick={() => onSelectRun(summary.runId)}
                           aria-pressed={selectedRunId === summary.runId}
                           style={rowStyle}
@@ -639,12 +639,14 @@ export function RunListPanel({
                             }}
                           >
                             {showKey && (
-                              <span className="run-label min-w-0 text-ink [overflow-wrap:anywhere]">
+                              <span className="run-label min-w-0 select-text text-ink [overflow-wrap:anywhere]">
                                 {summary.label}
                               </span>
                             )}
                             {priorityFieldVisible(fit, "id") && (
-                              <span className="run-short-id shrink-0 whitespace-nowrap">
+                              <span
+                                className={`run-short-id shrink-0 whitespace-nowrap${summary.label ? "" : " select-text"}`}
+                              >
                                 {shortRunId(summary.runId)}
                               </span>
                             )}

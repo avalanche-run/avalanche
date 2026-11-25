@@ -884,11 +884,163 @@ def named_connections_scenario(page: Page, evidence: Path, provider_path: str) -
         service.close()
 
 
+def name_selection_proof(evidence: Path) -> None:
+    """Native highlight/copy and immediate opening in the real packaged local UI.
+
+    Chromium's internal Selection text may include unselectable cells. The user
+    contract is the painted highlight and copied text, not Selection.toString().
+    """
+    evidence.mkdir(parents=True, exist_ok=False)
+    grpc_port, web_port = free_port(), free_port()
+    measurements = []
+    with operator(
+        evidence / "state.db",
+        grpc_port,
+        web_port,
+        "",
+        "",
+        evidence / "operator.log",
+        fixture=PACKAGE / "test/fixtures/local_machine.py",
+    ) as url:
+        for flow in ("ordinary_child", "review_work"):
+            for ticket in (3521125, 3521126):
+                created = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "ava_cli",
+                        "run",
+                        flow,
+                        "--connect",
+                        f"127.0.0.1:{grpc_port}",
+                        "--input",
+                        json.dumps({"ticket": ticket, "journal": str(evidence / "runs.txt")}),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                assert created.returncode == 0, created.stderr
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch()
+            try:
+                page = browser.new_context(
+                    viewport={"width": 1800, "height": 1100},
+                    permissions=["clipboard-read", "clipboard-write"],
+                ).new_page()
+                page.goto(url, wait_until="domcontentloaded")
+                for flow, expanded in (
+                    (flow, expanded)
+                    for flow in ("ordinary_child", "review_work")
+                    for expanded in (False, True)
+                ):
+                    open_workflow(page, flow)
+                    toggle = page.get_by_role(
+                        "button",
+                        name="Expand runs" if expanded else "Collapse runs",
+                        exact=True,
+                    )
+                    if toggle.count():
+                        toggle.click()
+                    page.locator(".run-list-current").click()
+                    rows = page.locator(".run-list-row")
+                    expect(rows).to_have_count(2)
+                    row = rows.last
+                    expect(row).to_have_attribute("aria-pressed", "false")
+                    variant = flow + ("-expanded" if expanded else "-compact")
+                    name = row.locator(
+                        ".run-label" if flow == "ordinary_child" else ".run-short-id"
+                    )
+                    expected = name.inner_text()
+                    # Observe the real click without replacing or delaying its handler.
+                    row.evaluate("""row => row.addEventListener('click', () => {
+                        const start = performance.now();
+                        requestAnimationFrame(() => window.openProof = {
+                            selected: row.getAttribute('aria-pressed') === 'true',
+                            frameMs: performance.now() - start,
+                        });
+                    }, {once: true})""")
+                    page.evaluate("window.openProof = null")
+                    name.click()
+                    page.wait_for_function("window.openProof !== null")
+                    opening = page.evaluate("window.openProof")
+                    assert opening["selected"] and opening["frameMs"] < 250, opening
+                    expect(row).to_have_attribute("aria-pressed", "true")
+                    # Move from the start of the name across every remaining cell.
+                    page.evaluate("window.getSelection().removeAllRanges()")
+                    page.evaluate("navigator.clipboard.writeText('')")
+                    box, bounds = name.bounding_box(), row.bounding_box()
+                    assert box and bounds
+                    page.mouse.move(box["x"] + 1, box["y"] + box["height"] / 2)
+                    page.mouse.down()
+                    page.mouse.move(
+                        bounds["x"] + bounds["width"] - 3,
+                        box["y"] + box["height"] / 2,
+                        steps=30,
+                    )
+                    page.mouse.up()
+                    page.keyboard.press("Meta+C" if sys.platform == "darwin" else "Control+C")
+                    copied = page.evaluate("navigator.clipboard.readText()")
+                    # Native copy may append a row newline, but no metadata text.
+                    assert copied.rstrip("\r\n") == expected, {
+                        "expected": expected,
+                        "clipboard": copied,
+                    }
+                    page.screenshot(path=str(evidence / f"{variant}-highlight.png"))
+                    # Native highlight changes the name's pixels, but not any metadata.
+                    # Paired screenshots use the same pointer position and active row.
+                    metadata = row.locator(
+                        ".run-when, :scope > span:last-child"
+                        + (", .run-short-id" if flow == "ordinary_child" else "")
+                    )
+                    if expanded:
+                        expect(row.locator(".run-duration")).to_be_visible()
+                        if flow == "ordinary_child":
+                            expect(row.locator(".run-short-id")).to_be_visible()
+                    selected_name = name.screenshot()
+                    selected_metadata = [cell.screenshot() for cell in metadata.all()]
+                    page.evaluate("window.getSelection().removeAllRanges()")
+                    plain_name = name.screenshot()
+                    plain_metadata = [cell.screenshot() for cell in metadata.all()]
+                    assert selected_name != plain_name, "No visible name highlight"
+                    assert selected_metadata == plain_metadata, "Metadata was highlighted"
+                    page.screenshot(path=str(evidence / f"{variant}-unselected.png"))
+                    measurements.append(
+                        {
+                            "variant": variant,
+                            "expected": expected,
+                            "clipboard": copied,
+                            "name_highlighted": True,
+                            "metadata_unchanged": True,
+                            "metadata_cells": metadata.count(),
+                            "single_click": opening,
+                        }
+                    )
+            finally:
+                browser.close()
+    result = {
+        "passed": True,
+        "candidate": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=PACKAGE, text=True
+        ).strip(),
+        "platform": sys.platform,
+        "command": sys.argv,
+        "measurements": measurements,
+        "operator_stopped": True,
+    }
+    (evidence / "result.json").write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--name-selection", action="store_true")
     args = parser.parse_args()
     evidence: Path = args.evidence.resolve()
+    if args.name_selection:
+        name_selection_proof(evidence)
+        return
     evidence.mkdir(parents=True, exist_ok=True)
     state_db = evidence / "state.db"
     log = evidence / "operator.log"

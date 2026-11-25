@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Only the displayed run name is selectable in the run list beside the flow graph;
+  IDs shown alongside a label, times, durations, badges and status stay unselected.
+  Clicking a run still opens it immediately, without a selection delay.
+
 ## 0.20.35
 
 ## 0.20.34
