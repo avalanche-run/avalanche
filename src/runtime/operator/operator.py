@@ -63,6 +63,7 @@ from avalanche.mapping import MapSpec, NodesExpanded
 from avalanche.policies import NonRetryableError
 from avalanche.references import read_stored_trees
 from avalanche.reruns import RerunRefusal, RerunRefusedError, SavedOutputIndex
+from avalanche.run_input import INPUT_INVALID
 from avalanche.run_status import EMPTY_WAITING_ON, WAIT_KIND_SLOT, error_message, error_step
 from avalanche.runtime import Rerun
 from avalanche.step_interface import StepInterface
@@ -327,9 +328,11 @@ class RerunStartError(RuntimeError):
 class _PreparationFailedError(RuntimeError):
     """The coordinator reported that the workflow could not be prepared."""
 
-    def __init__(self, error: str, details: str) -> None:
+    def __init__(self, error: str, details: str, code: str = "") -> None:
         super().__init__(f"Workflow preparation failed: {error}\n{details}")
         self.error = error
+        # A closed code the coordinator names (input_invalid), else empty.
+        self.code = code
 
 
 class _CoordinatorProtocolError(RuntimeError):
@@ -2806,11 +2809,13 @@ class Operator:
         exc: BaseException,
     ) -> None:
         cancelled = handle.cancel_event.is_set()
+        input_invalid = isinstance(exc, _PreparationFailedError) and exc.code == INPUT_INVALID
         entry = LogEntry(
             timestamp=datetime.now(),
             level=LogLevel.ERROR,
             node_id="operator",
-            message=f"Workflow preparation failed: {exc}",
+            # The run's input failed its model: its message, not a code traceback.
+            message=exc.error if input_invalid else f"Workflow preparation failed: {exc}",
         )
         with self._lock:
             run = self._runs.get(run_id)
@@ -2820,6 +2825,9 @@ class Operator:
                 if not isinstance(handle, _MachineRunHandle):
                     run.status = RunStatus.CANCELLED if cancelled else RunStatus.FAILED
                     run.ended_at = time.monotonic()
+                    if input_invalid and not cancelled:
+                        run.error_code = INPUT_INVALID
+                        run.error_message = error_message(INPUT_INVALID)
                 log_entry = None
                 if not cancelled:
                     self._append_log_locked(run, entry)
@@ -3340,7 +3348,7 @@ class Operator:
             if event_type in awaited:
                 return event
             if event_type == "prepare_failed":
-                raise _PreparationFailedError(event["error"], event["traceback"])
+                raise _PreparationFailedError(event["error"], event["traceback"], event["code"])
             handle.early_events.append(event)
         raise TimeoutError(f"Workflow preparation exceeded {self._prepare_timeout:.1f}s")
 
@@ -5633,7 +5641,9 @@ def _validate_preparation_event(event: object) -> str:
         _validate_prepared_input(event, node_ids)
         return event_type
     if event_type == "prepare_failed":
-        _require_exact_event_keys(event, {"type", "error", "traceback"})
+        _require_exact_event_keys(event, {"type", "code", "error", "traceback"})
+        if event["code"] not in ("", INPUT_INVALID):
+            raise _CoordinatorProtocolError("unknown preparation failure code")
         _string_field(event, "error", maximum_length=_MAX_EVENT_MESSAGE_LENGTH)
         _string_field(event, "traceback", maximum_length=_MAX_EVENT_TRACEBACK_LENGTH)
         return event_type

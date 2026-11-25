@@ -2,6 +2,12 @@
 
 ## 0.20.38
 
+- A run whose input fails its workflow's input model now fails once, with code
+  `input_invalid` and the model's own message ("The run's input is invalid:
+  <field>: <message> (<Model>)"), instead of retrying and reporting a workflow
+  code failure. The message names field locations and model messages, never the
+  submitted values. The local operator and hosted runtimes share this rule.
+
 - State-machine graphs use the workflow canvas's fit behavior with a readable
   minimum zoom. On smaller screens, use the existing zoom buttons and drag to pan
   to offscreen states and transitions. Measured state-card dimensions reserve

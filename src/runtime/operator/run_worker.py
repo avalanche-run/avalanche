@@ -47,6 +47,7 @@ from avalanche.reruns import (
     plan_rerun,
 )
 from avalanche.run_handle import RunHandle
+from avalanche.run_input import RunInputInvalidError, build_run_input
 from avalanche.runtime import BaseInput
 
 from ..executor import LocalExecutor
@@ -219,9 +220,7 @@ def _run_worker(
         prepared_input: PreparedRunInput | None = None
         if workflow.input_type is not None:
             # Validate once here so the run executes exactly the values it reports.
-            validated_input = workflow.input_type.model_validate(
-                {} if input_value is None else input_value
-            )
+            validated_input = build_run_input(workflow.input_type, input_value)
             prepared_input = _display_copy(validated_input)
         if rerun_assignment_json is not None:
             # Checked against the code this process just imported, which is the code
@@ -252,11 +251,24 @@ def _run_worker(
             },
         )
         return
+    except RunInputInvalidError as exc:
+        # The run's own input, not the workflow code: the model's message is the cause.
+        _put_preparation_event(
+            event_queue,
+            {
+                "type": "prepare_failed",
+                "code": exc.code,
+                "error": _bounded_event_text(str(exc), 65_536),
+                "traceback": "",
+            },
+        )
+        return
     except BaseException as exc:
         _put_preparation_event(
             event_queue,
             {
                 "type": "prepare_failed",
+                "code": "",
                 "error": _bounded_event_text(f"{type(exc).__name__}: {exc}", 65_536),
                 "traceback": _bounded_event_text(traceback.format_exc(), 262_144),
             },
