@@ -1430,6 +1430,9 @@ export class GrpcWebOperatorApi implements OperatorApi {
     if (node.stepIo) mapped.stepIo = mapStepIo(node.stepIo);
     if (node.reusedFromRunId !== undefined) mapped.reusedFromRunId = node.reusedFromRunId;
     if (node.skipReason !== undefined) mapped.skipReason = node.skipReason;
+    if (node.attempt !== undefined) mapped.attempt = node.attempt;
+    if (node.maxAttempts !== undefined) mapped.maxAttempts = node.maxAttempts;
+    if (node.lastAttemptError !== undefined) mapped.lastAttemptError = node.lastAttemptError;
     return mapped;
   }
 
@@ -1684,6 +1687,11 @@ export class GrpcWebOperatorApi implements OperatorApi {
               ? { reusedFromRunId: node.reusedFromRunId }
               : {}),
             ...(node?.skipReason !== undefined ? { skipReason: node.skipReason } : {}),
+            ...(node?.attempt !== undefined ? { attempt: node.attempt } : {}),
+            ...(node?.maxAttempts !== undefined ? { maxAttempts: node.maxAttempts } : {}),
+            ...(node?.lastAttemptError !== undefined
+              ? { lastAttemptError: node.lastAttemptError }
+              : {}),
           },
         });
       }

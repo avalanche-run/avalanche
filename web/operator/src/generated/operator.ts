@@ -1469,6 +1469,23 @@ export interface NodeSnapshotV2 {
      * @generated from protobuf field: optional string skip_reason = 16
      */
     skipReason?: string;
+    /**
+     * Retried steps: the current attempt, counted from 1, and the most attempts
+     * the host will run. Unset when the host does not report attempts.
+     *
+     * @generated from protobuf field: optional uint32 attempt = 17
+     */
+    attempt?: number;
+    /**
+     * @generated from protobuf field: optional uint32 max_attempts = 18
+     */
+    maxAttempts?: number;
+    /**
+     * The previous attempt's error, when the current attempt is a retry.
+     *
+     * @generated from protobuf field: optional string last_attempt_error = 19
+     */
+    lastAttemptError?: string;
 }
 /**
  * A bounded, display-only rendering of one value, never the value itself. Cut
@@ -6841,7 +6858,10 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
             { no: 13, name: "map_parent", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
             { no: 14, name: "map_index", kind: "scalar", opt: true, T: 13 /*ScalarType.UINT32*/ },
             { no: 15, name: "reused_from_run_id", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
-            { no: 16, name: "skip_reason", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
+            { no: 16, name: "skip_reason", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ },
+            { no: 17, name: "attempt", kind: "scalar", opt: true, T: 13 /*ScalarType.UINT32*/ },
+            { no: 18, name: "max_attempts", kind: "scalar", opt: true, T: 13 /*ScalarType.UINT32*/ },
+            { no: 19, name: "last_attempt_error", kind: "scalar", opt: true, T: 9 /*ScalarType.STRING*/ }
         ]);
     }
     create(value?: PartialMessage<NodeSnapshotV2>): NodeSnapshotV2 {
@@ -6910,6 +6930,15 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
                 case /* optional string skip_reason */ 16:
                     message.skipReason = reader.string();
                     break;
+                case /* optional uint32 attempt */ 17:
+                    message.attempt = reader.uint32();
+                    break;
+                case /* optional uint32 max_attempts */ 18:
+                    message.maxAttempts = reader.uint32();
+                    break;
+                case /* optional string last_attempt_error */ 19:
+                    message.lastAttemptError = reader.string();
+                    break;
                 default:
                     let u = options.readUnknownField;
                     if (u === "throw")
@@ -6970,6 +6999,15 @@ class NodeSnapshotV2$Type extends MessageType<NodeSnapshotV2> {
         /* optional string skip_reason = 16; */
         if (message.skipReason !== undefined)
             writer.tag(16, WireType.LengthDelimited).string(message.skipReason);
+        /* optional uint32 attempt = 17; */
+        if (message.attempt !== undefined)
+            writer.tag(17, WireType.Varint).uint32(message.attempt);
+        /* optional uint32 max_attempts = 18; */
+        if (message.maxAttempts !== undefined)
+            writer.tag(18, WireType.Varint).uint32(message.maxAttempts);
+        /* optional string last_attempt_error = 19; */
+        if (message.lastAttemptError !== undefined)
+            writer.tag(19, WireType.LengthDelimited).string(message.lastAttemptError);
         let u = options.writeUnknownFields;
         if (u !== false)
             (u == true ? UnknownFieldHandler.onWrite : u)(this.typeName, message, writer);

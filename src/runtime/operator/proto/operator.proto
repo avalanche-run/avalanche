@@ -580,6 +580,12 @@ message NodeSnapshotV2 {
   // Status "skipped" only: why the step was skipped. Unset when the run stopped
   // before the step ran.
   optional string skip_reason = 16;
+  // Retried steps: the current attempt, counted from 1, and the most attempts
+  // the host will run. Unset when the host does not report attempts.
+  optional uint32 attempt = 17;
+  optional uint32 max_attempts = 18;
+  // The previous attempt's error, when the current attempt is a retry.
+  optional string last_attempt_error = 19;
 }
 
 enum StepValuePreviewKindV2 {

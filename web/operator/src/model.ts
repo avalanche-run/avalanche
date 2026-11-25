@@ -442,6 +442,12 @@ export interface NodeSnapshotMsg {
   reusedFromNodeId?: string;
   /** Status "skipped" only: why; unset when the run stopped before the step ran. */
   skipReason?: string;
+  /** The current attempt, counted from 1; unset when the host does not report attempts. */
+  attempt?: number;
+  /** The most attempts the host will run for this step. */
+  maxAttempts?: number;
+  /** The previous attempt's error, when the current attempt is a retry. */
+  lastAttemptError?: string;
 }
 
 export const NodeSnapshotMsg = {
@@ -1146,6 +1152,12 @@ export interface NodeStatusChanged {
   reusedFromRunId?: string;
   /** Status "skipped" only: why; unset when the run stopped before the step ran. */
   skipReason?: string;
+  /** The current attempt, counted from 1; unset when the host does not report attempts. */
+  attempt?: number;
+  /** The most attempts the host will run for this step. */
+  maxAttempts?: number;
+  /** The previous attempt's error, when the current attempt is a retry. */
+  lastAttemptError?: string;
 }
 
 export const NodeStatusChanged = {

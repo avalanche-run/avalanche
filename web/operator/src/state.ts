@@ -306,6 +306,9 @@ function applyEnvelope(
               stepIo: changed.stepIo,
               reusedFromRunId: changed.reusedFromRunId,
               skipReason: changed.skipReason,
+              attempt: changed.attempt,
+              maxAttempts: changed.maxAttempts,
+              lastAttemptError: changed.lastAttemptError,
             }
           : node,
       ),
