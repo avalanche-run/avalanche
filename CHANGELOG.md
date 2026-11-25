@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.34
+
 - Center badge and compact label text on its visible cap height, including
   integration tags, state labels and run filters; align status clocks with the
   adjacent text instead of the font line box. Hosts can reuse `capText` for
