@@ -70,6 +70,7 @@ export function layoutMachine(
   view: MachineGraphView,
   orientation: GraphOrientation,
   labelScale = 1,
+  measurements: ReadonlyMap<string, { width: number; height: number }> = new Map(),
 ): {
   ranks: Map<string, number>;
   positions: Record<string, { x: number; y: number }>;
@@ -112,7 +113,16 @@ export function layoutMachine(
     const rank = ranks.get(name)!;
     byRank.set(rank, [...(byRank.get(rank) ?? []), name]);
   }
-  const { width, height } = DEFAULT_NODE_SIZE;
+  // Card height changes with descriptions and readable text. Reserve the largest
+  // measured card in each axis before routing, just as the workflow layout does.
+  const width = Math.max(
+    DEFAULT_NODE_SIZE.width,
+    ...[...measurements.values()].map((s) => s.width),
+  );
+  const height = Math.max(
+    DEFAULT_NODE_SIZE.height,
+    ...[...measurements.values()].map((s) => s.height),
+  );
   const rankGap = machineRankGap(
     links.filter((link) => ranks.get(link.target)! > ranks.get(link.source)!),
     orientation,

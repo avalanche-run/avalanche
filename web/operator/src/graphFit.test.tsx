@@ -3,16 +3,13 @@ import { renderHook } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import {
-  bestMachineFit,
   CONTROLS_CLEARANCE,
   firstFrameFor,
   reserveFit,
   reserveSide,
   useFitViewOptions,
   type CanvasReserve,
-  type MachineFitCandidate,
 } from "./GraphCanvas";
-import { MIN_ARC_LABEL_PX } from "./machineGraph";
 
 // The runs panel floating over the canvas's top-left corner.
 const PANEL: CanvasReserve = { width: 330, height: 300 };
@@ -89,45 +86,6 @@ describe("fit beside or below the runs panel", () => {
     expect(
       reserveSide(OPTIONS, { width: 330 }, row(6), { width: 1200, height: 900 }, 0.12),
     ).toBe("beside");
-  });
-});
-
-describe("arc label scale against the fitted zoom", () => {
-  const rendered = (fit: MachineFitCandidate) => 10 * fit.scale * (fit.zoom ?? 0);
-
-  it("grows the labels until they render at the minimum size when the zoom allows it", () => {
-    // Gaps widen with the labels, so the zoom drops a little per step.
-    const fit = bestMachineFit(
-      (scale) => ({ scale, zoom: 0.8 / (1 + (scale - 1) * 0.1) }),
-      0.12,
-    );
-    expect(fit.scale).toBeGreaterThan(1);
-    expect(rendered(fit)).toBeGreaterThanOrEqual(MIN_ARC_LABEL_PX - 0.05);
-  });
-
-  it("stops at the zoom floor and keeps the whole graph with the largest labels", () => {
-    const calls: number[] = [];
-    // A small canvas: larger labels shrink the graph to the floor, where it no
-    // longer fits whole.
-    const fit = bestMachineFit((scale) => {
-      calls.push(scale);
-      return { scale, zoom: Math.max(MIN_ZOOM, 0.3 / scale ** 1.6) };
-    }, MIN_ZOOM);
-    expect(fit.zoom!).toBeGreaterThan(MIN_ZOOM * 1.01);
-    expect(calls.length).toBeLessThanOrEqual(7);
-    // No whole-graph candidate it tried rendered its labels larger.
-    for (const scale of calls) {
-      const zoom = Math.max(MIN_ZOOM, 0.3 / scale ** 1.6);
-      if (zoom > MIN_ZOOM * 1.01)
-        expect(rendered({ scale, zoom })).toBeLessThanOrEqual(rendered(fit));
-    }
-  });
-
-  it("returns the plain fit when the canvas is not measured yet", () => {
-    expect(bestMachineFit((scale) => ({ scale, zoom: undefined }), MIN_ZOOM)).toEqual({
-      scale: 1,
-      zoom: undefined,
-    });
   });
 });
 

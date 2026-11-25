@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- State-machine graphs use the workflow canvas's fit behavior with a readable
+  minimum zoom. On smaller screens, use the existing zoom buttons and drag to pan
+  to offscreen states and transitions. Measured state-card dimensions reserve
+  layout space so readable labels and arcs stay clear of the cards.
+
 ## 0.20.37
 
 - Flow workspaces show the runs list before the selected run finishes loading,

@@ -55,7 +55,6 @@ import {
   machineArcHandles,
   machineArcPath,
   machineLabelScale,
-  MIN_ARC_LABEL_PX,
   routeMachineArcs,
   type MachineArcData,
   type MachineGraphView,
@@ -360,8 +359,10 @@ const NODE_DESCRIPTION_ZOOM_THRESHOLD = 0.65;
 // Zooms where a node card changes what it shows.
 const NODE_DETAIL_ZOOM_STEPS = [NODE_DESCRIPTION_ZOOM_THRESHOLD, NODE_DETAIL_ZOOM_THRESHOLD];
 const MIN_ZOOM = 0.25;
-/** A graph fitted beside the floating timeline may shrink further to stay whole. */
 const RESERVED_MIN_ZOOM = 0.12;
+// Machines keep their state identity and arc labels readable; beyond this floor
+// the shared canvas uses its existing pan/zoom controls rather than shrinking.
+const MACHINE_MIN_ZOOM = 0.4;
 const MAX_ZOOM = 1.8;
 // Keep state identity readable independently of the arc-label fit. A small
 // margin above 11 px avoids subpixel rounding below the readable screen size.
@@ -901,7 +902,7 @@ const MachineArc = memo(
               className={`machine-arc-label nodrag nopan pointer-events-none absolute inline-flex items-center gap-1 rounded border bg-panel font-mono whitespace-nowrap ${data.highlighted ? "machine-arc-label--highlight border-amber text-ink" : data.live ? "border-line-strong text-ink" : "border-line text-secondary"}`}
               style={{
                 transform: `translate(${anchor === "start" ? "0" : anchor === "end" ? "-100%" : "-50%"}, -50%) translate(${label.x}px, ${label.y}px)`,
-                // Scaled with the fit so the label stays readable (routing used the same size).
+                // Sized for the readable zoom floor; routing reserves the same label size.
                 fontSize: `${10 * (data.labelScale ?? 1)}px`,
                 padding: `${2 * (data.labelScale ?? 1)}px ${6 * (data.labelScale ?? 1)}px`,
               }}
@@ -929,20 +930,11 @@ const NODE_TYPES = { workflow: WorkflowNodeCard, workflowInput: WorkflowInputDot
 const NODE_ORIGIN: [number, number] = [0, 0.5];
 const EDGE_TYPES = { routed: RoutedEdge, machine: MachineArc };
 const FIT_VIEW_OPTIONS = { padding: 0.24 };
-// Leave room for the floating timeline above a top-to-bottom graph.
+// The floating timeline's measured reserve supplies its own clearance. Keep the
+// vertical margin modest so a floor-clamped graph does not push its last labels
+// under the bottom-right actions on short canvases.
 const VERTICAL_FIT_VIEW_OPTIONS: FitViewOptions = {
-  padding: { top: "160px", bottom: "90px", left: "40px", right: "80px" },
-};
-
-// Fitting covers cards only; leave room for the arcs that curve outside them
-// (self-loops above or left, back arcs below or right). These are screen pixels:
-// large fixed margins plus the runs-panel reserve used most of a short canvas,
-// forcing tiny cards when the bottom pane opened.
-const MACHINE_FIT_VIEW_OPTIONS: FitViewOptions = {
-  padding: { top: "60px", bottom: "70px", left: "40px", right: "40px" },
-};
-const MACHINE_VERTICAL_FIT_VIEW_OPTIONS: FitViewOptions = {
-  padding: { top: "160px", bottom: "70px", left: "160px", right: "180px" },
+  padding: { top: "80px", bottom: "90px", left: "40px", right: "80px" },
 };
 
 interface FirstFrame {
@@ -1090,38 +1082,6 @@ export function reserveSide(
   return below.viewport.zoom > beside.viewport.zoom * 1.05 ? "below" : "beside";
 }
 
-/** One candidate machine fit: its arc label scale and the zoom it fits at. */
-export interface MachineFitCandidate {
-  scale: number;
-  zoom?: number;
-}
-
-/**
- * Grows the arc label scale until labels render at MIN_ARC_LABEL_PX at the fitted
- * zoom. Larger labels widen the gaps between ranks, which lowers that zoom; on a
- * small canvas the loop stops at the zoom floor (where the graph no longer fits)
- * and keeps the whole-graph fit whose labels render largest. At most 6 re-fits.
- */
-export function bestMachineFit<T extends MachineFitCandidate>(
-  fitFor: (scale: number) => T,
-  minZoom: number,
-): T {
-  const plain = fitFor(1);
-  if (plain.zoom === undefined) return plain;
-  const rendered = (fit: T) => 10 * fit.scale * (fit.zoom ?? 0);
-  let best = plain;
-  let fit = plain;
-  for (let step = 0; step < 6; step++) {
-    const wanted = machineLabelScale(fit.zoom);
-    if (wanted <= fit.scale) break;
-    fit = fitFor(wanted);
-    if (fit.zoom === undefined || fit.zoom <= minZoom * 1.01) break;
-    if (rendered(fit) > rendered(best)) best = fit;
-    if (rendered(fit) >= MIN_ARC_LABEL_PX - 0.05) return fit;
-  }
-  return best;
-}
-
 /**
  * The fit options for a graph beside or below the floating panel. A new label
  * scale moves the cards (wider gaps between ranks), so it yields a new options
@@ -1155,35 +1115,26 @@ function MeasureGraphHandles({ nodes }: { nodes: readonly Node[] }) {
 
 function FitGraphOnWidthChange({
   options,
-  height: followHeight = false,
   userMoved,
 }: {
   options: FitViewOptions;
-  /** Also re-fit when the canvas height changes (the machine graph stays whole). */
-  height?: boolean;
   /** Set once the user zooms or pans the graph; a re-fit clears it. */
   userMoved: RefObject<boolean>;
 }) {
-  const storeWidth = useStore((state) => state.width);
-  const storeHeight = useStore((state) => state.height);
-  const width = storeWidth;
-  const height = followHeight ? storeHeight : 0;
+  const width = useStore((state) => state.width);
   const { fitView } = useReactFlow();
   const previousWidth = useRef(width);
-  const previousHeight = useRef(height);
   const previousOptions = useRef(options);
 
   useEffect(() => {
     const previous = previousWidth.current;
-    const heightChanged = previousHeight.current !== height && height > 0;
     const optionsChanged = previousOptions.current !== options;
     previousWidth.current = width;
-    previousHeight.current = height;
     previousOptions.current = options;
-    const resized = previous !== width || heightChanged;
+    const resized = previous !== width;
     // Initial fitting belongs to React Flow. Re-fit only after its resize observer
-    // has committed a changed canvas width (timeline, inspector or window resize) or,
-    // when followed, height (the log pane), or when the fit options change.
+    // has committed a changed canvas width (timeline, inspector or window resize),
+    // or when the fit options change.
     if (previous <= 0 || width <= 0 || (!resized && !optionsChanged)) return;
     // New fit options alone (the side of the runs panel, the arc label scale) follow
     // the measured cards, and a card's size follows the zoom (its detail level). Once
@@ -1194,7 +1145,7 @@ function FitGraphOnWidthChange({
     userMoved.current = false;
     const frame = requestAnimationFrame(() => void fitView(options));
     return () => cancelAnimationFrame(frame);
-  }, [width, height, fitView, options]);
+  }, [width, fitView, options]);
 
   return null;
 }
@@ -1304,13 +1255,8 @@ function GraphCanvasView({
   maxFitZoom,
 }: GraphCanvasProps) {
   const { containerRef, orientation, toggleOrientation, canvasSize } = useGraphOrientation();
-  const layoutFitViewOptions = machine
-    ? orientation === "vertical"
-      ? MACHINE_VERTICAL_FIT_VIEW_OPTIONS
-      : MACHINE_FIT_VIEW_OPTIONS
-    : orientation === "vertical"
-      ? VERTICAL_FIT_VIEW_OPTIONS
-      : FIT_VIEW_OPTIONS;
+  const layoutFitViewOptions =
+    orientation === "vertical" ? VERTICAL_FIT_VIEW_OPTIONS : FIT_VIEW_OPTIONS;
   // A stable identity: new options re-fit.
   const baseFitViewOptions = useMemo(
     () =>
@@ -1725,65 +1671,24 @@ function GraphCanvasView({
 
   const reserveWidth = reserve?.width;
   const reserveHeight = reserve?.height;
-  const minZoom = reserveWidth !== undefined ? RESERVED_MIN_ZOOM : MIN_ZOOM;
+  const minZoom = machine
+    ? MACHINE_MIN_ZOOM
+    : reserveWidth !== undefined
+      ? RESERVED_MIN_ZOOM
+      : MIN_ZOOM;
   const reserveFor = useMemo<CanvasReserve | undefined>(
     () =>
       reserveWidth === undefined ? undefined : { width: reserveWidth, height: reserveHeight },
     [reserveHeight, reserveWidth],
   );
-  // A machine's layout, its arc label scale and the side of the runs panel it fits
-  // on, together: labels keep a readable size at the fitted zoom, and larger labels
-  // widen the gaps between ranks, which lowers that zoom. The fit covers the state
-  // cards and input dot only, so the zoom is known before the arcs are routed.
-  const machineFit = useMemo(() => {
-    if (!machine) return undefined;
-    const fitFor = (scale: number) => {
-      const layout = layoutMachine(machine, orientation, scale);
-      const cards: Node[] = Object.entries(layout.positions).map(([name, position]) => ({
-        id: name,
-        position,
-        measured: nodeMeasurements.get(name),
-        data: {},
-      }));
-      const initial = layout.positions[machine.spec.initial];
-      if (hasInputNode && initial)
-        cards.push({
-          id: INPUT_NODE_ID,
-          position: machineInputPosition(initial, orientation),
-          measured: nodeMeasurements.get(INPUT_NODE_ID),
-          data: {},
-        });
-      const side = reserveSide(baseFitViewOptions, reserveFor, cards, canvasSize, minZoom);
-      const zoom = firstFrameFor(
-        cards,
-        canvasSize,
-        reserveFit(baseFitViewOptions, reserveFor, side),
-        minZoom,
-      )?.viewport.zoom;
-      return { layout, side, zoom, scale };
-    };
-    return bestMachineFit(fitFor, minZoom);
-  }, [
-    baseFitViewOptions,
-    canvasSize,
-    hasInputNode,
-    machine,
-    minZoom,
-    nodeMeasurements,
-    orientation,
-    reserveFor,
-  ]);
-  const machineLayout = machineFit?.layout;
-  const labelScale = machineFit?.scale ?? 1;
-  // A primitive, so the options below keep their identity (a new one re-fits).
-  const side = useMemo(
-    () =>
-      machineFit
-        ? machineFit.side
-        : reserveSide(baseFitViewOptions, reserveFor, nodes, canvasSize, minZoom),
-    [baseFitViewOptions, canvasSize, machineFit, minZoom, nodes, reserveFor],
+  // Route labels at the readable floor, independently of canvas size. Machines
+  // use the workflow's single fit path; a small viewport pans, not a second
+  // label/layout/fit feedback loop that shrinks the cards to keep them whole.
+  const labelScale = machine ? machineLabelScale(minZoom) : 1;
+  const machineLayout = useMemo(
+    () => machine && layoutMachine(machine, orientation, labelScale, nodeMeasurements),
+    [machine, orientation, labelScale, nodeMeasurements],
   );
-  const fitViewOptions = useFitViewOptions(baseFitViewOptions, reserveFor, side, labelScale);
 
   // Machine mode reuses the same cards, input dot and edge highlighting; only the
   // layout (cycle-safe ranks) and the curved arcs differ from a flow.
@@ -1917,6 +1822,8 @@ function GraphCanvasView({
   ]);
   const shownNodes = machineGraph ? machineGraph.nodes : nodes;
   const shownEdges = machineGraph ? machineGraph.edges : edges;
+  const side = reserveSide(baseFitViewOptions, reserveFor, shownNodes, canvasSize, minZoom);
+  const fitViewOptions = useFitViewOptions(baseFitViewOptions, reserveFor, side, labelScale);
 
   const firstFrame = useMemo(
     () => firstFrameFor(shownNodes, canvasSize, fitViewOptions, minZoom),
@@ -1967,11 +1874,7 @@ function GraphCanvasView({
           >
             <InputEdgeMarkers />
             <MeasureGraphHandles nodes={shownNodes} />
-            <FitGraphOnWidthChange
-              options={fitViewOptions}
-              height={machine !== undefined}
-              userMoved={userMoved}
-            />
+            <FitGraphOnWidthChange options={fitViewOptions} userMoved={userMoved} />
             {bottomRightPanel && (
               <Panel
                 position="bottom-right"
