@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 /** A state-entry-qualified step ID (`e<entry>.<step>`) of a machine run's state entry. */
 export function stateEntryStep(nodeId: string): { entry: number; step: string } | undefined {
   const match = /^e(\d+)\.(.+)$/.exec(nodeId);
@@ -35,22 +36,29 @@ export function ScopeChip({ scope, all }: { scope?: PaneScope; all: string }) {
           className="run-pane-scope-chip inline-flex min-w-0 items-center gap-1 rounded border border-acid bg-panel py-px pr-px pl-1.5 text-ink"
           data-scoped="true"
         >
-          <span className="min-w-0 truncate">{scope.label}</span>
-          {scope.onClear && (
-            <button
-              type="button"
-              className="grid size-4 flex-none cursor-pointer place-items-center rounded-sm border-0 bg-transparent p-0 text-acid hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acid"
-              aria-label={`Clear scope (${scope.label})`}
-              title="Clear"
-              onClick={scope.onClear}
-            >
-              <span aria-hidden="true">×</span>
-            </button>
+          {capText(
+            <>
+              <span className="min-w-0 truncate">{scope.label}</span>
+              {scope.onClear && (
+                <button
+                  type="button"
+                  className="grid size-4 flex-none cursor-pointer place-items-center rounded-sm border-0 bg-transparent p-0 text-acid hover:bg-line focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-acid"
+                  aria-label={`Clear scope (${scope.label})`}
+                  title="Clear"
+                  onClick={scope.onClear}
+                >
+                  <span aria-hidden="true">×</span>
+                </button>
+              )}
+            </>,
           )}
         </span>
       ) : (
-        <span className="run-pane-scope-chip text-secondary" data-scoped="false">
-          {all}
+        <span
+          className="avalanche-cap-center run-pane-scope-chip text-secondary"
+          data-scoped="false"
+        >
+          {capText(<>{all}</>)}
         </span>
       )}
     </div>

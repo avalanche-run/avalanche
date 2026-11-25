@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useEffect, useId, useRef, useState } from "react";
 import { ChevronRight, X } from "lucide-react";
 
@@ -131,8 +132,12 @@ export function InspectorResources({ declaration }: { declaration: AgentDeclarat
               }}
               className="flex w-full cursor-pointer items-center gap-1.5 border-0 bg-transparent py-2 text-left text-xs font-medium text-secondary first-of-type:pt-0 hover:text-acid focus-visible:outline-2 focus-visible:outline-acid"
             >
-              <span className="min-w-0 [overflow-wrap:anywhere]">{skill.name}</span>
-              <ChevronRight aria-hidden="true" className="size-3 shrink-0" />
+              {capText(
+                <>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{skill.name}</span>
+                  <ChevronRight aria-hidden="true" className="size-3 shrink-0" />
+                </>,
+              )}
             </button>
           ))}
         </section>

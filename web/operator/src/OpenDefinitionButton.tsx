@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { CodeXml } from "lucide-react";
 
 /** Leaves a run view for the current definition of the same node. */
@@ -15,8 +16,12 @@ export function OpenDefinitionButton({
       onClick={onOpenDefinition}
       title="Code and interface reflect the current deployment and may differ from what ran."
     >
-      <CodeXml aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
-      View {definitionLabel.toLowerCase()}
+      {capText(
+        <>
+          <CodeXml aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+          View {definitionLabel.toLowerCase()}
+        </>,
+      )}
     </button>
   );
 }

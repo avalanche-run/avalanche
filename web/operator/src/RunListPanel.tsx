@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Fragment, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronUp, Maximize2, Minimize2, Workflow } from "lucide-react";
@@ -325,7 +326,7 @@ export function RunListPanel({
       className={
         expanded
           ? "all-runs-panel flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-r border-line bg-panel"
-          : "run-list-panel flex h-full w-full flex-col overflow-hidden rounded border border-line bg-overlay-panel shadow-[0_6px_20px_var(--color-shadow-2)]"
+          : "run-list-panel flex min-h-0 w-full flex-col overflow-hidden rounded border border-line bg-overlay-panel shadow-[0_6px_20px_var(--color-shadow-2)]"
       }
       aria-label="Runs"
       onKeyDown={(event) => {
@@ -445,7 +446,12 @@ export function RunListPanel({
                     setPage(0);
                   }}
                 >
-                  All <span className="font-mono text-secondary">{workflowRuns.length}</span>
+                  {capText(
+                    <>
+                      All{" "}
+                      <span className="font-mono text-secondary">{workflowRuns.length}</span>
+                    </>,
+                  )}
                 </button>
                 {statuses.map(([value, count]) => (
                   <button
@@ -458,7 +464,11 @@ export function RunListPanel({
                       setPage(0);
                     }}
                   >
-                    {value} <span className="font-mono text-secondary">{count}</span>
+                    {capText(
+                      <>
+                        {value} <span className="font-mono text-secondary">{count}</span>
+                      </>,
+                    )}
                   </button>
                 ))}
               </div>
@@ -524,8 +534,14 @@ export function RunListPanel({
               }}
               className={`run-list-current flex min-w-0 flex-1 cursor-pointer items-center gap-2 border-0 border-b border-run-list-line text-left font-mono font-medium text-ink focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-acid pl-[16px] ${currentRowAction ? "pr-3" : "pr-[30px]"} ${expanded ? "text-xs" : "text-[10px]"} ${selectedRunId === undefined ? "active bg-selected shadow-[inset_2px_0_var(--color-acid)] hover:bg-selected-hover" : "bg-transparent hover:bg-hover"}`}
             >
-              <Workflow aria-hidden="true" className="size-3.5 shrink-0 text-secondary" />
-              <span className="flex-1 truncate">{currentLabel ?? "Current definition"}</span>
+              {capText(
+                <>
+                  <Workflow aria-hidden="true" className="size-3.5 shrink-0 text-secondary" />
+                  <span className="flex-1 truncate">
+                    {currentLabel ?? "Current definition"}
+                  </span>
+                </>,
+              )}
             </button>
             {currentRowAction && (
               <button
@@ -556,13 +572,13 @@ export function RunListPanel({
               <span className="text-right">Status</span>
             </div>
             <div
-              className={`timeline-scroll-shell relative min-h-0 ${expanded ? "flex-1" : ""}`}
+              className={`timeline-scroll-shell relative flex min-h-0 flex-col ${expanded ? "flex-1" : ""}`}
             >
               <div
                 className={
                   expanded
                     ? "run-list-scroll timeline-scroll h-full overflow-auto overscroll-contain"
-                    : "run-list-scroll timeline-scroll max-h-48 overflow-auto overscroll-contain"
+                    : "run-list-scroll timeline-scroll min-h-0 max-h-48 overflow-auto overscroll-contain"
                 }
                 ref={scrollElement}
               >
@@ -655,9 +671,12 @@ export function RunListPanel({
                           </span>
                           <span className="justify-self-end text-right">
                             <RunStatus
+                              expanded={expanded}
                               status={summary.status}
                               waitKind={
-                                summary.runId === selectedRunId ? selectedRunWaitKind : undefined
+                                summary.runId === selectedRunId
+                                  ? selectedRunWaitKind
+                                  : undefined
                               }
                             />
                           </span>

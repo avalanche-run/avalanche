@@ -252,7 +252,7 @@ export function RunTimeline({
                     </time>
                     <span
                       aria-hidden="true"
-                      className={`mt-1 size-2 rounded-full ${TONE_CLASS[entry.tone]}`}
+                      className={`mt-[3px] size-2 rounded-full ${TONE_CLASS[entry.tone]}`}
                     />
                     <button
                       type="button"

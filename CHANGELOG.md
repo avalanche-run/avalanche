@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Center badge and compact label text on its visible cap height, including
+  integration tags, state labels and run filters; align status clocks with the
+  adjacent text instead of the font line box. Hosts can reuse `capText` for
+  their own compact labels without importing the operator stylesheet. Reserve ink
+  room even inside truncated labels, preserve icon/name spacing, and retain a
+  full-pixel border on every fitted machine-state card.
+
+- The operator workspace names workflows and state machines with distinct header
+  icons and keeps state names and initial/state/final labels readable at the default
+  fit (at least 11 px), reduces unused machine fit margins, and scrolls only the runs list
+  rather than its surrounding panel. Definitions leave the canvas free of logs
+  until a run is selected; the obsolete `emptyRunPanel` host extension is removed.
+
 ## 0.20.33
 
 ## 0.20.32

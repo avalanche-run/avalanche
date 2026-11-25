@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import {
   createContext,
   memo,
@@ -164,6 +165,8 @@ interface CardData extends Record<string, unknown> {
   mapItems?: { id: string; status?: string; waitKind?: WaitKind }[];
   /** A state machine's current state (machine mode only). */
   current?: boolean;
+  /** Keeps state identity visible even when task details are collapsed. */
+  machineState?: boolean;
   /** The run this start/call node started; opens that run's page. */
   childRun?: GraphChildRun;
   /** The integrations the step declares; absent when it declares none. */
@@ -360,6 +363,9 @@ const MIN_ZOOM = 0.25;
 /** A graph fitted beside the floating timeline may shrink further to stay whole. */
 const RESERVED_MIN_ZOOM = 0.12;
 const MAX_ZOOM = 1.8;
+// Keep state identity readable independently of the arc-label fit. A small
+// margin above 11 px avoids subpixel rounding below the readable screen size.
+const MIN_STATE_TEXT_PX = 11.25;
 
 export const NodeDuration = memo(
   ({
@@ -447,13 +453,16 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
     ];
   return (
     <article
-      className={`node-card ${data.current ? "node-card--current" : ""} ${showDescription ? "node-card--description" : ""} ${isCompact ? `node-card--compact ${hasEvaluationRow ? "min-h-[130px]" : "min-h-[100px]"} justify-center gap-0 px-4 py-3` : "min-h-[130px] gap-2 p-4"} relative flex w-[360px] cursor-pointer flex-col items-stretch rounded border text-left motion-reduce:transition-none ${designationClass} ${state === "reused" ? "border-dashed" : state === "skipped" ? "border-dotted" : ""}`}
+      className={`node-card ${data.machineState ? "node-card--machine" : ""} ${data.current ? "node-card--current" : ""} ${showDescription ? "node-card--description" : ""} ${isCompact ? `node-card--compact ${hasEvaluationRow ? "min-h-[130px]" : "min-h-[100px]"} justify-center gap-0 px-4 py-3` : "min-h-[130px] gap-2 p-4"} relative flex w-[360px] cursor-pointer flex-col items-stretch rounded border text-left motion-reduce:transition-none ${designationClass} ${state === "reused" ? "border-dashed" : state === "skipped" ? "border-dotted" : ""}`}
       data-node-state={state}
       data-node-wait={waiting ? data.waitKind : undefined}
       data-current={data.current || undefined}
       style={
         {
           "--node-state-color": stateColor,
+          // A fitted machine can be scaled well below 1x. Its card outline must
+          // remain a full screen pixel, including non-current states.
+          borderWidth: data.machineState ? `${1 / zoom}px` : undefined,
           outline: selected ? `${2 / zoom}px solid var(--color-acid)` : undefined,
           outlineOffset: selected ? "2px" : undefined,
         } as CSSProperties
@@ -519,20 +528,47 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
         }`}
       >
         <span
+          style={
+            data.machineState
+              ? {
+                  fontSize: `${Math.max(12, MIN_STATE_TEXT_PX / zoom)}px`,
+                  letterSpacing: "0.04em",
+                }
+              : undefined
+          }
           className={`${data.isClassifier || data.isAgent ? `mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 ${data.isClassifier ? "node-classifier-identity bg-classifier-light text-classifier" : data.isClaude ? `node-agent-identity bg-claude/10 text-claude ${isCompact ? "" : "ml-6"}` : "node-agent-identity bg-agent/10 text-agent"}` : "node-card-meta text-secondary"} node-kicker font-mono ${isCompact && data.isAgent ? "text-sm" : "text-[8px]"} tracking-[.12em] uppercase`}
         >
-          {data.isClassifier ? (
-            <ListFilter aria-hidden="true" className="size-3" />
-          ) : data.isAgent ? (
-            <Bot aria-hidden="true" className={isCompact ? "size-4" : "size-3"} />
-          ) : null}
-          {data.isClassifier ? "Classifier" : data.isAgent ? "Agent" : data.nodeType}
+          {capText(
+            <>
+              {data.isClassifier ? (
+                <ListFilter aria-hidden="true" className="size-3" />
+              ) : data.isAgent ? (
+                <Bot aria-hidden="true" className={isCompact ? "size-4" : "size-3"} />
+              ) : null}
+              {data.isClassifier ? "Classifier" : data.isAgent ? "Agent" : data.nodeType}
+            </>,
+          )}
         </span>
         <strong
+          style={
+            data.machineState
+              ? {
+                  fontSize: `${Math.max(isCompact ? 20 : 14, MIN_STATE_TEXT_PX / zoom)}px`,
+                  overflowWrap: "anywhere",
+                }
+              : undefined
+          }
           className={`node-title block self-stretch font-mono ${isCompact ? "text-xl" : "pr-[76px] text-sm"} leading-tight text-ink`}
         >
-          <RunStatus status={state} waitKind={data.waitKind} glyphOnly /> {data.label}
-          {data.identity && ` ${data.identity}`}
+          {capText(
+            <>
+              {(!data.machineState || data.status) && (
+                <RunStatus status={state} waitKind={data.waitKind} glyphOnly />
+              )}{" "}
+              {data.label}
+              {data.identity && ` ${data.identity}`}
+            </>,
+          )}
         </strong>
         {data.classifierSummary && (
           <span className="node-classifier-summary mt-1 min-w-0 self-stretch text-[9px] leading-relaxed text-classifier [overflow-wrap:anywhere]">
@@ -551,7 +587,7 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
           <span
             className={`node-card-meta node-status absolute top-[19px] right-0 font-mono text-[8px] uppercase text-[color:var(--node-state-color)]`}
           >
-            {data.status}
+            {capText(<>{data.status}</>)}
           </span>
         )}
       </header>
@@ -566,8 +602,14 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
               aria-label={`Open child run ${data.childRun.name ? `${data.childRun.name}, ` : ""}${data.childRun.runId}`}
               className="nodrag nopan inline-flex min-w-0 cursor-pointer items-center gap-1 rounded border border-line bg-panel px-1.5 py-0.5 text-left text-acid [overflow-wrap:anywhere] hover:border-acid focus-visible:outline-2 focus-visible:outline-acid"
             >
-              {data.childRun.status && <RunStatus status={data.childRun.status} glyphOnly />}
-              {data.childRun.name || data.childRun.runId} →
+              {capText(
+                <>
+                  {data.childRun.status && (
+                    <RunStatus status={data.childRun.status} glyphOnly />
+                  )}
+                  {data.childRun.name || data.childRun.runId} →
+                </>,
+              )}
             </button>
           ) : (
             <span title={data.childRun.runId}>{data.childRun.runId}</span>
@@ -619,14 +661,21 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
                   : "Configured operator-only evaluations; not a run result"
               }
             >
-              <FlaskConical aria-hidden="true" className={isCompact ? "size-4" : "size-3"} />
-              {data.evaluationDeclarationError
-                ? isCompact
-                  ? "!"
-                  : "Evaluations · unavailable"
-                : isCompact
-                  ? data.evaluationCount
-                  : `Evaluations · ${data.evaluationCount}`}
+              {capText(
+                <>
+                  <FlaskConical
+                    aria-hidden="true"
+                    className={isCompact ? "size-4" : "size-3"}
+                  />
+                  {data.evaluationDeclarationError
+                    ? isCompact
+                      ? "!"
+                      : "Evaluations · unavailable"
+                    : isCompact
+                      ? data.evaluationCount
+                      : `Evaluations · ${data.evaluationCount}`}
+                </>,
+              )}
             </span>
           )}
           {data.composites && (
@@ -860,9 +909,13 @@ const MachineArc = memo(
               data-arc-kind={data.kind}
               data-arc-live={data.live || undefined}
             >
-              {data.timer && <Clock aria-hidden="true" className="size-3" />}
-              {data.label}
-              {data.timer?.due !== undefined && <TimerRemaining due={data.timer.due} />}
+              {capText(
+                <>
+                  {data.timer && <Clock aria-hidden="true" className="size-3" />}
+                  {data.label}
+                  {data.timer?.due !== undefined && <TimerRemaining due={data.timer.due} />}
+                </>,
+              )}
             </div>
           </EdgeLabelRenderer>
         )}
@@ -882,9 +935,11 @@ const VERTICAL_FIT_VIEW_OPTIONS: FitViewOptions = {
 };
 
 // Fitting covers cards only; leave room for the arcs that curve outside them
-// (self-loops above or left, back arcs below or right).
+// (self-loops above or left, back arcs below or right). These are screen pixels:
+// large fixed margins plus the runs-panel reserve used most of a short canvas,
+// forcing tiny cards when the bottom pane opened.
 const MACHINE_FIT_VIEW_OPTIONS: FitViewOptions = {
-  padding: { top: "120px", bottom: "150px", left: "60px", right: "80px" },
+  padding: { top: "60px", bottom: "70px", left: "40px", right: "40px" },
 };
 const MACHINE_VERTICAL_FIT_VIEW_OPTIONS: FitViewOptions = {
   padding: { top: "160px", bottom: "70px", left: "160px", right: "180px" },
@@ -1759,6 +1814,7 @@ function GraphCanvasView({
         measured: nodeMeasurements.get(name),
         data: {
           label: name,
+          machineState: true,
           nodeType: declaration.final
             ? "final state"
             : name === spec.initial
@@ -1962,10 +2018,14 @@ function GraphCanvasView({
                   title={`${orientation === "vertical" ? "Vertical" : "Horizontal"} layout. Click to switch.`}
                   onClick={toggleOrientation}
                 >
-                  {orientation === "vertical" ? (
-                    <ArrowDown aria-hidden="true" size={17} />
-                  ) : (
-                    <ArrowRight aria-hidden="true" size={17} />
+                  {capText(
+                    <>
+                      {orientation === "vertical" ? (
+                        <ArrowDown aria-hidden="true" size={17} />
+                      ) : (
+                        <ArrowRight aria-hidden="true" size={17} />
+                      )}
+                    </>,
                   )}
                 </button>
               </div>

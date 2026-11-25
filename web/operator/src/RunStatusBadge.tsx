@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { AlertCircle, Clock } from "lucide-react";
 import { useEffect, useRef } from "react";
 
@@ -73,10 +74,13 @@ export function WaitStatus({ kind }: { kind: WaitKind }) {
 export function RunStatus({
   status,
   glyphOnly = false,
+  expanded = false,
   waitKind,
 }: {
   status: string;
   glyphOnly?: boolean;
+  /** The 11px word/glyph row used by the expanded runs panel. */
+  expanded?: boolean;
   waitKind?: WaitKind;
 }) {
   const normalized = status.toLowerCase();
@@ -107,22 +111,26 @@ export function RunStatus({
       aria-label={glyphOnly ? status : undefined}
       data-status={status}
       data-tone={tone}
-      className={`run-status-text inline-flex items-center gap-1.5 whitespace-nowrap font-mono font-normal tracking-[0.06em] uppercase ${toneClasses[tone]}`}
+      className={`run-status-text ${expanded ? "run-status-text--expanded" : ""} inline-flex items-center gap-1.5 whitespace-nowrap font-mono font-normal tracking-[0.06em] uppercase ${toneClasses[tone]}`}
     >
-      {waiting ? (
-        <WaitStatus kind={waitKind ?? "event"} />
-      ) : (
-        <span
-          ref={marker}
-          aria-hidden="true"
-          className="run-status-glyph"
-          data-glyph={tone === "active" ? "running" : tone}
-          data-char={glyph}
-        >
-          {glyph}
-        </span>
+      {capText(
+        <>
+          {waiting ? (
+            <WaitStatus kind={waitKind ?? "event"} />
+          ) : (
+            <span
+              ref={marker}
+              aria-hidden="true"
+              className="run-status-glyph"
+              data-glyph={tone === "active" ? "running" : tone}
+              data-char={glyph}
+            >
+              {glyph}
+            </span>
+          )}
+          {!glyphOnly && status}
+        </>,
       )}
-      {!glyphOnly && status}
     </span>
   );
 }

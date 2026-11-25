@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
@@ -849,9 +850,9 @@ function AgentAndStepInspector({
               <h2 className="m-0 min-w-0 text-lg [overflow-wrap:anywhere]">{nodeName}</h2>
               {node?.status && (
                 <span
-                  className={`node-status font-mono text-[8px] uppercase ${nodeStatusClass}`}
+                  className={`avalanche-cap-center node-status font-mono text-[8px] uppercase ${nodeStatusClass}`}
                 >
-                  {node.status}
+                  {capText(<>{node.status}</>)}
                 </span>
               )}
               {headerSeconds !== undefined && (
@@ -871,8 +872,12 @@ function AgentAndStepInspector({
             )}
             {runsOnClaude && (
               <p className="inspector-runtime m-0 mt-1.5 inline-flex items-center gap-1.5 rounded border border-claude/30 bg-claude/10 px-1.5 py-0.5 font-mono text-[9px] text-claude">
-                <ClaudeLogo className="size-3" />
-                Claude Agent SDK
+                {capText(
+                  <>
+                    <ClaudeLogo className="size-3" />
+                    Claude Agent SDK
+                  </>,
+                )}
               </p>
             )}
             {composites && (

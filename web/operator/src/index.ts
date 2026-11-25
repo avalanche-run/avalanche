@@ -1,5 +1,7 @@
 import "./style.css";
 
+export { capText } from "./capText";
+
 export { GrpcWebOperatorApi } from "./api";
 export type {
   AgentEventDescriptorPage,

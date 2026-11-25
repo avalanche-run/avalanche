@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useCallback } from "react";
 import { CornerDownRight } from "lucide-react";
 
@@ -79,32 +80,38 @@ export function RunTree({ runId, links, runs, workflowName, onOpenRun }: RunTree
           className="run-tree-fields flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-secondary"
           style={{ paddingLeft: depth * 14 }}
         >
-          {depth > 0 && (
-            <CornerDownRight
-              aria-hidden="true"
-              className="size-3 shrink-0 text-run-status-muted"
-            />
+          {capText(
+            <>
+              {depth > 0 && (
+                <CornerDownRight
+                  aria-hidden="true"
+                  className="size-3 shrink-0 text-run-status-muted"
+                />
+              )}
+              <span className="text-[8px] tracking-[0.12em] text-run-status-muted uppercase">
+                {relation}
+              </span>
+              {name && (
+                <span className="run-label text-ink [overflow-wrap:anywhere]">{name}</span>
+              )}
+              <span className="run-short-id whitespace-nowrap" title={id}>
+                {shortRunId(id)}
+              </span>
+              {triggeredAt && (
+                <time
+                  className="run-triggered-at whitespace-nowrap"
+                  dateTime={triggeredAt.toISOString()}
+                  title={formatAbsoluteTime(triggeredAt)}
+                >
+                  {formatTimeAgo(triggeredAt, now)}
+                </time>
+              )}
+              {link && !link.created && <span className="whitespace-nowrap">· attached</span>}
+            </>,
           )}
-          <span className="text-[8px] tracking-[0.12em] text-run-status-muted uppercase">
-            {relation}
-          </span>
-          {name && <span className="run-label text-ink [overflow-wrap:anywhere]">{name}</span>}
-          <span className="run-short-id whitespace-nowrap" title={id}>
-            {shortRunId(id)}
-          </span>
-          {triggeredAt && (
-            <time
-              className="run-triggered-at whitespace-nowrap"
-              dateTime={triggeredAt.toISOString()}
-              title={formatAbsoluteTime(triggeredAt)}
-            >
-              {formatTimeAgo(triggeredAt, now)}
-            </time>
-          )}
-          {link && !link.created && <span className="whitespace-nowrap">· attached</span>}
         </span>
         <span className="justify-self-end text-right">
-          {summary ? <RunStatus status={summary.status} /> : null}
+          {capText(<>{summary ? <RunStatus status={summary.status} /> : null}</>)}
         </span>
       </>
     );

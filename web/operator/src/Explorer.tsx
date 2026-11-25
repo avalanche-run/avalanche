@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { memo, useEffect, useState } from "react";
 import { Clock, Folder, PanelLeft, Plug, X } from "lucide-react";
 
@@ -58,9 +59,13 @@ function IntegrationsEntry({
           aria-hidden="true"
           className="relative grid size-8 shrink-0 place-items-center rounded border border-icon-line"
         >
-          <Plug className="size-4" />
-          {compact && missing > 0 && (
-            <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber" />
+          {capText(
+            <>
+              <Plug className="size-4" />
+              {compact && missing > 0 && (
+                <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber" />
+              )}
+            </>,
           )}
         </span>
         {!compact && (
@@ -137,15 +142,19 @@ const WorkflowRow = memo(function WorkflowRow({
         aria-hidden="true"
         className="relative grid size-8 shrink-0 place-items-center rounded border border-icon-line text-sm font-medium"
       >
-        {workflow.displayName.slice(0, 1).toUpperCase() +
-          workflow.displayName.slice(1, 2).toLowerCase()}
-        {compact && workflow.cron && (
-          <Clock
-            className={`absolute -right-1 -bottom-1 size-3 rounded-full bg-panel ${
-              workflow.scheduleEnabled ? "text-acid" : "text-amber"
-            }`}
-            strokeWidth={2.5}
-          />
+        {capText(
+          <>
+            {workflow.displayName.slice(0, 1).toUpperCase() +
+              workflow.displayName.slice(1, 2).toLowerCase()}
+            {compact && workflow.cron && (
+              <Clock
+                className={`absolute -right-1 -bottom-1 size-3 rounded-full bg-panel ${
+                  workflow.scheduleEnabled ? "text-acid" : "text-amber"
+                }`}
+                strokeWidth={2.5}
+              />
+            )}
+          </>,
         )}
       </span>
       {!compact && (
@@ -253,8 +262,12 @@ function ExplorerView({
                 className="flex h-8 min-w-0 items-center gap-2 px-2 text-sm text-muted"
                 title={scanTarget.targetPath}
               >
-                <Folder aria-hidden="true" className="size-4 shrink-0" />
-                <span className="truncate">{scanTargetLabel}</span>
+                {capText(
+                  <>
+                    <Folder aria-hidden="true" className="size-4 shrink-0" />
+                    <span className="truncate">{scanTargetLabel}</span>
+                  </>,
+                )}
               </div>
             )}
             <ul
@@ -315,15 +328,19 @@ function ExplorerView({
             aria-expanded={pinned}
             onClick={onTogglePin}
           >
-            <PanelLeft aria-hidden="true" className="size-4 shrink-0" />
-            {!pinned && (
-              <span
-                className={`whitespace-nowrap text-sm transition-opacity duration-150 ${
-                  expanded ? "opacity-100 delay-200" : "opacity-0 delay-0"
-                }`}
-              >
-                Pin open
-              </span>
+            {capText(
+              <>
+                <PanelLeft aria-hidden="true" className="size-4 shrink-0" />
+                {!pinned && (
+                  <span
+                    className={`whitespace-nowrap text-sm transition-opacity duration-150 ${
+                      expanded ? "opacity-100 delay-200" : "opacity-0 delay-0"
+                    }`}
+                  >
+                    Pin open
+                  </span>
+                )}
+              </>,
             )}
           </button>
         </footer>

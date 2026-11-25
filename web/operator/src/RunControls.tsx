@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { ChevronDown, Clock } from "lucide-react";
 import { useEffect, useLayoutEffect, useState } from "react";
 
@@ -206,10 +207,14 @@ export function RunControls({
             className="run-button inline-flex cursor-pointer items-center gap-1.5 rounded border border-acid bg-acid px-[11px] py-[7px] text-[10px] font-bold text-on-accent hover:border-acid-hover hover:bg-acid-hover [&_svg]:size-[11px] [&_svg]:fill-current"
             onClick={() => void start()}
           >
-            <svg aria-hidden="true" viewBox="0 0 12 12">
-              <path d="M2.5 1.5 10 6l-7.5 4.5z" />
-            </svg>
-            <span>Run</span>
+            {capText(
+              <>
+                <svg aria-hidden="true" viewBox="0 0 12 12">
+                  <path d="M2.5 1.5 10 6l-7.5 4.5z" />
+                </svg>
+                <span>Run</span>
+              </>,
+            )}
           </button>
           {scheduled && (
             <span className="schedule-controls ml-1 flex items-center gap-1.5 border-l border-line pl-2.5 text-[10px] text-ink">
@@ -237,12 +242,16 @@ export function RunControls({
                 className="inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0.5 text-[10px] text-ink hover:text-acid"
                 onClick={() => setShowSchedule((value) => !value)}
               >
-                <Clock aria-hidden="true" className="size-3 text-secondary" />
-                <span aria-hidden="true">Schedule</span>
-                <ChevronDown
-                  aria-hidden="true"
-                  className={`size-3 transition-transform ${showSchedule ? "rotate-180" : ""}`}
-                />
+                {capText(
+                  <>
+                    <Clock aria-hidden="true" className="size-3 text-secondary" />
+                    <span aria-hidden="true">Schedule</span>
+                    <ChevronDown
+                      aria-hidden="true"
+                      className={`size-3 transition-transform ${showSchedule ? "rotate-180" : ""}`}
+                    />
+                  </>,
+                )}
               </button>
               {draftDiffersFromSchedule && (
                 <button
@@ -291,9 +300,17 @@ export function RunControls({
           className="terminal-seal flex items-center gap-1.5 rounded border border-line-strong bg-canvas px-[11px] py-[7px] text-[10px] text-secondary"
           data-terminal-status={outcome.status}
         >
-          <span className="terminal-seal-status font-bold">Terminal: {outcome.status}</span>
-          {outcome.reason !== undefined && (
-            <span className="terminal-seal-reason">Reason: {outcome.reason}</span>
+          {capText(
+            <>
+              <span className="avalanche-cap-center terminal-seal-status font-bold">
+                {capText(<>Terminal: {outcome.status}</>)}
+              </span>
+              {outcome.reason !== undefined && (
+                <span className="avalanche-cap-center terminal-seal-reason">
+                  {capText(<>Reason: {outcome.reason}</>)}
+                </span>
+              )}
+            </>,
           )}
         </div>
       )}

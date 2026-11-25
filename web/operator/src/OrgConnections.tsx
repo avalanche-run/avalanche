@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 // Named connections across an organization: the host-neutral screens a
 // multi-project host (an org with projects and flows) mounts. The single-project
 // local operator shows its connections in the integrations panel instead.
@@ -125,11 +126,15 @@ function StateBadge({ state }: { state: ConnectionInstanceState | "missing" }) {
       data-state={state}
       className={`inline-flex items-center gap-1.5 font-mono text-[9px] uppercase ${good ? "text-mint" : "text-amber"}`}
     >
-      <span
-        aria-hidden="true"
-        className={`size-[6px] rounded-full ${good ? "bg-mint" : "bg-amber"}`}
-      />
-      {STATE_LABELS[state]}
+      {capText(
+        <>
+          <span
+            aria-hidden="true"
+            className={`size-[6px] rounded-full ${good ? "bg-mint" : "bg-amber"}`}
+          />
+          {STATE_LABELS[state]}
+        </>,
+      )}
     </span>
   );
 }
@@ -294,25 +299,29 @@ export function OrganizationConnectionsPanel({
                             key={target(item)}
                             className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5"
                           >
-                            {target(item)}
-                            {api.assign && (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                aria-label={`Remove assignment ${target(item)} from ${connection.slug}`}
-                                className="cursor-pointer border-0 bg-transparent p-0 text-muted hover:text-ink"
-                                onClick={() =>
-                                  void act(() =>
-                                    api.assign!(
-                                      connection.id,
-                                      { project: item.project, flow: item.flow },
-                                      true,
-                                    ),
-                                  )
-                                }
-                              >
-                                ×
-                              </button>
+                            {capText(
+                              <>
+                                {target(item)}
+                                {api.assign && (
+                                  <button
+                                    type="button"
+                                    disabled={busy}
+                                    aria-label={`Remove assignment ${target(item)} from ${connection.slug}`}
+                                    className="cursor-pointer border-0 bg-transparent p-0 text-muted hover:text-ink"
+                                    onClick={() =>
+                                      void act(() =>
+                                        api.assign!(
+                                          connection.id,
+                                          { project: item.project, flow: item.flow },
+                                          true,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </>,
                             )}
                           </li>
                         ))}

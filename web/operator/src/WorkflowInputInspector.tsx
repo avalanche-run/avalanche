@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useMemo } from "react";
 import { LoaderCircle, Paperclip, SlidersHorizontal, X } from "lucide-react";
 
@@ -101,8 +102,12 @@ export function WorkflowInputInspector({
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 pt-[19px] pb-3.5">
         <div className="min-w-0 flex-1">
           <span className="eyebrow flex items-center gap-1.5 font-mono text-[9px] tracking-[.16em] text-amber uppercase">
-            <SlidersHorizontal aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
-            Input · {run ? "Run" : definitionLabel}
+            {capText(
+              <>
+                <SlidersHorizontal aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+                Input · {run ? "Run" : definitionLabel}
+              </>,
+            )}
           </span>
           <h2 className="mt-1 mb-0 min-w-0 text-lg [overflow-wrap:anywhere]">
             {"typeName" in inspected ? inspected.typeName : "Run input"}
@@ -327,11 +332,15 @@ function FileFieldInput({
         )}
         {picked?.status === "staging" && (
           <span role="status" className="inline-flex items-center gap-1 text-[10px] text-muted">
-            <LoaderCircle
-              aria-hidden="true"
-              className="size-3 animate-spin motion-reduce:animate-none"
-            />
-            Uploading…
+            {capText(
+              <>
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-3 animate-spin motion-reduce:animate-none"
+                />
+                Uploading…
+              </>,
+            )}
           </span>
         )}
       </div>

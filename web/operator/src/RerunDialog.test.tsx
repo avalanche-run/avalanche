@@ -279,7 +279,7 @@ describe("rerun from a step", () => {
   it("is not offered on a step the code has no slug for", async () => {
     renderWorkspace(vi.fn(), { nodeSlugs: { a_1: "a" } });
     await openStep("C");
-    await screen.findByRole("heading", { level: 2 });
+    await screen.findByRole("heading", { level: 2, name: "C" });
     expect(screen.queryByRole("button", { name: "Rerun from here" })).toBeNull();
   });
 
@@ -293,7 +293,7 @@ describe("rerun from a step", () => {
       runs: [{ ...summary, runId: "run-1", status: "running" }],
     });
     await openStep("A");
-    await screen.findByRole("heading", { level: 2 });
+    await screen.findByRole("heading", { level: 2, name: "A" });
     expect(screen.queryByRole("button", { name: "Rerun from here" })).toBeNull();
   });
 
@@ -316,7 +316,7 @@ describe("rerun from a step", () => {
       />,
     );
     await openStep("C");
-    await screen.findByRole("heading", { level: 2 });
+    await screen.findByRole("heading", { level: 2, name: "C" });
     expect(screen.queryByRole("button", { name: "Rerun from here" })).toBeNull();
   });
 });

@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, ListFilter, X } from "lucide-react";
 
@@ -533,18 +534,22 @@ function ClassifierHistory({
                       aria-label={`Call ${event.invocationIndex + 1}`}
                       className="flex cursor-pointer items-center gap-1.5 rounded border-0 bg-transparent p-0 text-[11px] font-medium whitespace-nowrap text-ink focus-visible:outline-2 focus-visible:outline-classifier"
                     >
-                      {selected ? (
-                        <ChevronDown
-                          aria-hidden="true"
-                          className="size-3 shrink-0 text-classifier"
-                        />
-                      ) : (
-                        <ChevronRight
-                          aria-hidden="true"
-                          className="size-3 shrink-0 text-muted"
-                        />
+                      {capText(
+                        <>
+                          {selected ? (
+                            <ChevronDown
+                              aria-hidden="true"
+                              className="size-3 shrink-0 text-classifier"
+                            />
+                          ) : (
+                            <ChevronRight
+                              aria-hidden="true"
+                              className="size-3 shrink-0 text-muted"
+                            />
+                          )}
+                          {event.invocationIndex + 1}
+                        </>,
                       )}
-                      {event.invocationIndex + 1}
                     </button>
                   </th>
                   <td className="px-2 py-2.5 leading-relaxed text-secondary [overflow-wrap:anywhere]">
@@ -820,8 +825,12 @@ export function ClassifierInspector({
       <header className="flex shrink-0 items-start justify-between gap-3 border-b border-line px-5 pt-[19px] pb-3.5">
         <div className="min-w-0 flex-1">
           <span className="eyebrow flex items-center gap-1.5 font-mono text-[9px] tracking-[.16em] text-classifier uppercase">
-            <ListFilter aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
-            Classifier · {run ? "Run" : "Workflow"}
+            {capText(
+              <>
+                <ListFilter aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+                Classifier · {run ? "Run" : "Workflow"}
+              </>,
+            )}
           </span>
           <h2 className="mt-1 mb-0 min-w-0 text-lg [overflow-wrap:anywhere]">{name}</h2>
           {node?.error && (

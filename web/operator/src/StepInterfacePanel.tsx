@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useId, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
@@ -357,10 +358,14 @@ function SchemaNode({
             onClick={() => setExpanded(!expanded)}
             className="-m-0.5 shrink-0 cursor-pointer rounded border-0 bg-transparent p-0.5 text-muted hover:bg-canvas hover:text-ink focus-visible:outline-2 focus-visible:outline-acid"
           >
-            {expanded ? (
-              <ChevronDown className="size-3.5" />
-            ) : (
-              <ChevronRight className="size-3.5" />
+            {capText(
+              <>
+                {expanded ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
+              </>,
             )}
           </button>
         ) : (

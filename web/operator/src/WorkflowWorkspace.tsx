@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import {
   type CSSProperties,
   type ReactNode,
@@ -9,6 +10,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { RefreshCcwDot, Workflow as WorkflowIcon } from "lucide-react";
 
 import type { OperatorApi } from "./api";
 import {
@@ -127,8 +129,6 @@ export interface WorkflowWorkspaceProps {
   bottomRightPanel?: ReactNode;
   /** Host loading surface used until the initial catalog is available. */
   loadingFallback?: ReactNode;
-  /** Optional bottom pane when showing a definition rather than a run. */
-  emptyRunPanel?: ReactNode;
   navigation?: {
     selectedRunId?: string;
     /** `nodeId` is the step to open with the run, when a link names one. */
@@ -153,7 +153,6 @@ interface WorkflowWorkspaceSurfaceProps extends Pick<
   WorkflowWorkspaceProps,
   | "layoutStorageKey"
   | "loadingFallback"
-  | "emptyRunPanel"
   | "currentLabel"
   | "currentRowAction"
   | "showCurrentRow"
@@ -263,7 +262,6 @@ export function WorkflowWorkspaceSurface({
   definitionLabel,
   bottomRightPanel,
   loadingFallback,
-  emptyRunPanel,
   currentLabel,
   currentRowAction,
   showCurrentRow,
@@ -1238,6 +1236,26 @@ export function WorkflowWorkspaceSurface({
       className={`avalanche-operator-ui avalanche-workspace flex min-h-0 min-w-0 flex-col ${className}`}
       style={{ height: "100%" }}
     >
+      {workflow && (
+        <header className="workspace-flow-header flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-line bg-panel px-4 py-2 font-mono text-xs text-ink">
+          <h2 className="m-0 text-xs font-semibold">{workflow.displayName || workflow.name}</h2>
+          <span className="workspace-flow-kind inline-flex items-center gap-1.5 font-medium">
+            {capText(
+              <>
+                {machineSpec ? (
+                  <RefreshCcwDot aria-hidden="true" className="size-3 shrink-0 text-muted" />
+                ) : (
+                  <WorkflowIcon aria-hidden="true" className="size-3 shrink-0 text-muted" />
+                )}
+                {machineSpec ? "State machine" : "Workflow"}
+              </>,
+            )}
+          </span>
+          <span className="text-secondary">
+            {machineSpec ? "States and transitions" : "Steps and dependencies"}
+          </span>
+        </header>
+      )}
       <div
         className={`workflow-workspace relative grid min-h-0 min-w-0 w-full flex-1 overflow-hidden grid-cols-[minmax(0,1fr)_var(--workspace-inspector-divider-width)_var(--workspace-inspector-column-width)] max-[1000px]:grid-cols-[minmax(0,1fr)] ${inspectorOpen ? "with-inspector" : ""}`}
         style={workspaceStyle}
@@ -1250,12 +1268,10 @@ export function WorkflowWorkspaceSurface({
             <div
               ref={timelineRef}
               style={
-                timelineMaxHeight === undefined
-                  ? undefined
-                  : { maxHeight: timelineMaxHeight, overflowY: "auto" }
+                timelineMaxHeight === undefined ? undefined : { maxHeight: timelineMaxHeight }
               }
               data-runs-folded={runsFolded || undefined}
-              className={`workspace-timeline z-20 ${timelineExpanded ? "relative w-[410px] max-w-full shrink-0 max-[1000px]:absolute max-[1000px]:inset-y-0 max-[1000px]:left-0" : runsFolded ? "absolute top-3.5 left-3.5 max-w-[calc(100%-7rem)]" : "absolute top-3.5 left-3.5 w-[300px] max-w-[calc(100vw-3rem)]"}`}
+              className={`workspace-timeline flex min-h-0 flex-col overflow-hidden z-20 ${timelineExpanded ? "relative w-[410px] max-w-full shrink-0 max-[1000px]:absolute max-[1000px]:inset-y-0 max-[1000px]:left-0" : runsFolded ? "absolute top-3.5 left-3.5 max-w-[calc(100%-7rem)]" : "absolute top-3.5 left-3.5 w-[300px] max-w-[calc(100vw-3rem)]"}`}
             >
               {runsFolded ? (
                 <button
@@ -1266,13 +1282,17 @@ export function WorkflowWorkspaceSurface({
                   onClick={() => setRunsCollapsed(false)}
                   className="runs-chip flex max-w-full min-w-0 cursor-pointer items-center gap-1.5 rounded border border-line bg-overlay-panel px-2.5 py-1.5 font-mono text-[10px] text-ink shadow-[0_6px_20px_var(--color-shadow-2)] hover:bg-hover focus-visible:outline-2 focus-visible:outline-acid"
                 >
-                  <strong className="flex-none tracking-[0.16em] uppercase">Runs</strong>
-                  <span className="min-w-0 truncate text-secondary">
-                    · {(selectedRunId && state.runs[selectedRunId]?.label) || selectedRunId}
-                  </span>
-                  <span aria-hidden="true" className="flex-none text-acid">
-                    ▸
-                  </span>
+                  {capText(
+                    <>
+                      <strong className="flex-none tracking-[0.16em] uppercase">Runs</strong>
+                      <span className="min-w-0 truncate text-secondary">
+                        · {(selectedRunId && state.runs[selectedRunId]?.label) || selectedRunId}
+                      </span>
+                      <span aria-hidden="true" className="flex-none text-acid">
+                        ▸
+                      </span>
+                    </>,
+                  )}
                 </button>
               ) : (
                 runListPanel
@@ -1392,19 +1412,19 @@ export function WorkflowWorkspaceSurface({
                       {rerunOfRunId && (
                         <button
                           type="button"
-                          className="run-rerun-of-header pointer-events-auto max-w-[240px] cursor-pointer truncate rounded border border-history-line bg-history-surface px-3 py-1.5 font-mono text-[9px] text-run-status-reused underline underline-offset-2 shadow-[0_4px_14px_var(--color-shadow-4)] hover:text-ink"
+                          className="avalanche-cap-center run-rerun-of-header pointer-events-auto max-w-[240px] cursor-pointer truncate rounded border border-history-line bg-history-surface px-3 py-1.5 font-mono text-[9px] text-run-status-reused underline underline-offset-2 shadow-[0_4px_14px_var(--color-shadow-4)] hover:text-ink"
                           title={`Rerun of run ${rerunOfRunId}`}
                           onClick={() => selectWorkflowRun(rerunOfRunId)}
                         >
-                          ↺ Rerun of run {rerunOfRunId}
+                          {capText(<>↺ Rerun of run {rerunOfRunId}</>)}
                         </button>
                       )}
                       {runSkips && (
                         <div
-                          className="run-skips-header max-w-[240px] truncate rounded border border-history-line bg-history-surface px-3 py-1.5 font-mono text-[9px] text-run-status-skipped shadow-[0_4px_14px_var(--color-shadow-4)]"
+                          className="avalanche-cap-center run-skips-header max-w-[240px] truncate rounded border border-history-line bg-history-surface px-3 py-1.5 font-mono text-[9px] text-run-status-skipped shadow-[0_4px_14px_var(--color-shadow-4)]"
                           title={`${runSkips.firstStep}: ${runSkips.firstReason}`}
                         >
-                          {runSkipsNote(runSkips)}
+                          {capText(<>{runSkipsNote(runSkips)}</>)}
                         </div>
                       )}
                     </div>
@@ -1433,9 +1453,7 @@ export function WorkflowWorkspaceSurface({
                     onTabChange={setRunPaneTab}
                     context={stateEntryNav}
                   />
-                ) : (
-                  emptyRunPanel
-                )}
+                ) : null}
               </>
             ) : (
               <div className="empty-state grid h-full place-content-center text-center text-secondary">
@@ -1557,7 +1575,6 @@ export function WorkflowWorkspace({
   definitionLabel,
   bottomRightPanel,
   loadingFallback,
-  emptyRunPanel,
   navigation,
   initialNodeId,
   currentLabel,
@@ -1641,7 +1658,6 @@ export function WorkflowWorkspace({
         definitionLabel={definitionLabel}
         bottomRightPanel={bottomRightPanel}
         loadingFallback={loadingFallback}
-        emptyRunPanel={emptyRunPanel}
         currentLabel={currentLabel}
         currentRowAction={currentRowAction}
         showCurrentRow={showCurrentRow}

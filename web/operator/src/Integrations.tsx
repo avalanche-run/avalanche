@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { LoaderCircle, Plug, X } from "lucide-react";
 
@@ -119,12 +120,16 @@ export function NodeIntegrationBadges({
             title={`${label} · ${integrationKindLabel(declaration)}${state ? ` · ${ACCOUNT_LABELS[state]}` : ""}`}
             className={`node-integration-badge inline-flex min-w-0 max-w-full items-center gap-1 rounded border px-1.5 py-0.5 font-mono ${compact ? "text-sm" : "text-[9px]"} ${blocking ? "border-warning-line bg-warning-surface text-warning-ink" : "border-line bg-canvas text-secondary"}`}
           >
-            <IntegrationIcon
-              declaration={declaration}
-              className={compact ? "size-4" : "size-3"}
-            />
-            <span className="min-w-0 truncate">{label}</span>
-            {blocking && <span className="sr-only">, {ACCOUNT_LABELS[state]}</span>}
+            {capText(
+              <>
+                <IntegrationIcon
+                  declaration={declaration}
+                  className={compact ? "size-4" : "size-3"}
+                />
+                <span className="min-w-0 truncate">{label}</span>
+                {blocking && <span className="sr-only">, {ACCOUNT_LABELS[state]}</span>}
+              </>,
+            )}
           </li>
         );
       })}
@@ -138,11 +143,15 @@ function AccountState({ state }: { state: IntegrationAccountState }) {
       className={`integration-account inline-flex items-center gap-1.5 font-mono text-[9px] uppercase ${state === "connected" ? "text-mint" : state === "missing" || state === "reconnect_needed" ? "text-amber" : "text-muted"}`}
       data-account={state}
     >
-      <span
-        aria-hidden="true"
-        className={`size-[6px] rounded-full ${state === "connected" ? "bg-mint" : state === "missing" || state === "reconnect_needed" ? "bg-amber" : "bg-muted"}`}
-      />
-      {ACCOUNT_LABELS[state]}
+      {capText(
+        <>
+          <span
+            aria-hidden="true"
+            className={`size-[6px] rounded-full ${state === "connected" ? "bg-mint" : state === "missing" || state === "reconnect_needed" ? "bg-amber" : "bg-muted"}`}
+          />
+          {ACCOUNT_LABELS[state]}
+        </>,
+      )}
     </span>
   );
 }
@@ -204,14 +213,18 @@ export function StepIntegrationsSection({ error }: { error?: string }) {
               className="min-w-0"
             >
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <IntegrationIcon declaration={declaration} className="size-4" />
-                <strong className="min-w-0 text-xs text-ink [overflow-wrap:anywhere]">
-                  {declarationLabel(declaration, view.status(declaration.name))}
-                </strong>
-                <span className="rounded border border-line px-1.5 py-px font-mono text-[8px] tracking-[.08em] text-secondary uppercase">
-                  {integrationKindLabel(declaration)}
-                </span>
-                {state && <AccountState state={state} />}
+                {capText(
+                  <>
+                    <IntegrationIcon declaration={declaration} className="size-4" />
+                    <strong className="min-w-0 text-xs text-ink [overflow-wrap:anywhere]">
+                      {declarationLabel(declaration, view.status(declaration.name))}
+                    </strong>
+                    <span className="avalanche-cap-center rounded border border-line px-1.5 py-px font-mono text-[8px] tracking-[.08em] text-secondary uppercase">
+                      {capText(<>{integrationKindLabel(declaration)}</>)}
+                    </span>
+                    {state && <AccountState state={state} />}
+                  </>,
+                )}
               </div>
               {status?.provider_error && (
                 <p role="alert" className="m-0 mt-1 text-[11px] text-error-ink">
@@ -270,10 +283,14 @@ export function ToolIntegrationTag({ toolName }: { toolName: string }) {
       data-integration={declaration.name}
       title={`${integrationKindLabel(declaration)} ${declaration.name}`}
     >
-      <IntegrationIcon declaration={declaration} className="size-2.5" />
-      <span className="truncate">
-        {declarationLabel(declaration, view.status(declaration.name))}
-      </span>
+      {capText(
+        <>
+          <IntegrationIcon declaration={declaration} className="size-2.5" />
+          <span className="truncate">
+            {declarationLabel(declaration, view.status(declaration.name))}
+          </span>
+        </>,
+      )}
     </span>
   );
 }
@@ -511,15 +528,19 @@ function BrowserLoginForm({
             className={PRIMARY_BUTTON}
             disabled={waiting || (asksClientId && !clientId.trim())}
           >
-            {waiting && (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-3 animate-spin motion-reduce:animate-none"
-              />
+            {capText(
+              <>
+                {waiting && (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-3 animate-spin motion-reduce:animate-none"
+                  />
+                )}
+                {status.connected || status.account_state === "reconnect_needed"
+                  ? "Log in again"
+                  : "Log in with browser"}
+              </>,
             )}
-            {status.connected || status.account_state === "reconnect_needed"
-              ? "Log in again"
-              : "Log in with browser"}
           </button>
           <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
             Cancel
@@ -653,13 +674,17 @@ function KeyForm({
         )}
         <div className="flex gap-2">
           <button type="submit" className={PRIMARY_BUTTON} disabled={sending || !key.trim()}>
-            {sending && (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-3 animate-spin motion-reduce:animate-none"
-              />
+            {capText(
+              <>
+                {sending && (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-3 animate-spin motion-reduce:animate-none"
+                  />
+                )}
+                {status.connected ? "Replace key" : "Connect"}
+              </>,
             )}
-            {status.connected ? "Replace key" : "Connect"}
           </button>
           <button
             type="button"
@@ -748,8 +773,8 @@ function IntegrationRow({
         <div className="min-w-[12rem] flex-1">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <strong className="text-sm text-ink [overflow-wrap:anywhere]">{label}</strong>
-            <span className="rounded border border-line px-1.5 py-px font-mono text-[8px] tracking-[.08em] text-secondary uppercase">
-              {integrationKindLabel(declaration)}
+            <span className="avalanche-cap-center rounded border border-line px-1.5 py-px font-mono text-[8px] tracking-[.08em] text-secondary uppercase">
+              {capText(<>{integrationKindLabel(declaration)}</>)}
             </span>
           </div>
           <p className="m-0 mt-0.5 font-mono text-[10px] text-muted [overflow-wrap:anywhere]">
@@ -837,13 +862,17 @@ function IntegrationRow({
             connected again.
           </p>
           <button type="button" className={DANGER_BUTTON} disabled={removing} onClick={remove}>
-            {removing && (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-3 animate-spin motion-reduce:animate-none"
-              />
+            {capText(
+              <>
+                {removing && (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-3 animate-spin motion-reduce:animate-none"
+                  />
+                )}
+                Remove account
+              </>,
             )}
-            Remove account
           </button>
           <button
             type="button"

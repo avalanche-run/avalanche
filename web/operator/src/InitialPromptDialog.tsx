@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { Check, Copy, X } from "lucide-react";
 import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -91,10 +92,14 @@ function CopyButton({ text, label }: { text: string; label: string }) {
       }}
       className="icon-button grid size-[26px] shrink-0 cursor-pointer place-items-center rounded border border-line bg-panel p-0 text-secondary hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid"
     >
-      {copied ? (
-        <Check aria-hidden="true" className="size-3.5 text-success" strokeWidth={1.8} />
-      ) : (
-        <Copy aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+      {capText(
+        <>
+          {copied ? (
+            <Check aria-hidden="true" className="size-3.5 text-success" strokeWidth={1.8} />
+          ) : (
+            <Copy aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+          )}
+        </>,
       )}
     </button>
   );

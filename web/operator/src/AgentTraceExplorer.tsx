@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -474,7 +475,7 @@ export function AgentTraceExplorer({
                           className={`mt-0.5 grid size-5 place-items-center rounded-full border font-mono text-[8px] ${failed ? "border-danger text-danger" : "border-acid text-acid"}`}
                           aria-hidden="true"
                         >
-                          {failed ? "×" : iteration}
+                          {capText(<>{failed ? "×" : iteration}</>)}
                         </span>
                         <div className="min-w-0">
                           <strong className="block text-[10px] text-ink">

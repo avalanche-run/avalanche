@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useCallback } from "react";
 
 import type { OperatorApi } from "./api";
@@ -54,10 +55,10 @@ function StepValue({ label, preview }: { label: string; preview: StepValuePrevie
         </code>
         {preview.truncated && (
           <span
-            className="rounded border border-line px-1 font-mono text-[8px] text-muted uppercase"
+            className="avalanche-cap-center rounded border border-line px-1 font-mono text-[8px] text-muted uppercase"
             title="Large values are cut; '…' marks the omitted part."
           >
-            Truncated preview
+            {capText(<>Truncated preview</>)}
           </span>
         )}
       </div>

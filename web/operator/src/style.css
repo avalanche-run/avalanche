@@ -1,6 +1,47 @@
 @import "@xyflow/react/dist/style.css";
 @import "tailwindcss";
 
+/* capText reserves paint room inside its trimmed alignment footprint, including
+   when a host's descendant selector adds overflow:hidden for ellipsis. */
+.avalanche-cap-text {
+  display: inline-block;
+  text-box: trim-both cap alphabetic;
+}
+
+.avalanche-cap-center {
+  display: inline-flex;
+  align-items: center;
+}
+
+.avalanche-operator-ui :is(.node-kicker, .node-status) {
+  display: inline-flex;
+  align-items: center;
+}
+.avalanche-operator-ui .historical-badge {
+  text-box: trim-both cap alphabetic;
+}
+
+/* Lowercase labels keep their cap-trimmed chip box, but their decorative icon
+   follows the x-height midpoint. Uppercase transforms and mixed-case labels keep
+   the cap midpoint. Do not apply this to a compound row's uppercase sublabel. */
+.avalanche-operator-ui
+  :not(.uppercase, .mono-label):has(> .avalanche-cap-text[data-lowercase]):not(
+    :has(> .avalanche-cap-text:is(.uppercase, .mono-label))
+  )
+  > :is(svg, .run-status-text[aria-label]:has([data-wait-kind])) {
+  translate: 0 calc((1cap - 1ex) / 2 + var(--cap-icon-offset, 0px));
+}
+
+/* Glyph-only statuses sit in an ordinary text line (node names, timeline).
+   CSS middle uses the x-height and used to put the clock above the label. */
+.avalanche-operator-ui .run-status-text[aria-label]:has([data-wait-kind]) {
+  height: 1em;
+  vertical-align: calc(0.5cap - 0.5em);
+}
+.avalanche-operator-ui .run-status-text[aria-label] > [data-wait-kind] {
+  align-self: center;
+}
+
 .graph-viewport {
   width: 100%;
   height: 100%;
@@ -638,7 +679,15 @@
     border-color: var(--color-line);
   }
 
-  /* A state machine's current state: the only machine-specific card treatment. */
+  .node-card.node-card--machine {
+    border-color: var(--color-line-strong);
+  }
+
+  .node-card--machine .node-kicker {
+    margin-bottom: 0.3em;
+  }
+
+  /* The current state adds emphasis to the same bordered machine card. */
   .node-card.node-card--current {
     border-color: var(--color-acid);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-acid) 28%, transparent);
@@ -768,6 +817,11 @@
     pointer-events: none;
   }
 
+  .node-card--compact.node-card--machine .node-kicker {
+    max-height: none;
+    opacity: 1;
+  }
+
   .node-card--compact.node-card--description {
     min-height: 140px;
   }
@@ -856,9 +910,95 @@
   border-radius: var(--radius-ui);
 }
 
+/* At the expanded panel's 11px size, rasterized mono bearings land on the
+   opposite half-pixel from the 10px row. Keep this variant with RunStatus. */
+.avalanche-operator-ui .run-status-text--expanded > .avalanche-cap-text {
+  translate: 0 0.25px;
+}
+
+/* Timeline markers follow the first text line, not the height of an expanded
+   decision card. The row's shared 10px / 1.5 typography makes this font-relative. */
+.avalanche-operator-ui .run-timeline-pending [data-wait-kind] {
+  margin-top: calc((1lh - 1em) / 2 - 0.05em);
+}
+
+.avalanche-operator-ui .run-status-text.run-status-text--expanded:not([aria-label]) .run-status-glyph:is([data-glyph="success"], [data-glyph="danger"], [data-char="⊘"]) {
+  translate: 0 0.5px;
+}
+.avalanche-operator-ui .node-child-run button > .avalanche-cap-text {
+  translate: 0 0.5px;
+}
+.avalanche-operator-ui .node-child-run .run-status-glyph {
+  translate: 0 1px;
+}
+.avalanche-operator-ui .node-child-run .run-status-glyph[data-glyph="running"] {
+  translate: 0 0px;
+}
+.avalanche-operator-ui .node-child-run .run-status-glyph[data-glyph="reused"] {
+  translate: 0 0.75px;
+}
+.avalanche-operator-ui .map-item-heading > .avalanche-cap-text {
+  translate: 0 0.25px;
+}
+.avalanche-operator-ui .map-item-heading .run-status-glyph[data-glyph="skipped"] {
+  translate: 0 0.5px;
+}
+
+.avalanche-operator-ui .run-status-text:not([aria-label]) .run-status-glyph[data-glyph="neutral"] {
+  translate: 0 -0.1em;
+}
+.avalanche-operator-ui .node-child-run .run-status-glyph[data-char="○"] {
+  translate: 0 0.5px;
+}
+.avalanche-operator-ui .map-item-heading .run-status-glyph:is([data-glyph="success"], [data-glyph="danger"], [data-char="⊘"]) {
+  translate: 0 0.5px;
+}
+
+/* Inline symbol glyphs already follow the alphabetic baseline's x-height.
+   Capitalized node names need the cap midpoint; lowercase names keep x-height. */
+.avalanche-operator-ui .node-title:has(> .avalanche-cap-text[data-lowercase]) > .run-status-text[aria-label] {
+  --node-glyph-shift: 0px;
+}
+.avalanche-operator-ui .node-title .run-status-text[aria-label] .run-status-glyph {
+  translate: 0 var(--node-glyph-shift, calc((1ex - 1cap) / 2));
+}
+.avalanche-operator-ui .node-child-run button:has(> .avalanche-cap-text[data-lowercase]) > .run-status-text[aria-label] {
+  translate: 0 calc((1cap - 1ex) / 2);
+}
+
+.avalanche-operator-ui .node-title.text-sm:not(:has(> .avalanche-cap-text[data-lowercase])) .run-status-text[aria-label] .run-status-glyph:is([data-glyph="running"], [data-glyph="reused"], [data-char="○"]) {
+  translate: 0 calc((1ex - 1cap) / 2 - 0.035em);
+}
+
 /* Unboxed TUI status: glyph is decorative; the real runtime word stays text. */
 .avalanche-operator-ui .run-status-glyph {
   display: inline-block;
   width: 1em;
   text-align: center;
+}
+/* Symbol glyphs have different ink bearings from letters in the mono font.
+   These optical offsets follow the font size, including a zoomed graph. */
+.avalanche-operator-ui .run-status-text:not([aria-label]) .run-status-glyph:is([data-glyph="running"], [data-glyph="reused"]) {
+  translate: 0 -0.1em;
+}
+.avalanche-operator-ui .run-status-text:not([aria-label]) .run-status-glyph[data-glyph="danger"] {
+  translate: 0 -0.05em;
+}
+.avalanche-operator-ui .run-status-text:not([aria-label]) .run-status-glyph[data-char="⊘"] {
+  translate: 0 -0.1em;
+}
+.avalanche-operator-ui .node-title .run-status-text[aria-label] .run-status-glyph:is([data-glyph="success"], [data-glyph="skipped"], [data-char="⊘"]) {
+  translate: 0 calc(var(--node-glyph-shift, (1ex - 1cap) / 2) + 0.025em);
+}
+.avalanche-operator-ui .node-title .run-status-text[aria-label]:has([data-wait-kind]) {
+  --cap-icon-offset: -0.025em;
+}
+.avalanche-operator-ui .node-title.text-xl:has(> .avalanche-cap-text[data-lowercase]) .run-status-text[aria-label]:has([data-wait-kind]) {
+  --cap-icon-offset: 0em;
+}
+.avalanche-operator-ui .run-status-text.run-status-text--expanded:not([aria-label]) .run-status-glyph {
+  translate: 0 0;
+}
+.avalanche-operator-ui .run-status-text.run-status-text--expanded:not([aria-label]) .run-status-glyph[data-glyph="skipped"] {
+  translate: 0 0.5px;
 }

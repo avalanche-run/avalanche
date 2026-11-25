@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { json } from "@codemirror/lang-json";
 import { foldGutter, foldKeymap } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
@@ -264,10 +265,14 @@ function QuestionRow({
           onClick={() => setExpanded(!expanded)}
           className="-m-1 mt-0 cursor-pointer self-start rounded border-0 bg-transparent p-1 text-muted hover:bg-canvas hover:text-classifier focus-visible:outline-2 focus-visible:outline-classifier"
         >
-          {expanded ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
+          {capText(
+            <>
+              {expanded ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
+            </>,
           )}
         </button>
       ) : (
@@ -293,8 +298,8 @@ function QuestionRow({
         </div>
       )}
       <div className="classifier-question-kind flex flex-wrap items-center justify-end gap-x-2 gap-y-1 text-right text-[9px] text-muted">
-        <span className="rounded border border-classifier/20 bg-classifier-light px-1.5 py-0.5 font-mono text-classifier">
-          {typeLabel}
+        <span className="avalanche-cap-center rounded border border-classifier/20 bg-classifier-light px-1.5 py-0.5 font-mono text-classifier">
+          {capText(<>{typeLabel}</>)}
         </span>
         {count !== null && (
           <span className="whitespace-nowrap">
@@ -495,12 +500,16 @@ export function ClassifierInvocationDetails({
           onClick={() => setDefinitionExpanded(!definitionExpanded)}
           className="flex cursor-pointer items-center gap-1.5 rounded border-0 bg-transparent p-0 text-[11px] text-secondary hover:text-classifier focus-visible:outline-2 focus-visible:outline-classifier"
         >
-          {definitionExpanded ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
+          {capText(
+            <>
+              {definitionExpanded ? (
+                <ChevronDown className="size-3.5" />
+              ) : (
+                <ChevronRight className="size-3.5" />
+              )}
+              Definition
+            </>,
           )}
-          Definition
         </button>
         {definitionExpanded && (
           <div id={definitionId}>

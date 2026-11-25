@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type CSSProperties,
@@ -586,13 +587,17 @@ export function RunLogPane({
         )}
         {!timelineShown && (
           <span className="run-log-count ml-auto flex-none whitespace-nowrap font-mono text-[8px] text-muted">
-            {combinedLogs.length} {combinedLogs.length === 1 ? "record" : "records"}
+            {capText(
+              <>
+                {combinedLogs.length} {combinedLogs.length === 1 ? "record" : "records"}
+              </>,
+            )}
           </span>
         )}
         {expanded && !timelineShown && (
           <button
             type="button"
-            className={`toggle run-log-autoscroll inline-flex flex-none cursor-pointer items-center gap-[5px] rounded border bg-panel px-2 py-[5px] font-mono text-[8px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid [&>span]:text-xs [&>span]:leading-none [&>span]:text-acid ${following ? "active border-acid text-acid" : "border-line text-secondary"}`}
+            className={`toggle run-log-autoscroll inline-flex flex-none cursor-pointer items-center gap-[5px] rounded border bg-panel px-2 py-[5px] font-mono text-[8px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-acid [&>span[aria-hidden]]:text-xs [&>span[aria-hidden]]:leading-none [&>span[aria-hidden]]:text-acid ${following ? "active border-acid text-acid" : "border-line text-secondary"}`}
             aria-label="Auto-scroll logs"
             aria-pressed={following}
             title={
@@ -606,8 +611,12 @@ export function RunLogPane({
               }
             }}
           >
-            <span aria-hidden="true">↓</span>
-            {following ? "Auto-scroll on" : "Auto-scroll off"}
+            {capText(
+              <>
+                <span aria-hidden="true">↓</span>
+                {following ? "Auto-scroll on" : "Auto-scroll off"}
+              </>,
+            )}
           </button>
         )}
       </header>

@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { type ReactNode, useState } from "react";
 
@@ -126,10 +127,10 @@ export function MapRunIo({
         )}
       </nav>
       <section aria-label={`Item ${index}`} className="grid min-w-0 gap-4">
-        <header className="flex min-w-0 items-baseline gap-2 font-mono text-[11px] text-ink">
-          <RunStatus status={item?.status ?? "pending"} glyphOnly />
+        <header className="map-item-heading flex min-w-0 items-center gap-2 font-mono text-[11px] text-ink">
+          {capText(<><RunStatus status={item?.status ?? "pending"} glyphOnly />
           <strong className="font-semibold">Item {index}</strong>
-          <span className="text-[10px] text-muted">{item?.nodeId}</span>
+          <span className="text-[10px] text-muted">{item?.nodeId}</span></>)}
         </header>
         {item?.error && (
           <p className="m-0 text-[10px] text-danger [overflow-wrap:anywhere]" role="alert">

@@ -1,3 +1,4 @@
+import { capText } from "./capText";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -116,13 +117,17 @@ function SetCurrentDialog({
             onClick={onConfirm}
             className={`${dialogButtonClass} inline-flex items-center gap-2 border-acid bg-selected text-acid hover:bg-selected-hover`}
           >
-            {pending && (
-              <LoaderCircle
-                aria-hidden="true"
-                className="size-3 animate-spin motion-reduce:animate-none"
-              />
+            {capText(
+              <>
+                {pending && (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="size-3 animate-spin motion-reduce:animate-none"
+                  />
+                )}
+                Set current
+              </>,
             )}
-            Set current
           </button>
         </div>
       </div>
@@ -241,10 +246,12 @@ export function DeploymentList({
           <span className="text-[9px] tracking-[0.16em]">Status</span>
         </span>
       </div>
-      <div className={`timeline-scroll-shell relative min-h-0 ${expanded ? "flex-1" : ""}`}>
+      <div
+        className={`timeline-scroll-shell relative flex min-h-0 flex-col ${expanded ? "flex-1" : ""}`}
+      >
         <div
           ref={scrollElement}
-          className={`deployment-list-scroll run-list-scroll timeline-scroll overflow-auto overscroll-contain ${expanded ? "h-full" : "max-h-48"}`}
+          className={`deployment-list-scroll run-list-scroll timeline-scroll min-h-0 overflow-auto overscroll-contain ${expanded ? "h-full" : "max-h-48"}`}
         >
           <div
             className="deployment-list-virtual relative w-full"
@@ -301,14 +308,18 @@ export function DeploymentList({
                           setConfirmationError(undefined);
                         }}
                       >
-                        <span className="deployment-set-current-label font-normal underline underline-offset-2 group-hover:no-underline">
-                          {(setCurrent.label ?? "set current").toLocaleLowerCase()}
-                        </span>
-                        {confirmation?.id === item.id && (
-                          <LoaderCircle
-                            aria-hidden="true"
-                            className="ml-1 inline size-3 animate-spin align-[-2px] motion-reduce:animate-none"
-                          />
+                        {capText(
+                          <>
+                            <span className="deployment-set-current-label font-normal underline underline-offset-2 group-hover:no-underline">
+                              {(setCurrent.label ?? "set current").toLocaleLowerCase()}
+                            </span>
+                            {confirmation?.id === item.id && (
+                              <LoaderCircle
+                                aria-hidden="true"
+                                className="ml-1 inline size-3 animate-spin align-[-2px] motion-reduce:animate-none"
+                              />
+                            )}
+                          </>,
                         )}
                       </button>
                     ) : null}
