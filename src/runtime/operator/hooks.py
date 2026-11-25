@@ -31,6 +31,11 @@ class RunHooks:
     on_node_start: Callable[[str], None] | None = None
     on_node_success: Callable[[str], None] | None = None
     on_node_failure: Callable[[str, Exception], None] | None = None
+    on_node_retry: Callable[[str, int, int, Exception], None] | None = None
+    """An attempt failed and the step will run again. Called as
+    on_node_retry(node_id, attempt, max_attempts, exc), where attempt is the failed
+    attempt, counted from 1, and max_attempts the most the step's policy allows. The
+    next attempt gets its own on_node_start."""
     on_node_skipped: Callable[[str, str], None] | None = None
     """The step ended as skipped: it called ava.skip, a step it depends on was
     skipped, or it is a run start switched off with when=False (its None still feeds

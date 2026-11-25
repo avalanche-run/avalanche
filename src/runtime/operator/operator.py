@@ -60,7 +60,7 @@ from avalanche.integrations.providers import (
 )
 from avalanche.local_waits import WaitRefusalError
 from avalanche.mapping import MapSpec, NodesExpanded
-from avalanche.policies import NonRetryableError
+from avalanche.policies import MAX_GENERATION, NonRetryableError
 from avalanche.references import read_stored_trees
 from avalanche.reruns import RerunRefusal, RerunRefusedError, SavedOutputIndex
 from avalanche.run_input import INPUT_INVALID
@@ -150,6 +150,7 @@ from .models import (
     RunSummary,
     RunSummaryPage,
     SequencedLogEntry,
+    StepRetry,
     TerminalSealAppended,
     TerminalSealDescriptor,
     TraceDescriptor,
@@ -1611,6 +1612,7 @@ class Operator:
                 step_io=node.step_io,
                 reused_from_run_id=node.reused_from_run_id,
                 skip_reason=node.skip_reason,
+                retry=node.retry,
                 trace=self._trace_descriptors.get((run.run_id, node.node_id)),
                 revision=self._node_revisions.get(
                     (run.run_id, node.node_id),
@@ -3738,6 +3740,22 @@ class Operator:
                             changed_node_ids = (node.node_id,)
                             status_node_ids = changed_node_ids
                             mutated = True
+                    elif event_type == "node_retrying":
+                        node = run.nodes.get(event["node_id"])
+                        if node is None:
+                            raise _CoordinatorProtocolError(
+                                "node event references unpublished node "
+                                f"{_bounded_ascii(event['node_id'])}"
+                            )
+                        if run.status != RunStatus.CANCELLED:
+                            node.retry = StepRetry(
+                                attempt=event["attempt"],
+                                max_attempts=event["max_attempts"],
+                                last_attempt_error=event["error"],
+                            )
+                            changed_node_ids = (node.node_id,)
+                            status_node_ids = changed_node_ids
+                            mutated = True
                     elif event_type.startswith("node_"):
                         node = run.nodes.get(event["node_id"])
                         if node is None:
@@ -4665,6 +4683,7 @@ class Operator:
                             step_io=node.step_io,
                             reused_from_run_id=node.reused_from_run_id,
                             skip_reason=node.skip_reason,
+                            retry=node.retry,
                         )
                     )
                 if log_item is not None:
@@ -5300,6 +5319,7 @@ _RUN_EVENT_TYPES = {
     "node_succeeded",
     "node_failed",
     "node_skipped",
+    "node_retrying",
     "agent_evidence",
     "classifier_evidence",
     "evaluation_submitted",
@@ -5732,6 +5752,20 @@ def _validate_run_event(event: object, *, validate_result: bool = True) -> str:
             ReusedOutputRecord.model_validate_json(_required_field(event, "reused_output"))
         except (ValueError, TypeError) as exc:
             raise _CoordinatorProtocolError("invalid reused output") from exc
+    elif event_type == "node_retrying":
+        _require_exact_event_keys(
+            event, {"type", "node_id", "timestamp", "attempt", "max_attempts", "error"}
+        )
+        _string_field(event, "node_id", maximum_length=_MAX_EVENT_FIELD_LENGTH)
+        _timestamp_field(event, "timestamp")
+        _string_field(event, "error", maximum_length=_MAX_EVENT_FIELD_LENGTH)
+        attempt, max_attempts = event["attempt"], event["max_attempts"]
+        if (
+            type(attempt) is not int
+            or type(max_attempts) is not int
+            or not 2 <= attempt <= max_attempts <= MAX_GENERATION
+        ):
+            raise _CoordinatorProtocolError("invalid retry attempt")
     elif event_type in _NODE_EVENT_TYPES:
         expected = {"type", "node_id", "timestamp"}
         if event_type == "node_failed":

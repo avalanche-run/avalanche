@@ -54,6 +54,7 @@ from .models import (
     RunStatusChanged,
     RunSummary,
     ScanTargetInfo,
+    StepRetry,
     TerminalSealAppended,
     TerminalSealDescriptor,
     TraceDescriptor,
@@ -478,6 +479,16 @@ def step_io_from_v2(msg: pb.StepIoV2) -> StepIo:
     )
 
 
+def step_retry_from_v2(msg: pb.NodeSnapshotV2) -> StepRetry | None:
+    if not msg.HasField("attempt"):
+        return None
+    return StepRetry(
+        attempt=msg.attempt,
+        max_attempts=msg.max_attempts,
+        last_attempt_error=msg.last_attempt_error,
+    )
+
+
 def node_snapshot_to_v2(
     node: NodeSnapshot,
     *,
@@ -502,6 +513,10 @@ def node_snapshot_to_v2(
         message.running_elapsed_seconds = node.running_elapsed_seconds
     if node.error is not None:
         message.error = node.error
+    if node.retry is not None:
+        message.attempt = node.retry.attempt
+        message.max_attempts = node.retry.max_attempts
+        message.last_attempt_error = node.retry.last_attempt_error
     if node.step_io is not None:
         message.step_io.CopyFrom(step_io_to_v2(node.step_io))
     if node.trace is not None:
@@ -811,6 +826,7 @@ def update_envelope_to_v2(
                         step_io=change.step_io,
                         reused_from_run_id=change.reused_from_run_id,
                         skip_reason=change.skip_reason,
+                        retry=change.retry,
                     ),
                 ),
             )
@@ -1186,6 +1202,7 @@ def node_snapshot_from_v2(msg: pb.NodeSnapshotV2) -> NodeSnapshot:
             msg.reused_from_run_id if msg.HasField("reused_from_run_id") else None
         ),
         skip_reason=msg.skip_reason if msg.HasField("skip_reason") else None,
+        retry=step_retry_from_v2(msg),
     )
 
 
@@ -1388,6 +1405,7 @@ def operator_update_envelope_from_v2(
                 node.reused_from_run_id if node.HasField("reused_from_run_id") else None
             ),
             skip_reason=node.skip_reason if node.HasField("skip_reason") else None,
+            retry=step_retry_from_v2(node),
         )
     elif payload == "activity_appended":
         appended = msg.activity_appended

@@ -36,6 +36,7 @@ from ..models import (
     RunInput,
     RunState,
     RunStatus,
+    StepRetry,
     TerminalSealDescriptor,
     TriggerKind,
     WorkflowTopology,
@@ -173,6 +174,9 @@ class _NodeRow(BaseModel):
     map_index: NonNegativeInt | None
     reused_from_run_id: str | None
     skip_reason: str | None
+    attempt: PositiveInt | None
+    max_attempts: PositiveInt | None
+    last_attempt_error: str | None
     revision: PositiveInt
 
 
@@ -225,6 +229,9 @@ _NODE_COLUMNS = (
     "map_index",
     "reused_from_run_id",
     "skip_reason",
+    "attempt",
+    "max_attempts",
+    "last_attempt_error",
     "revision",
 )
 _INSERT_RUN = (
@@ -389,7 +396,8 @@ class RunsTable:
         nodes: dict[str, list[_NodeRow]] = {}
         for row in connection.execute(
             "SELECT run_id, node_id, name, node_type, status, started_at, ended_at, error, "
-            "step_io_json, map_parent, map_index, reused_from_run_id, skip_reason, revision "
+            "step_io_json, map_parent, map_index, reused_from_run_id, skip_reason, "
+            "attempt, max_attempts, last_attempt_error, revision "
             f"FROM {_NODES} "
             "ORDER BY run_id, position"
         ):
@@ -506,6 +514,9 @@ def _node_values(
             node.map_index,
             node.reused_from_run_id,
             node.skip_reason,
+            None if node.retry is None else node.retry.attempt,
+            None if node.retry is None else node.retry.max_attempts,
+            None if node.retry is None else node.retry.last_attempt_error,
             stored.node_revisions[node.node_id],
         )
 
@@ -551,6 +562,12 @@ def _loaded_run(row: _RunRow, node_rows: Collection[_NodeRow]) -> LoadedRun:
             map_index=node.map_index,
             reused_from_run_id=node.reused_from_run_id,
             skip_reason=node.skip_reason,
+            # The three columns are written together, from a step's first retry on.
+            retry=StepRetry(node.attempt, node.max_attempts, node.last_attempt_error)
+            if node.attempt is not None
+            and node.max_attempts is not None
+            and node.last_attempt_error is not None
+            else None,
             status=node.status,
             started_at=node.started_at,
             ended_at=node.ended_at,

@@ -615,6 +615,20 @@ MIGRATIONS += (
     ),
 )
 
+MIGRATIONS += (
+    Migration(
+        version=20,
+        name="step retries",
+        statements=(
+            # A retried step's current attempt, its policy's most attempts and the
+            # previous attempt's error. NULL until the step's first retry.
+            "ALTER TABLE run_nodes ADD COLUMN attempt INTEGER",
+            "ALTER TABLE run_nodes ADD COLUMN max_attempts INTEGER",
+            "ALTER TABLE run_nodes ADD COLUMN last_attempt_error TEXT",
+        ),
+    ),
+)
+
 LATEST_SCHEMA_VERSION = MIGRATIONS[-1].version
 
 

@@ -172,6 +172,9 @@ def run_local_schedule(
                             )
                             and attempts[node_id] <= policy.effective_retries
                         ):
+                            if hooks and hooks.on_node_retry:
+                                most = policy.effective_retries + 1
+                                hooks.on_node_retry(node_id, attempts[node_id], most, exc)
                             remaining.append(node_id)
                         else:
                             if hooks and hooks.on_node_failure:

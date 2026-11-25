@@ -380,6 +380,39 @@ def _run_worker(
                     },
                 )
 
+        def node_retrying(
+            node_id: str, attempt: int, max_attempts: int, exc: Exception
+        ) -> None:
+            # The failed attempt's error is shown on the step and logged; the next
+            # attempt starts with its own node_started.
+            owner = show_groups.get(node_id, item_groups.get(node_id, node_id))
+            error = f"{type(exc).__name__}: {exc}"
+            now = time.time()
+            if node_id not in item_groups and node_id not in show_groups:
+                _put_run_event(
+                    event_queue,
+                    {
+                        "type": "node_retrying",
+                        "node_id": node_id,
+                        "timestamp": time.monotonic(),
+                        "attempt": attempt + 1,
+                        "max_attempts": max_attempts,
+                        "error": _bounded_event_text(error, 4096),
+                    },
+                )
+            _put_run_event(
+                event_queue,
+                {
+                    "type": "log",
+                    "timestamp": now,
+                    "level": logging.WARNING,
+                    "node_id": owner,
+                    "message": _bounded_event_text(
+                        f"attempt {attempt}/{max_attempts} failed: {error}; retrying", 65_536
+                    ),
+                },
+            )
+
         def node_skipped(node_id: str, reason: str) -> None:
             step_outputs.discard(node_id)
             if node_id not in item_groups:
@@ -475,6 +508,7 @@ def _run_worker(
             ),
             on_node_success=node_succeeded,
             on_node_failure=node_failed,
+            on_node_retry=node_retrying,
             on_node_skipped=node_skipped,
             on_node_reused=None if planned_rerun is None else node_reused,
             cancel_requested=cancel_event.is_set,

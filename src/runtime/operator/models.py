@@ -281,6 +281,16 @@ class RunInput:
     supplied_fields: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class StepRetry:
+    """A retried step's current attempt, counted from 1, the most attempts its policy
+    allows, and the previous attempt's error."""
+
+    attempt: int
+    max_attempts: int
+    last_attempt_error: str
+
+
 @dataclass
 class NodeState:
     node_id: str
@@ -301,6 +311,8 @@ class NodeState:
     # Status "skipped" only: why the step was skipped. Unset when the run stopped
     # before the step ran.
     skip_reason: str | None = None
+    # Set from a step's first retry on; unset while it is on its first attempt.
+    retry: StepRetry | None = None
 
     @property
     def elapsed(self) -> float | None:
@@ -498,6 +510,8 @@ class NodeSnapshot:
     # Status "skipped" only: why the step was skipped. Unset when the run stopped
     # before the step ran.
     skip_reason: str | None = None
+    # Set from a step's first retry on; unset while it is on its first attempt.
+    retry: StepRetry | None = None
 
 
 @dataclass(frozen=True)
@@ -850,6 +864,8 @@ class NodeStatusChanged:
     # Status "skipped" only: why the step was skipped. Unset when the run stopped
     # before the step ran.
     skip_reason: str | None = None
+    # Set from a step's first retry on; unset while it is on its first attempt.
+    retry: StepRetry | None = None
 
 
 @dataclass(frozen=True)
