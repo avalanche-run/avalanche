@@ -736,6 +736,14 @@ export interface RunInputMsg {
   valuesJson: string;
   /** Fields the caller supplied; every other field took its declared default. */
   suppliedFields: string[];
+  /**
+   * Set by a host that records the input as submitted rather than validated:
+   * `valuesJson` then holds only the supplied fields, and the UI fills the other
+   * fields from the declaration's defaults (see `runInputFields`).
+   */
+  submitted?: boolean;
+  /** Set when the host replaced secret values with a redaction marker. */
+  redacted?: boolean;
 }
 
 export const RunSnapshotMsg = {

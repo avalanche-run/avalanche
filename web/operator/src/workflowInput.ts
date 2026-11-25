@@ -77,8 +77,10 @@ function fileFieldKind(
 /**
  * Where a run's field value came from. "unrecorded" fields are excluded from
  * serialization, such as `Field(exclude=True)` secrets, so the run has no value to show.
+ * "computed" fields took a `default_factory` default that a submitted-input record
+ * cannot know, since the run computed it when it started.
  */
-export type RunValueSource = "supplied" | "default" | "unrecorded";
+export type RunValueSource = "supplied" | "default" | "computed" | "unrecorded";
 
 /** One field's value in a run, and where that value came from. */
 export interface RunInputField extends WorkflowInputField {
@@ -127,7 +129,13 @@ export function workflowInputFields(
   return modelFields(jsonSchema, jsonSchema.$defs ?? {}, []);
 }
 
-/** Pair each declared field with the value the run used. */
+/**
+ * Pair each declared field with the value the run used. This is the one rule for
+ * which fields are defaults on every host: a field the caller did not supply took
+ * its declared default. A validated record (the local operator) holds that default;
+ * a submitted record (`input.submitted`, Delta) holds only the supplied fields, so a
+ * missing field shows the declared default, or "computed" for a `default_factory`.
+ */
 export function runInputFields(
   declaration: WorkflowInputDeclaration,
   input: RunInputMsg,
@@ -137,15 +145,38 @@ export function runInputFields(
     throw new Error("run input must be an object");
   }
   const supplied = new Set(input.suppliedFields);
-  return workflowInputFields(declaration).map((field) =>
-    Object.hasOwn(values, field.name)
-      ? {
-          ...field,
-          value: values[field.name],
-          source: supplied.has(field.name) ? "supplied" : "default",
-        }
-      : { ...field, source: "unrecorded" },
-  );
+  return workflowInputFields(declaration).map((field): RunInputField => {
+    if (Object.hasOwn(values, field.name)) {
+      return {
+        ...field,
+        value: values[field.name],
+        source: supplied.has(field.name) ? "supplied" : "default",
+      };
+    }
+    if (input.submitted && !supplied.has(field.name)) {
+      if (field.default.kind === "value") {
+        return { ...field, value: field.default.value, source: "default" };
+      }
+      if (field.default.kind === "computed") return { ...field, source: "computed" };
+    }
+    return { ...field, source: "unrecorded" };
+  });
+}
+
+/**
+ * A run input recorded as the caller submitted it, for hosts that keep the submitted
+ * object rather than the validated one: every key is a supplied field.
+ */
+export function submittedRunInput(
+  values: Record<string, unknown>,
+  { redacted = false }: { redacted?: boolean } = {},
+): RunInputMsg {
+  return {
+    valuesJson: JSON.stringify(values),
+    suppliedFields: Object.keys(values),
+    submitted: true,
+    ...(redacted ? { redacted } : {}),
+  };
 }
 
 /** Short, single-line rendering of a value for graph cards and tables. */

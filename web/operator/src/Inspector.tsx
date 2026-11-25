@@ -214,6 +214,7 @@ export function Inspector(props: InspectorProps) {
   if (nodeId === INPUT_NODE_ID) {
     return (
       <WorkflowInputInspector
+        api={props.api}
         workflow={workflow}
         run={run}
         embedded={props.embedded}

@@ -1,8 +1,10 @@
 import { capText } from "./capText";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import { LoaderCircle, Paperclip, SlidersHorizontal, X } from "lucide-react";
 
-import type { FlowInfoMsg, RunSnapshotMsg } from "./model";
+import type { OperatorApi } from "./api";
+import { useRead } from "./MachineWorkspace";
+import type { FlowInfoMsg, RunInputMsg, RunSnapshotMsg } from "./model";
 import type { InputDraft } from "./useInputDraft";
 import { useInputFieldEditor, type InputFieldEditor } from "./useInputFieldEditor";
 import { Markdown } from "./Markdown";
@@ -25,6 +27,8 @@ import {
 } from "./workflowInput";
 
 interface WorkflowInputInspectorProps {
+  /** Reads the run's input when the snapshot leaves it out (`getRunInput`). */
+  api?: OperatorApi;
   workflow?: FlowInfoMsg;
   run?: RunSnapshotMsg;
   embedded?: boolean;
@@ -60,8 +64,37 @@ function FieldDefaultLabel({ field }: { field: WorkflowInputField }) {
   );
 }
 
+type RunInputRead =
+  | { status: "snapshot" | "ready"; input: RunInputMsg | null }
+  | { status: "loading" }
+  | { status: "failed"; error: string };
+
+/**
+ * The run's input: from its snapshot, or else read once from the host's
+ * `getRunInput` while this panel is open (one request per opened run).
+ */
+function useRunInput(
+  api: OperatorApi | undefined,
+  run: RunSnapshotMsg | undefined,
+): RunInputRead {
+  const runId = run?.summary?.runId;
+  const fromSnapshot = run?.input;
+  const load = useCallback(
+    (signal: AbortSignal) => api!.getRunInput!(runId!, signal),
+    [api, runId],
+  );
+  const lazy = Boolean(run && !fromSnapshot && api?.getRunInput && runId);
+  const result = useRead(lazy ? load : undefined);
+  if (!lazy) return { status: "snapshot", input: fromSnapshot ?? null };
+  if (result.error !== undefined) return { status: "failed", error: result.error };
+  return result.value === undefined
+    ? { status: "loading" }
+    : { status: "ready", input: result.value };
+}
+
 /** The run input declaration, and for a run the values it started with. */
 export function WorkflowInputInspector({
+  api,
   workflow,
   run,
   embedded = false,
@@ -72,7 +105,8 @@ export function WorkflowInputInspector({
   const rawDeclaration = run
     ? run.topology?.inputDeclarationJson
     : workflow?.inputDeclarationJson;
-  const runInput = run?.input;
+  const runInputRead = useRunInput(api, run);
+  const runInput = "input" in runInputRead ? runInputRead.input : null;
   const inspected = useMemo<InspectedInput>(() => {
     try {
       const declaration = decodeWorkflowInputDeclaration(rawDeclaration ?? "");
@@ -152,13 +186,17 @@ export function WorkflowInputInspector({
                     >
                       <div className="flex items-baseline gap-2">
                         <strong className="font-semibold">{field.name}</strong>
-                        {field.source === "default" && (
+                        {(field.source === "default" || field.source === "computed") && (
                           <span className="text-[10px] text-muted italic">default</span>
                         )}
                       </div>
                       {field.source === "unrecorded" ? (
                         <p className="m-0 text-muted">
                           Excluded from serialization, so the run did not record it.
+                        </p>
+                      ) : field.source === "computed" ? (
+                        <p className="m-0 text-muted">
+                          Computed when the run started; the value was not recorded.
                         </p>
                       ) : (
                         // A value the run took from its default reads quieter than one supplied.
@@ -169,9 +207,28 @@ export function WorkflowInputInspector({
                     </li>
                   ))}
                 </ul>
+                {runInput?.redacted && (
+                  <p className="mt-3 mb-0 text-[10px] text-muted" data-run-values="redacted">
+                    Secret values are redacted.
+                  </p>
+                )}
               </section>
             )}
-            {run && !inspected.values && (
+            {run && runInputRead.status === "loading" && (
+              <p role="status" className="m-0 text-[11px] text-muted">
+                Loading input values…
+              </p>
+            )}
+            {run && runInputRead.status === "failed" && (
+              <p
+                role="alert"
+                className="m-0 text-[11px] text-danger [overflow-wrap:anywhere]"
+                data-run-values="failed"
+              >
+                {runInputRead.error}
+              </p>
+            )}
+            {run && "input" in runInputRead && !inspected.values && (
               <p className="m-0 text-[11px] text-muted" data-run-values="unavailable">
                 Input values are unavailable for this run.
               </p>

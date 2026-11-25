@@ -71,6 +71,7 @@ import type {
   NodeSnapshotMsg,
   OperatorUpdate,
   OperatorUpdateEnvelope,
+  RunInputMsg,
   RunSnapshotMsg,
   RunSummaryMsg,
   StagedInputFile,
@@ -291,6 +292,13 @@ export interface OperatorApi {
   ): Promise<JsonValue>;
   /** Native call/start_run lineage: the runs that started this run and those it started. */
   getRunLinks?(runId: string, signal?: AbortSignal): Promise<RunLinks>;
+  /**
+   * The run's recorded input, for a host whose snapshots leave `input` out. The
+   * Input panel reads it once when it opens. Resolves to null when the run has no
+   * recorded input (it started before the host recorded inputs); rejects when the
+   * record exists but cannot be shown.
+   */
+  getRunInput?(runId: string, signal?: AbortSignal): Promise<RunInputMsg | null>;
   getCatalog(signal?: AbortSignal): Promise<CatalogSnapshotMsg>;
   loadBaseline(signal?: AbortSignal): Promise<StructuralBaseline>;
   getWorkflowNodeSource(

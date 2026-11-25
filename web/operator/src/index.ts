@@ -86,6 +86,8 @@ export type {
   WorkspaceDeployments,
 } from "./WorkflowWorkspace";
 export * from "./model";
+// Hosts that record a run input as submitted (Delta) hand it over in this shape.
+export { submittedRunInput } from "./workflowInput";
 // A trace a host holds as recorded bodies, listed as the local operator lists one.
 export { liveAgentTrace, recordedAgentTrace } from "./agentTrace/recorded";
 export type { RecordedAgentTrace } from "./agentTrace/recorded";
