@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.38
 
 - State-machine graphs use the workflow canvas's fit behavior with a readable
   minimum zoom. On smaller screens, use the existing zoom buttons and drag to pan
