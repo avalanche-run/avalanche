@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.37
 
 - Flow workspaces show the runs list before the selected run finishes loading,
   reserve its logs pane, and let hosts show a proven run-pinned definition before
