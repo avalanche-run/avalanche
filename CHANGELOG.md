@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Flow workspaces show the runs list before the selected run finishes loading,
+  reserve its logs pane, and let hosts show a proven run-pinned definition before
+  statuses arrive. Step I/O and agent trace can hydrate lazily when the inspector
+  opens, without delaying the graph. Related run summaries can travel with the
+  single lineage read instead of blocking the initial workspace baseline.
+
 ## 0.20.36
 
 - Only the displayed run name is selectable in the run list beside the flow graph;

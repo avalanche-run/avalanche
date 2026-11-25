@@ -218,6 +218,8 @@ export interface RunLink {
 export interface RunLinks {
   parents: RunLink[];
   children: RunLink[];
+  /** Optional bounded summaries for linked runs outside the baseline list. */
+  runs?: RunSummaryMsg[];
 }
 
 function mapRunLinks(value: unknown): RunLinks {
@@ -296,6 +298,12 @@ export interface OperatorApi {
     nodeId: string,
     signal?: AbortSignal,
   ): Promise<string | undefined>;
+  /** Lazy I/O and trace for an inspected step; structural snapshots need not hydrate them. */
+  getRunNodeDetails?(
+    runId: string,
+    nodeId: string,
+    signal?: AbortSignal,
+  ): Promise<NodeSnapshotMsg | undefined>;
   getLatestRunSnapshot(
     runId: string,
     operatorInstanceId: string,

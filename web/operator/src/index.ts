@@ -142,5 +142,5 @@ export {
   usePriorityFit,
 } from "./priorityFit";
 export type { PriorityField, PriorityFit, PriorityTextField, TextMeasure } from "./priorityFit";
-export { fitRunRow, runSecondaryText, shortRunId } from "./RunListPanel";
+export { RunListPanel, fitRunRow, runSecondaryText, shortRunId } from "./RunListPanel";
 export type { MachineGraphView } from "./machineGraph";

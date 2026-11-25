@@ -129,6 +129,8 @@ export interface WorkflowWorkspaceProps {
   bottomRightPanel?: ReactNode;
   /** Host loading surface used until the initial catalog is available. */
   loadingFallback?: ReactNode;
+  /** Host-proven: this catalog definition is the exact definition used by this run. */
+  definitionRunId?: string;
   navigation?: {
     selectedRunId?: string;
     /** `nodeId` is the step to open with the run, when a link names one. */
@@ -152,7 +154,7 @@ export interface WorkflowWorkspaceProps {
 interface WorkflowWorkspaceSurfaceProps extends Pick<
   WorkflowWorkspaceProps,
   | "layoutStorageKey"
-  | "loadingFallback"
+  | "definitionRunId"
   | "currentLabel"
   | "currentRowAction"
   | "showCurrentRow"
@@ -261,7 +263,7 @@ export function WorkflowWorkspaceSurface({
   runActionsEnabled = true,
   definitionLabel,
   bottomRightPanel,
-  loadingFallback,
+  definitionRunId,
   currentLabel,
   currentRowAction,
   showCurrentRow,
@@ -517,6 +519,18 @@ export function WorkflowWorkspaceSurface({
   }, [timelineExpanded, timelineNode, graphShell]);
 
   const historical = selectedRunId !== undefined;
+  // Preserve a definition the user already saw while their run selection loads.
+  // A direct run open has no retained definition: only a host-proven pin may paint.
+  const [retainedDefinition, setRetainedDefinition] = useState<FlowInfoMsg>();
+  useEffect(() => {
+    if (!historical) setRetainedDefinition(workflow);
+  }, [historical, workflow]);
+  const pendingDefinition =
+    !historical || definitionRunId === selectedRunId
+      ? workflow
+      : retainedDefinition?.workflowId === workflowId
+        ? retainedDefinition
+        : undefined;
   // The canvas width decides whether a run page folds the runs panel by default.
   const [canvasShell, setCanvasShell] = useState<HTMLElement | null>(null);
   const [canvasShellWidth, setCanvasShellWidth] = useState<number>();
@@ -694,9 +708,7 @@ export function WorkflowWorkspaceSurface({
       ? workflow
       : run
         ? run.topology
-        : historical
-          ? undefined
-          : workflow;
+        : pendingDefinition;
   const shownNodeIds = shownTopology?.nodeIds;
   const shownInputDeclaration = shownTopology?.inputDeclarationJson;
   const topologyNodeIds = useMemo(
@@ -1092,7 +1104,17 @@ export function WorkflowWorkspaceSurface({
       error={timelineError}
     />
   ) : undefined;
-  const runLinks = useRunLinks(api, run ? selectedRunId : undefined, machineRefresh).links;
+  const runLinks = useRunLinks(api, run ? selectedRunId : undefined, {
+    live: runLive,
+    refreshKey: run?.summary?.revision,
+  }).links;
+  const relatedRuns = useMemo(
+    () => ({
+      ...state.runs,
+      ...Object.fromEntries((runLinks?.runs ?? []).map((row) => [row.runId, row])),
+    }),
+    [runLinks, state.runs],
+  );
   const catalogWorkflows = state.catalog?.workflows;
   const workflowName = useCallback(
     (id: string) => catalogWorkflows?.find((item) => item.workflowId === id)?.displayName,
@@ -1100,19 +1122,19 @@ export function WorkflowWorkspaceSurface({
   );
   const openRelatedRun = useCallback(
     (runId: string) => {
-      const target = state.runs[runId]?.workflowId;
+      const target = relatedRuns[runId]?.workflowId;
       if (!target) return;
       if (onOpenRun) onOpenRun(runId, target);
       else if (target === workflowId) selectWorkflowRun(runId);
     },
-    [onOpenRun, selectWorkflowRun, state.runs, workflowId],
+    [onOpenRun, selectWorkflowRun, relatedRuns, workflowId],
   );
   const runTree =
     runLinks && displayedRunId && displayedRunId === selectedRunId ? (
       <RunTree
         runId={displayedRunId}
         links={runLinks}
-        runs={state.runs}
+        runs={relatedRuns}
         workflowName={workflowName}
         onOpenRun={openRelatedRun}
       />
@@ -1127,7 +1149,7 @@ export function WorkflowWorkspaceSurface({
     if (!Object.keys(byNode).length) return undefined;
     return Object.fromEntries(
       Object.entries(byNode).map(([nodeId, childRunId]) => {
-        const summary = state.runs[childRunId];
+        const summary = relatedRuns[childRunId];
         return [
           nodeId,
           {
@@ -1145,7 +1167,7 @@ export function WorkflowWorkspaceSurface({
     runLinks,
     shownTopology?.graph,
     shownTopology?.nodeTypes,
-    state.runs,
+    relatedRuns,
     workflowName,
   ]);
   const runListPanel = workflowId ? (
@@ -1221,15 +1243,6 @@ export function WorkflowWorkspaceSurface({
     "--workspace-inspector-column-width": inspectorOpen ? `${inspectorWidth}px` : "0px",
     "--workspace-inspector-divider-width": "0px",
   } as CSSProperties;
-
-  // Do not paint a definition/empty graph before the initial selected snapshot.
-  if (
-    historical &&
-    !run &&
-    state.selectedRunStatus !== "error" &&
-    loadingFallback !== undefined
-  )
-    return loadingFallback;
 
   return (
     <section
@@ -1310,7 +1323,7 @@ export function WorkflowWorkspaceSurface({
                 >
                   <GraphCanvas
                     machine={stateEntryRun || stateEntryExpired ? undefined : machineView}
-                    workflow={!run || previewWorkflow ? workflow : undefined}
+                    workflow={previewWorkflow ? workflow : !run ? pendingDefinition : undefined}
                     runTopology={
                       stateEntryRun
                         ? stateEntryRun.topology
@@ -1453,6 +1466,14 @@ export function WorkflowWorkspaceSurface({
                     onTabChange={setRunPaneTab}
                     context={stateEntryNav}
                   />
+                ) : historical ? (
+                  <div
+                    className="run-log-pane min-h-0 max-h-[75%] shrink-0 border-t border-line bg-panel"
+                    role="status"
+                    style={{ flexBasis: layout.logExpanded ? layout.logHeight : 35 }}
+                  >
+                    Loading run logs
+                  </div>
                 ) : null}
               </>
             ) : (
@@ -1575,6 +1596,7 @@ export function WorkflowWorkspace({
   definitionLabel,
   bottomRightPanel,
   loadingFallback,
+  definitionRunId,
   navigation,
   initialNodeId,
   currentLabel,
@@ -1657,7 +1679,7 @@ export function WorkflowWorkspace({
         runActionsEnabled={runActionsEnabled}
         definitionLabel={definitionLabel}
         bottomRightPanel={bottomRightPanel}
-        loadingFallback={loadingFallback}
+        definitionRunId={definitionRunId}
         currentLabel={currentLabel}
         currentRowAction={currentRowAction}
         showCurrentRow={showCurrentRow}

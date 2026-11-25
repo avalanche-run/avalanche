@@ -159,7 +159,43 @@ function declaredModelName(value: unknown): string | undefined {
 }
 
 export function Inspector(props: InspectorProps) {
-  const { workflow, run, nodeId } = props;
+  const { api, workflow, nodeId } = props;
+  const runId = props.run?.summary?.runId;
+  const revision = props.run?.summary?.revision;
+  const scope = `${runId}/${revision}/${nodeId}`;
+  const [detail, setDetail] = useState<{
+    api: OperatorApi;
+    scope: string;
+    node?: NodeSnapshotMsg;
+    error?: string;
+  }>();
+  useEffect(() => {
+    if (!api.getRunNodeDetails || !runId || !nodeId || nodeId === INPUT_NODE_ID) return;
+    const controller = new AbortController();
+    void api.getRunNodeDetails(runId, nodeId, controller.signal).then(
+      (node) => {
+        if (!controller.signal.aborted) setDetail({ api, scope, node });
+      },
+      (error: unknown) => {
+        if (!controller.signal.aborted)
+          setDetail({
+            api,
+            scope,
+            error: error instanceof Error ? error.message : "Step details unavailable",
+          });
+      },
+    );
+    return () => controller.abort();
+  }, [api, runId, nodeId, scope]);
+  const active = detail?.api === api && detail.scope === scope ? detail : undefined;
+  const run =
+    props.run && active?.node
+      ? {
+          ...props.run,
+          nodes: props.run.nodes.map((node) => (node.nodeId === nodeId ? active.node! : node)),
+        }
+      : props.run;
+  const hydrated = { ...props, run };
   const metadata = run
     ? run.topology?.classifierMetadataJson
     : workflow?.classifierMetadataJson;
@@ -174,6 +210,7 @@ export function Inspector(props: InspectorProps) {
       };
     }
   }, [rawDeclaration]);
+  if (active?.error) return <div role="alert">{active.error}</div>;
   if (nodeId === INPUT_NODE_ID) {
     return (
       <WorkflowInputInspector
@@ -210,7 +247,7 @@ export function Inspector(props: InspectorProps) {
       />
     );
   }
-  return <AgentAndStepInspector {...props} />;
+  return <AgentAndStepInspector {...hydrated} />;
 }
 
 function AgentAndStepInspector({
