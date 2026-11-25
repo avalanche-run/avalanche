@@ -13,6 +13,7 @@ import {
   decodeWorkflowInputDeclaration,
   defaultPlaceholder,
   formatInputValue,
+  inputFieldPath,
   inputValueFileNames,
   runInputFields,
   runTriggerLabel,
@@ -214,17 +215,23 @@ export function InputFieldList({
   return <FieldList fields={fields} editor={editor} />;
 }
 
-/** Each declared field; with an editor, a box to set the value Run and the schedule use. */
+/**
+ * Each declared field; with an editor, a box to set the value Run and the schedule use.
+ * A field that takes a model lists the model's fields under it, so each one is set on
+ * its own; leaving them all empty leaves the field out.
+ */
 function FieldList({
   fields,
   editor,
+  nested = false,
 }: {
   fields: WorkflowInputField[];
   editor?: InputFieldEditor;
+  nested?: boolean;
 }) {
   return (
     <>
-      {editor?.error && (
+      {!nested && editor?.error && (
         <p role="alert" className="m-0 mb-2 text-[11px] text-danger">
           {editor.error}
         </p>
@@ -242,10 +249,10 @@ function FieldList({
             {editor && field.file && (
               <FileFieldInput field={field} kind={field.file} editor={editor} />
             )}
-            {editor && !field.file && (
+            {editor && !field.file && !field.model && (
               <input
                 type="text"
-                aria-label={`${field.name} value`}
+                aria-label={`${inputFieldPath(field).join(".")} value`}
                 className={`mt-1.5 w-full rounded border bg-panel px-2 py-1.5 font-mono text-[11px] text-ink outline-none focus:border-acid ${editor.invalid(field) ? "border-danger" : "border-line"}`}
                 value={editor.text(field)}
                 placeholder={defaultPlaceholder(field)}
@@ -257,6 +264,21 @@ function FieldList({
             {field.description && (
               <div className="mt-1 text-secondary">
                 <Markdown>{field.description}</Markdown>
+              </div>
+            )}
+            {field.model && (
+              <div
+                role="group"
+                aria-label={`${inputFieldPath(field).join(".")} fields`}
+                className="mt-2 border-l border-line pl-3"
+                data-model-field={field.name}
+              >
+                <FieldList fields={field.model.fields} editor={editor} nested />
+                {editor && field.default.kind !== "required" && (
+                  <p className="m-0 mt-2 text-[10px] text-muted">
+                    Leave every field empty to use the default.
+                  </p>
+                )}
               </div>
             )}
           </li>

@@ -33,6 +33,10 @@ export interface WorkflowInputField {
   schema: Schema;
   /** Set when the field takes an `ava.File` ("single") or a `list[ava.File]` ("list"). */
   file?: FileFieldKind;
+  /** Where a nested field sits in the input, from the top-level field; absent at the top. */
+  path?: string[];
+  /** Set when the field takes a model: the model's fields, edited as a group. */
+  model?: { fields: WorkflowInputField[] };
 }
 
 export type FileFieldKind = "single" | "list";
@@ -120,23 +124,7 @@ export function workflowInputFields(
   declaration: WorkflowInputDeclaration,
 ): WorkflowInputField[] {
   const { jsonSchema } = declaration;
-  return Object.entries(jsonSchema.properties ?? {}).map(([name, schema]) => {
-    const property = typeof schema === "boolean" ? undefined : schema;
-    const fieldDefault: FieldDefault =
-      jsonSchema.required?.includes(name) === true
-        ? { kind: "required" }
-        : property !== undefined && property.default !== undefined
-          ? { kind: "value", value: property.default }
-          : { kind: "computed" };
-    return {
-      name,
-      typeLabel: schemaTypeLabel(schema, name),
-      default: fieldDefault,
-      description: property?.description,
-      schema,
-      file: fileFieldKind(schema, jsonSchema.$defs ?? {}),
-    };
-  });
+  return modelFields(jsonSchema, jsonSchema.$defs ?? {}, []);
 }
 
 /** Pair each declared field with the value the run used. */
@@ -244,4 +232,80 @@ export function inputValueFileNames(value: unknown): string[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
   const names = value.map(name);
   return names.every((item) => item !== undefined) ? names : undefined;
+}
+
+/** How many models deep the run form nests sub-forms; deeper models are edited as JSON. */
+const MAX_NESTED_MODEL_DEPTH = 4;
+
+/** A model's fields in schema order; `path` is where the model sits in the input. */
+function modelFields(
+  model: JsonSchema,
+  definitions: Record<string, Schema>,
+  path: string[],
+): WorkflowInputField[] {
+  return Object.entries(model.properties ?? {}).map(([name, schema]) => {
+    const property = typeof schema === "boolean" ? undefined : schema;
+    const fieldDefault: FieldDefault =
+      model.required?.includes(name) === true
+        ? { kind: "required" }
+        : property !== undefined && property.default !== undefined
+          ? { kind: "value", value: property.default }
+          : { kind: "computed" };
+    const fieldPath = [...path, name];
+    // Only top-level fields pick files: the upload attaches a file to a field by name.
+    const file = path.length === 0 ? fileFieldKind(schema, definitions) : undefined;
+    const nested =
+      file === undefined && fieldPath.length <= MAX_NESTED_MODEL_DEPTH
+        ? fieldModel(schema, definitions)
+        : undefined;
+    return {
+      name,
+      typeLabel: schemaTypeLabel(schema, name),
+      default: fieldDefault,
+      description: property?.description,
+      schema,
+      file,
+      ...(path.length > 0 ? { path: fieldPath } : {}),
+      ...(nested ? { model: { fields: modelFields(nested, definitions, fieldPath) } } : {}),
+    };
+  });
+}
+
+/**
+ * The model a field takes, looking through a `| None` and a lone `allOf` wrapper and
+ * resolving a local `$ref`; undefined for anything else, such as a union of models or
+ * a `dict`, which the form edits as JSON.
+ */
+function fieldModel(
+  schema: Schema,
+  definitions: Record<string, Schema>,
+): JsonSchema | undefined {
+  if (typeof schema === "boolean") return undefined;
+  const alternatives = schema.anyOf ?? schema.oneOf;
+  if (alternatives) {
+    const values = alternatives.filter(
+      (option) => typeof option === "boolean" || option.type !== "null",
+    );
+    return values.length === 1 ? fieldModel(values[0], definitions) : undefined;
+  }
+  if (schema.allOf) {
+    return schema.allOf.length === 1 ? fieldModel(schema.allOf[0], definitions) : undefined;
+  }
+  if (schema.$ref !== undefined) {
+    if (!schema.$ref.startsWith("#/$defs/")) return undefined;
+    const target = definitions[referenceName(schema.$ref)];
+    return target === undefined || typeof target === "boolean" || target.$ref !== undefined
+      ? undefined
+      : fieldModel(target, definitions);
+  }
+  const isObject = schema.type === "object" || schema.type === undefined;
+  const properties = schema.properties;
+  return isObject && properties !== undefined && Object.keys(properties).length > 0
+    ? schema
+    : undefined;
+}
+
+/** Where a field's value sits in the input: its path, or its name at the top level. */
+export function inputFieldPath(field: WorkflowInputField): string[] {
+  return field.path ?? [field.name];
 }

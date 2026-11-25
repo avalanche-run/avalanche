@@ -41,10 +41,18 @@ const spec: MachineSpec = {
       priority: { type: "integer", minimum: 1, maximum: 5 },
       document: { $ref: "#/$defs/File" },
       workspace: { type: "object", additionalProperties: true },
+      reviewer: { anyOf: [{ $ref: "#/$defs/Reviewer" }, { type: "null" }], default: null },
     },
     required: ["repo", "pr", "priority"],
     $defs: {
       File: { type: "object", properties: { kind: { const: "file" } } },
+      Reviewer: {
+        type: "object",
+        properties: {
+          name: { anyOf: [{ type: "string" }, { type: "null" }], default: null },
+          team: { anyOf: [{ type: "string" }, { type: "null" }], default: null },
+        },
+      },
     },
   },
   initial: "review",

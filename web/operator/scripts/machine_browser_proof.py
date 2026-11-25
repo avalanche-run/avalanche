@@ -58,6 +58,12 @@ def start_run(
             {"name": "proof.txt", "mimeType": "text/plain", "buffer": b"machine proof\n"}
         )
         expect(inputs.locator("[data-file-field]")).to_contain_text("proof.txt")
+        # A nested model field is a group of its own fields, not one text box;
+        # its empty fields stay out of the nested value.
+        reviewer = inputs.get_by_role("group", name="reviewer fields", exact=True)
+        expect(reviewer.get_by_role("textbox")).to_have_count(2)
+        expect(inputs.get_by_label("reviewer value", exact=True)).to_have_count(0)
+        reviewer.get_by_label("reviewer.name value", exact=True).fill("ada")
     if evidence is not None:
         page.screenshot(path=str(evidence / "00-run-input.png"))
     inputs.get_by_role("button", name="Close", exact=True).click()
@@ -470,6 +476,13 @@ def scenario(page, url: str, evidence: Path) -> dict:
     waits = run_timeline(page)
     selected_row = page.locator(".run-list-row.active")
     expect(waits).to_be_visible()
+    first_start = next(
+        call
+        for call in page.evaluate("window.machineHarness.calls")
+        if call["method"] == "run-start"
+    )
+    # The nested field started the run as an object holding only the field set.
+    assert first_start["args"][1]["reviewer"] == {"name": "ada"}, first_start
     # State entries and waits are no longer sections of the runs pane.
     expect(page.get_by_role("region", name="Machine state entries")).to_have_count(0)
     expect(page.get_by_label("Run waits section")).to_have_count(0)
@@ -676,6 +689,7 @@ def scenario(page, url: str, evidence: Path) -> dict:
         "pr": 44,
         "priority": 2,
         "workspace": {"kind": "workspace", "entries": []},
+        "reviewer": {"name": "ada"},
     }, starts
     assert starts[0]["args"][2] == [
         {"field": "document", "name": "proof.txt", "bytes": list(b"machine proof\n")}
