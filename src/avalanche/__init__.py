@@ -51,7 +51,7 @@ from .skips import StepSkipped, skip
 from .waits import decision, sleep, wait_for_event
 from .webhook import Webhook
 
-__version__ = "0.20.34"
+__version__ = "0.20.35"
 
 from .references import (
     LocalReferenceBinder,

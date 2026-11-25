@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.20.35
+
 ## 0.20.34
 
 - Center badge and compact label text on its visible cap height, including
