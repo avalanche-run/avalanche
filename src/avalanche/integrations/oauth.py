@@ -82,9 +82,17 @@ def _pinned[T](base: type[T], transport: type, limits: object, addresses: Addres
         async def handle_async_request(self, request):  # type: ignore[no-untyped-def]
             host = request.url.host
             address = await addresses(request.url.scheme, host)
-            request.url = request.url.copy_with(host=address)
-            request.extensions = {**request.extensions, "sni_hostname": host}
-            return await self._inner.handle_async_request(request)
+            # A copy goes out: an auth flow sends the same request again after
+            # a login, and it must still name the host, not the address.
+            # Its headers, Host included, are the request's own.
+            pinned = type(request)(
+                request.method,
+                request.url.copy_with(host=address),
+                headers=request.headers,
+                stream=request.stream,
+                extensions={**request.extensions, "sni_hostname": host},
+            )
+            return await self._inner.handle_async_request(pinned)
 
         async def aclose(self) -> None:
             await self._inner.aclose()
