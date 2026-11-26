@@ -464,7 +464,8 @@ def _transcript(
         # Entries of other kinds are never read either.
         {"type": "summary", "leafUuid": "u1", "summary": "a session"},
     ]
-    entries.extend(extra)
+    # Only the entries before the first request are read.
+    entries[:0] = extra
     path.write_text("\n".join(json.dumps(entry) for entry in entries) + "\n")
     return path
 
