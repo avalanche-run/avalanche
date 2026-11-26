@@ -133,7 +133,7 @@ export function RunLogPane({
   const setPaneHeight = onHeightChange ?? setLocalHeight;
   const [maximumHeight, setMaximumHeight] = useState(() => maximumPaneHeight());
   const [page, setPage] = useState<DescriptorPageState<LogRecordDescriptorMsg>>(EMPTY_LOG_PAGE);
-  const [pageScope, setPageScope] = useState<string>();
+  const [pageScope, setPageScope] = useState<{ descriptor: string; view: string }>();
   const [pageLoading, setPageLoading] = useState(false);
   const [pageError, setPageError] = useState<string>();
   const [logBodies, setLogBodies] = useState<Map<string, string>>(() => new Map());
@@ -154,6 +154,7 @@ export function RunLogPane({
   const pendingScrollAnchor = useRef<ScrollAnchor | undefined>(undefined);
   const paneElement = useRef<HTMLElement>(null);
   const resizeStart = useRef<ResizeStart | undefined>(undefined);
+  const shownView = useRef<string | undefined>(undefined);
 
   const runId = run.summary?.runId ?? "";
   const operatorInstanceId = run.operatorInstanceId;
@@ -161,7 +162,19 @@ export function RunLogPane({
   const pageToken = run.logPageToken;
   const exactLogNodeId = nodeId ?? "";
   const descriptorScope = `${operatorInstanceId}\0${runId}\0${asOfEventUlid}\0${pageToken}\0${exactLogNodeId}`;
-  const activePage = pageScope === descriptorScope ? page : EMPTY_LOG_PAGE;
+  // The same run and node at a newer cut keeps its shown logs until the new page
+  // lands; only that page's own token may page further back.
+  const viewScope = `${operatorInstanceId}\0${runId}\0${exactLogNodeId}`;
+  const stalePage = pageScope?.descriptor !== descriptorScope && pageScope?.view === viewScope;
+  const activePage = useMemo(
+    () =>
+      pageScope?.descriptor === descriptorScope
+        ? page
+        : stalePage
+          ? { ...page, nextPageToken: "", nextCursor: "" }
+          : EMPTY_LOG_PAGE,
+    [descriptorScope, page, pageScope, stalePage],
+  );
 
   const abortDecoding = useCallback(() => {
     decodeGeneration.current += 1;
@@ -195,22 +208,27 @@ export function RunLogPane({
     pageRequestInFlight.current = false;
     abortDecoding();
     const generation = ++pageGeneration.current;
-    setPage(EMPTY_LOG_PAGE);
-    setPageScope(undefined);
+    if (shownView.current !== viewScope) {
+      shownView.current = undefined;
+      setPage(EMPTY_LOG_PAGE);
+      setPageScope(undefined);
+      setLogBodies(new Map());
+      droppedTokens.current.clear();
+      pendingScrollAnchor.current = undefined;
+      setFollowing(true);
+    }
     setPageLoading(false);
     setPageError(undefined);
-    setLogBodies(new Map());
     setDecodePending(false);
     setDecodeError(undefined);
-    droppedTokens.current.clear();
-    pendingScrollAnchor.current = undefined;
-    setFollowing(true);
     if (!expanded) return;
 
     const controller = new AbortController();
     pageController.current = controller;
     if (!pageToken) {
-      setPageScope(descriptorScope);
+      shownView.current = viewScope;
+      setPage(EMPTY_LOG_PAGE);
+      setPageScope({ descriptor: descriptorScope, view: viewScope });
       return () => controller.abort();
     }
 
@@ -232,8 +250,9 @@ export function RunLogPane({
       )
       .then((next) => {
         if (controller.signal.aborted || pageGeneration.current !== generation) return;
+        shownView.current = viewScope;
         setPage(next);
-        setPageScope(descriptorScope);
+        setPageScope({ descriptor: descriptorScope, view: viewScope });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || pageGeneration.current !== generation) return;
@@ -257,6 +276,7 @@ export function RunLogPane({
     expanded,
     operatorInstanceId,
     pageToken,
+    viewScope,
   ]);
 
   const combinedLogs = useMemo(() => {
@@ -273,13 +293,20 @@ export function RunLogPane({
         liveSequences.add(entry.sequence);
       }
     }
+    // A kept page keeps the streamed records shown with it; the newer page holds them.
+    if (stalePage) {
+      for (const entry of combinedLogsRef.current) {
+        if (!recordsBySequence.has(entry.sequence))
+          recordsBySequence.set(entry.sequence, entry);
+      }
+    }
     return boundDescriptors(
       recordsBySequence,
       (entry) => entry.sequence,
       "older",
       liveSequences,
     ).sort((left, right) => compareSequence(left.sequence, right.sequence));
-  }, [activePage.records, exactLogNodeId, liveLogs]);
+  }, [activePage.records, exactLogNodeId, liveLogs, stalePage]);
   combinedLogsRef.current = combinedLogs;
 
   const loadOlderLogs = useCallback(() => {
@@ -344,7 +371,8 @@ export function RunLogPane({
   }, [combinedLogs.length]);
 
   useEffect(() => {
-    if (!expanded || !combinedLogs.length || decodeActive.current) return;
+    // A kept page's bodies may belong to the previous cut's reader: decode the new page.
+    if (!expanded || stalePage || !combinedLogs.length || decodeActive.current) return;
     const missing = combinedLogs
       .filter(
         (entry) =>
@@ -432,7 +460,7 @@ export function RunLogPane({
         setDecodePending(false);
         setDecodeVersion((current) => current + 1);
       });
-  }, [api, combinedLogs, decodeVersion, expanded, logBodies]);
+  }, [api, combinedLogs, decodeVersion, expanded, logBodies, stalePage]);
 
   useEffect(() => {
     const element = scrollElement.current;

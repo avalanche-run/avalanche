@@ -182,9 +182,11 @@ export function Inspector(props: InspectorProps) {
   const { api, workflow, nodeId } = props;
   const runId = props.run?.summary?.runId;
   const revision = props.run?.summary?.revision;
-  const scope = `${runId}/${revision}/${nodeId}`;
+  const view = `${props.run?.operatorInstanceId}/${runId}/${nodeId}`;
+  const scope = `${view}/${revision}`;
   const [detail, setDetail] = useState<{
     api: OperatorApi;
+    view: string;
     scope: string;
     node?: NodeSnapshotMsg;
     error?: string;
@@ -194,28 +196,32 @@ export function Inspector(props: InspectorProps) {
     const controller = new AbortController();
     void api.getRunNodeDetails(runId, nodeId, controller.signal).then(
       (node) => {
-        if (!controller.signal.aborted) setDetail({ api, scope, node });
+        if (!controller.signal.aborted) setDetail({ api, view, scope, node });
       },
       (error: unknown) => {
         if (!controller.signal.aborted)
           setDetail({
             api,
+            view,
             scope,
             error: error instanceof Error ? error.message : "Step details unavailable",
           });
       },
     );
     return () => controller.abort();
-  }, [api, runId, nodeId, scope]);
+  }, [api, runId, nodeId, scope, view]);
   const active = detail?.api === api && detail.scope === scope ? detail : undefined;
+  // A newer cut of the same node keeps its details shown until its own land, read
+  // through the api that read them: their trace and value tokens are that api's.
+  const shown = active ?? (detail?.view === view && detail.node ? detail : undefined);
   const run =
-    props.run && active?.node
+    props.run && shown?.node
       ? {
           ...props.run,
-          nodes: props.run.nodes.map((node) => (node.nodeId === nodeId ? active.node! : node)),
+          nodes: props.run.nodes.map((node) => (node.nodeId === nodeId ? shown.node! : node)),
         }
       : props.run;
-  const hydrated = { ...props, run };
+  const hydrated = { ...props, run, api: shown?.api ?? api };
   const metadata = run
     ? run.topology?.classifierMetadataJson
     : workflow?.classifierMetadataJson;
@@ -252,7 +258,7 @@ export function Inspector(props: InspectorProps) {
   ) {
     return (
       <ClassifierInspector
-        api={props.api}
+        api={hydrated.api}
         nodeId={nodeId}
         workflow={workflow}
         run={run}
@@ -294,7 +300,7 @@ function AgentAndStepInspector({
   }>();
   const [eventPage, setEventPage] =
     useState<DescriptorPageState<AgentEventDescriptorMsg>>(EMPTY_EVENT_PAGE);
-  const [eventPageScope, setEventPageScope] = useState<string>();
+  const [eventPageScope, setEventPageScope] = useState<{ key: string; view: string }>();
   const [pageError, setPageError] = useState<ScopedResult<string>>();
   const [pageLoading, setPageLoading] = useState(false);
   const [following, setFollowing] = useState(true);
@@ -314,6 +320,10 @@ function AgentAndStepInspector({
   const pageRequestInFlight = useRef(false);
   const pageGeneration = useRef(0);
   const detailGeneration = useRef(0);
+  // The run node and tab whose trace page is shown, kept while a newer cut of it loads.
+  const shownView = useRef<{ selection: string; tab: AgentTab } | undefined>(undefined);
+  const staleTrace = useRef(false);
+  const shownEvents = useRef<AgentEventDescriptorMsg[]>([]);
   const traceScrollElement = useRef<HTMLDivElement>(null);
   const tabRef = useRef<AgentTab>("trace");
   const tabsId = useId();
@@ -363,7 +373,20 @@ function AgentAndStepInspector({
   const tab = selectedTab;
   const pageKey = `${descriptorScope}\0${tab}`;
   const eventPageOrder = DescriptorPageOrder.FORWARD;
-  const activeEventPage = eventPageScope === pageKey ? eventPage : EMPTY_EVENT_PAGE;
+  const pageView = `${selectionScope}\0${tab}`;
+  // The same node at a newer cut keeps its shown trace until the new page lands;
+  // only that page's own tokens may page further or load turn details.
+  const stalePage = eventPageScope?.key !== pageKey && eventPageScope?.view === pageView;
+  staleTrace.current = stalePage;
+  const activeEventPage = useMemo(
+    () =>
+      eventPageScope?.key === pageKey
+        ? eventPage
+        : stalePage
+          ? { ...eventPage, nextPageToken: "", nextCursor: "" }
+          : EMPTY_EVENT_PAGE,
+    [eventPage, eventPageScope, pageKey, stalePage],
+  );
   const currentNodeExists = Boolean(workflow && nodeId && workflow.nodeIds.includes(nodeId));
   const isWorkflowAgentNode = Boolean(
     nodeId && currentNodeExists && workflow?.agentNodeIds.includes(nodeId),
@@ -574,16 +597,19 @@ function AgentAndStepInspector({
     pageRequestInFlight.current = false;
     abortDetailHydration();
     pageGeneration.current += 1;
-    setEventPage(EMPTY_EVENT_PAGE);
-    setEventPageScope(undefined);
     setPageError(undefined);
     setPageLoading(false);
-    setFollowing(true);
     setDetailErrors({});
+    detailLoading.current.clear();
+    // A newer cut of the shown node keeps its page and the turn details read so far.
+    if (shownView.current?.selection === selectionScope) return;
+    shownView.current = undefined;
+    setEventPage(EMPTY_EVENT_PAGE);
+    setEventPageScope(undefined);
+    setFollowing(true);
     detailCache.current.clear();
     traceSummaries.current.clear();
-    detailLoading.current.clear();
-  }, [abortDetailHydration, api, descriptorScope]);
+  }, [abortDetailHydration, api, descriptorScope, selectionScope]);
 
   useEffect(() => {
     abortDetailHydration();
@@ -594,8 +620,12 @@ function AgentAndStepInspector({
     pageController.current?.abort();
     pageRequestInFlight.current = false;
     const generation = ++pageGeneration.current;
-    setEventPage(EMPTY_EVENT_PAGE);
-    setEventPageScope(undefined);
+    const view = { selection: selectionScope, tab };
+    if (shownView.current?.selection !== view.selection || shownView.current.tab !== view.tab) {
+      shownView.current = undefined;
+      setEventPage(EMPTY_EVENT_PAGE);
+      setEventPageScope(undefined);
+    }
     setPageError(undefined);
     setPageLoading(false);
     if (!isAgentNode || !hasRunNode || !nodeId || !runId || tab !== "trace") return;
@@ -603,7 +633,9 @@ function AgentAndStepInspector({
     const controller = new AbortController();
     pageController.current = controller;
     if (!eventPageToken) {
-      setEventPageScope(pageKey);
+      shownView.current = view;
+      setEventPage(EMPTY_EVENT_PAGE);
+      setEventPageScope({ key: pageKey, view: pageView });
       return () => controller.abort();
     }
 
@@ -626,8 +658,9 @@ function AgentAndStepInspector({
       )
       .then((page) => {
         if (controller.signal.aborted || pageGeneration.current !== generation) return;
+        shownView.current = view;
         setEventPage(page);
-        setEventPageScope(pageKey);
+        setEventPageScope({ key: pageKey, view: pageView });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted || pageGeneration.current !== generation) return;
@@ -656,7 +689,9 @@ function AgentAndStepInspector({
     nodeId,
     operatorInstanceId,
     pageKey,
+    pageView,
     runId,
+    selectionScope,
     tab,
   ]);
 
@@ -668,8 +703,15 @@ function AgentAndStepInspector({
       bySequence.set(event.eventSequence, event);
       liveSequences.add(event.eventSequence);
     }
+    // A kept page keeps the streamed events shown with it; the newer page holds them.
+    if (stalePage) {
+      for (const event of shownEvents.current) {
+        if (!bySequence.has(event.eventSequence)) bySequence.set(event.eventSequence, event);
+      }
+    }
     return boundDescriptors(bySequence, (event) => event.eventSequence, "newer", liveSequences);
-  }, [activeEventPage.records, eventPageOrder, liveEvents]);
+  }, [activeEventPage.records, eventPageOrder, liveEvents, stalePage]);
+  shownEvents.current = combinedEvents;
 
   const turns = useMemo(
     () => combinedEvents.filter((event) => event.agentEventKind === "turn.finished"),
@@ -678,7 +720,7 @@ function AgentAndStepInspector({
 
   const hydrateTraceTurn = useCallback(
     (event: AgentEventDescriptorMsg) => {
-      if (tabRef.current !== "trace") return;
+      if (tabRef.current !== "trace" || staleTrace.current) return;
       const key = cacheKey("json", event.bodyToken);
       if (detailCache.current.has(key) || detailLoading.current.has(key)) return;
       const generation = detailGeneration.current;

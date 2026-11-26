@@ -7,6 +7,11 @@
   the step ends." instead of saying the node has no trace. A step that ended
   without a trace keeps the earlier message.
 
+- A run page no longer blanks while its run advances or the operator connection
+  is re-established. The run stays on screen while it reloads, and the run logs,
+  step details and agent trace keep what they show until the newer data arrives,
+  instead of emptying and loading again.
+
 ## 0.20.38
 
 - A run whose input fails its workflow's input model now fails once, with code

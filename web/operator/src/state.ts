@@ -410,13 +410,40 @@ function applyEnvelope(
   return next;
 }
 
+/** A loaded selection that a new baseline from the same operator instance keeps on screen. */
+function retainedSelection(state: OperatorProjection, operatorInstanceId: string) {
+  if (
+    state.selectedRunStatus !== "ready" ||
+    !state.selectedRunId ||
+    !state.selectedRun ||
+    !operatorInstanceId ||
+    state.operatorInstanceId !== operatorInstanceId
+  ) {
+    return undefined;
+  }
+  return { runId: state.selectedRunId, snapshot: state.selectedRun };
+}
+
 export function projectionReducer(
   state: OperatorProjection,
   action: ProjectionAction,
 ): OperatorProjection {
   if (action.type === "baseline") {
+    // The same operator's new baseline keeps the shown run until the hook's
+    // background reload replaces it, so a reconnect does not blank the run.
+    const kept = retainedSelection(state, action.baseline.catalog.operatorInstanceId);
     return {
       ...emptyProjection,
+      // Its streamed logs and agent events stay too: the same operator's
+      // sequences still identify them, and the reloaded snapshot supersedes them.
+      ...(kept && {
+        selectedRunId: kept.runId,
+        selectedRun: kept.snapshot,
+        selectedRunStatus: "ready" as const,
+        liveEvents: state.liveEvents,
+        liveClassifierEvents: state.liveClassifierEvents,
+        liveLogs: state.liveLogs,
+      }),
       catalog: action.baseline.catalog,
       runs: Object.fromEntries(action.baseline.runs.map((run) => [run.runId, run])),
       terminalSeals: {},
@@ -555,6 +582,7 @@ export function useOperatorProjection(api: OperatorApi) {
   const pendingFrame = useRef<number | undefined>(undefined);
   const retryTimer = useRef<number | undefined>(undefined);
   const wakeRetry = useRef<(() => void) | undefined>(undefined);
+  const reloadSelection = useRef<((runId: string) => void) | undefined>(undefined);
 
   const abortSelection = useCallback(() => {
     selectionGeneration.current += 1;
@@ -646,7 +674,10 @@ export function useOperatorProjection(api: OperatorApi) {
             type: "baseline",
             baseline,
           });
+          const kept = retainedSelection(stateRef.current, baseline.catalog.operatorInstanceId);
           dispatch({ type: "baseline", baseline });
+          // The baseline keeps a loaded selection on screen: reload it in the background.
+          if (kept) reloadSelection.current?.(kept.runId);
           console.info("Connected to Avalanche operator");
           retryMilliseconds = INITIAL_RETRY_MILLISECONDS;
 
@@ -789,6 +820,7 @@ export function useOperatorProjection(api: OperatorApi) {
     },
     [abortSelection, api],
   );
+  reloadSelection.current = (runId) => void loadSelectedRun(runId, false);
 
   const selectRun = useCallback(
     async (runId?: string) => {

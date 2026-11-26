@@ -373,7 +373,7 @@ export function WorkflowWorkspaceSurface({
       current.pendingSelection = { runId: desiredRunId };
       onSelectRun(desiredRunId);
     }
-    // A fresh baseline resets projection selection; retain and reload the user's intent.
+    // A baseline from another operator drops the projection's selection; reload the user's intent.
     if (state.selectedRunId !== desiredRunId) void selectRun(desiredRunId);
   }, [
     latestRunId,
@@ -566,6 +566,13 @@ export function WorkflowWorkspaceSurface({
   const run =
     loadedRun ??
     (historical && retainedRun?.summary?.workflowId === workflowId ? retainedRun : undefined);
+  // A snapshot's page and detail tokens belong to the api that read it. A host that hands
+  // in a new api for the same operator keeps the shown run's panes on the api that read
+  // it, until the run's next snapshot, read through the new api, replaces it.
+  const runReader = useRef<{ run: RunSnapshotMsg; api: OperatorApi }>(undefined);
+  if (loadedRun && runReader.current?.run !== loadedRun)
+    runReader.current = { run: loadedRun, api };
+  const runApi = run && runReader.current?.run === run ? runReader.current.api : api;
   const evaluationState = useRunEvaluations(
     api,
     run?.operatorInstanceId ?? "",
@@ -1449,7 +1456,7 @@ export function WorkflowWorkspaceSurface({
                     expanded={layout.logExpanded}
                     onHeightChange={setLogHeight}
                     onExpandedChange={setLogExpanded}
-                    api={api}
+                    api={stateEntryRun ? api : runApi}
                     run={stateEntryRun ?? run}
                     nodeId={inspectedNode === INPUT_NODE_ID ? undefined : inspectedNode}
                     liveLogs={
@@ -1504,7 +1511,7 @@ export function WorkflowWorkspaceSurface({
             >
               {nodeInspectorOpen || !machineRunId ? (
                 <Inspector
-                  api={api}
+                  api={stateEntryRun ? api : runApi}
                   embedded
                   workflow={workflow}
                   run={stateEntryRun ?? run}
