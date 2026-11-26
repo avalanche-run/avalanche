@@ -108,7 +108,7 @@ function stateEntryRecord(
           status: "success",
           startedAt: 500 + entry * 10,
           endedAt: 500 + entry * 10 + 1,
-          attempts: entry === 1 ? 2 : 1,
+          attempt: entry === 1 ? 2 : 1,
         }),
       ],
     }),
@@ -220,6 +220,7 @@ describe("machine run timeline", () => {
     expect(closedRun().map(line)).toEqual([
       "run-started: Run started in in_review",
       "state-entry-entered: Entered in_review (entry 1)",
+      "step-retried: Step work retried in in_review (entry 1)",
       "step-finished: Step work ran in in_review (entry 1)",
       "event: Event review_done_with_nits accepted in in_review → amend",
       "state-entry-left: Left in_review (entry 1) → amend",
@@ -518,7 +519,9 @@ describe("flow run timeline", () => {
         status: "success",
         startedAt: 101,
         endedAt: 102,
-        attempts: 3,
+        attempt: 3,
+        maxAttempts: 4,
+        lastAttemptError: "TimeoutError: lint timed out",
       }),
       NodeSnapshotMsg.create({
         nodeId: "approve",
@@ -546,6 +549,7 @@ describe("flow run timeline", () => {
     const entries = flowTimeline({ run, waits, settled: true, terminalStatuses: ["success"] });
     expect(entries.map(line)).toEqual([
       "run-started: Run started",
+      "step-retried: Step lint retried",
       "step-finished: Step lint ran",
       "step-finished: Step review ran",
       "wait-opened: Wait opened · Ship it?",
@@ -557,6 +561,11 @@ describe("flow run timeline", () => {
     expect(entries.find((entry) => entry.id === "step:lint:end")).toMatchObject({
       detail: "ok · after 3 attempts",
       took: 1,
+    });
+    // The retry says which attempt runs and why the previous one failed.
+    expect(entries.find((entry) => entry.kind === "step-retried")).toMatchObject({
+      detail: "attempt 3 of 4 · previous: TimeoutError: lint timed out",
+      tone: "warn",
     });
     expect(entries.find((entry) => entry.id === "step:review:end")!.took).toBe(3);
     // The wait says what it waits for once; the audit says what was decided and why.

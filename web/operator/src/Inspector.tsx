@@ -902,10 +902,14 @@ function AgentAndStepInspector({
                 </span>
               )}
             </div>
-            {(node?.generation !== undefined || node?.attempts !== undefined) && (
-              <p aria-label="Execution attempts" className="mt-1 text-xs text-secondary">
-                Generation: {node.generation ?? "Not reported"} · Attempts:{" "}
-                {node.attempts ?? "Not reported"}
+            {node?.attempt !== undefined && node.attempt > 1 && (
+              <p
+                aria-label="Execution attempts"
+                className="mt-1 text-xs text-secondary [overflow-wrap:anywhere]"
+              >
+                Attempt {node.attempt}
+                {node.maxAttempts ? ` of ${node.maxAttempts}` : ""}
+                {node.lastAttemptError && ` · previous: ${node.lastAttemptError}`}
               </p>
             )}
             {runsOnClaude && (

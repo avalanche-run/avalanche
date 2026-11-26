@@ -621,7 +621,7 @@ describe("run timeline in the bottom pane", () => {
               status: "success",
               startedAt: 10.5,
               endedAt: 12,
-              attempts: 2,
+              attempt: 2,
               revision: "1",
             }),
           ],
@@ -632,7 +632,14 @@ describe("run timeline in the bottom pane", () => {
     const tab = await screen.findByRole("tab", { name: "Timeline" });
     expect(screen.getByRole("tab", { name: /^Logs/ })).toHaveAttribute("aria-selected", "true");
     fireEvent.click(tab);
-    await waitFor(() => expect(events()).toEqual(["run-started", "step:fetch:end", "outcome"]));
+    await waitFor(() =>
+      expect(events()).toEqual([
+        "run-started",
+        "step:fetch:retry:2",
+        "step:fetch:end",
+        "outcome",
+      ]),
+    );
     // A step reads as a sentence: its display name, how it ended, retries, how long it took.
     const step = screen.getByText("Step Fetch ran").closest("button")!;
     expect(step).toHaveTextContent(/^Step Fetch ran · ok · after 2 attempts · took \S+s$/);
@@ -642,7 +649,7 @@ describe("run timeline in the bottom pane", () => {
       expect(time.textContent).toMatch(/^\+\d/);
     fireEvent.click(cardAction(container, "fetch"));
     expect(await screen.findByText("Step: Fetch")).toBeInTheDocument();
-    expect(events()).toEqual(["step:fetch:end"]);
+    expect(events()).toEqual(["step:fetch:retry:2", "step:fetch:end"]);
   });
 
   it("keeps the tab labels static while a scope chip shows and clears the pane's scope", async () => {

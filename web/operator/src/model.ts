@@ -385,9 +385,6 @@ export const RunSummaryMsg = {
 };
 
 export interface NodeSnapshotMsg {
-  /** Retained execution counters, when the host exposes them. */
-  generation?: number;
-  attempts?: number;
   mapParent?: string;
   mapIndex?: number;
   /**

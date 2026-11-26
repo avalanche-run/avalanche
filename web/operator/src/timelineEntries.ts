@@ -32,6 +32,7 @@ export type TimelineKind =
   | "wait-opened"
   | "wait-resolved"
   | "step-started"
+  | "step-retried"
   | "step-finished"
   | "cancelled"
   | "outcome";
@@ -158,7 +159,7 @@ function stepEntries(
   const where = inStateEntry(base.state, base.entry);
   nodes.forEach((node, index) => {
     const name = stepName(node, base.entry || undefined);
-    const attempts = node.attempts ?? 0;
+    const attempts = node.attempt ?? 0;
     const done = STEP_DONE[node.status];
     if (node.endedAt > 0 && done) {
       const offset = toOffset(node.endedAt);
@@ -179,14 +180,35 @@ function stepEntries(
         nodeId: node.nodeId,
         sort: [base.entry, base.phase, offset, index * 2 + 1],
       });
-    } else if (node.startedAt > 0) {
+    }
+    if (node.startedAt > 0 && attempts > 1) {
+      // The current attempt started when the previous one failed.
+      const offset = toOffset(node.startedAt);
+      entries.push({
+        id: `${base.prefix}step:${node.nodeId}:retry:${attempts}`,
+        kind: "step-retried",
+        offset,
+        title: `Step ${name} retried${where}`,
+        detail: [
+          `attempt ${attempts}${node.maxAttempts ? ` of ${node.maxAttempts}` : ""}`,
+          node.lastAttemptError && `previous: ${node.lastAttemptError}`,
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        tone: "warn",
+        entry: base.entry || undefined,
+        state: base.state,
+        nodeId: node.nodeId,
+        sort: [base.entry, base.phase, offset, index * 2],
+      });
+    } else if (!(node.endedAt > 0 && done) && node.startedAt > 0) {
       const offset = toOffset(node.startedAt);
       entries.push({
         id: `${base.prefix}step:${node.nodeId}:start`,
         kind: "step-started",
         offset,
         title: `Step ${name} started${where}`,
-        detail: ["running", attempts > 1 && `attempt ${attempts}`].filter(Boolean).join(" · "),
+        detail: "running",
         tone: "neutral",
         entry: base.entry || undefined,
         state: base.state,

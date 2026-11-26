@@ -254,9 +254,9 @@ function stateEntrySnapshot(runId: string, entry: number, status: string): RunSn
           },
     ),
     nodes: interrupted
-      ? [step("check", { status: "indeterminate", attempts: 2, generation: 1, endedAt: 0 })]
+      ? [step("check", { status: "indeterminate", attempt: 2, endedAt: 0 })]
       : [
-          step("check", { attempts: 3, generation: 2, stepIo: output({ entry, score: 7 }) }),
+          step("check", { attempt: 3, stepIo: output({ entry, score: 7 }) }),
           step("fanout"),
           ...[0, 1].map((index) =>
             step(`fanout[${index}]`, {
@@ -265,7 +265,7 @@ function stateEntrySnapshot(runId: string, entry: number, status: string): RunSn
               stepIo: output({ item: index }),
             }),
           ),
-          step("notify", { attempts: 1, generation: 0, stepIo: output({ sent: true }) }),
+          step("notify", { attempt: 1, stepIo: output({ sent: true }) }),
         ],
   });
 }

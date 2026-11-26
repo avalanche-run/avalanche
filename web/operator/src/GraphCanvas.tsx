@@ -143,6 +143,9 @@ interface CardData extends Record<string, unknown> {
   onOpenReusedSource?: () => void;
   /** Status "skipped" only: why; unset when the run stopped before the step ran. */
   skipReason?: string;
+  /** The current attempt and the most the host will run, when the host reports them. */
+  attempt?: number;
+  maxAttempts?: number;
   nodeType: string;
   isAgent: boolean;
   /** The agent runs on ClaudeAgent, the Claude Agent SDK runtime. */
@@ -426,6 +429,28 @@ export const NodeDuration = memo(
 );
 NodeDuration.displayName = "NodeDuration";
 
+/** "↻ 2/8" on a step's card from its second attempt on; nothing before. */
+function RetryBadge({
+  attempt,
+  max,
+  className = "mr-1.5",
+}: {
+  attempt?: number;
+  max?: number;
+  className?: string;
+}) {
+  if (attempt === undefined || attempt < 2) return null;
+  return (
+    <span
+      className={`node-retry-badge rounded border border-warning-line bg-warning-surface px-1 py-px font-mono text-warning-ink normal-case ${className}`}
+      title={`Attempt ${attempt}${max ? ` of ${max}` : ""}`}
+    >
+      ↻ {attempt}
+      {max ? `/${max}` : ""}
+    </span>
+  );
+}
+
 // The zoom of the graph's first frame, before React Flow's viewport is live.
 const FirstFrameZoom = createContext<number | undefined>(undefined);
 
@@ -588,7 +613,12 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
           <span
             className={`node-card-meta node-status absolute top-[19px] right-0 font-mono text-[8px] uppercase text-[color:var(--node-state-color)]`}
           >
-            {capText(<>{data.status}</>)}
+            {capText(
+              <>
+                {!isCompact && <RetryBadge attempt={data.attempt} max={data.maxAttempts} />}
+                {data.status}
+              </>,
+            )}
           </span>
         )}
       </header>
@@ -688,6 +718,13 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
             />
           )}
         </div>
+      )}
+      {isCompact && (
+        <RetryBadge
+          attempt={data.attempt}
+          max={data.maxAttempts}
+          className="absolute right-3 bottom-3 text-sm"
+        />
       )}
       {data.startedAt && (
         <NodeDuration
@@ -1618,6 +1655,8 @@ function GraphCanvasView({
               : undefined,
           error: runtimeNode?.error,
           skipReason: runtimeNode?.skipReason,
+          attempt: runtimeNode?.attempt,
+          maxAttempts: runtimeNode?.maxAttempts,
           startedAt: runtimeNode?.startedAt || undefined,
           endedAt: runtimeNode?.endedAt || undefined,
           runningElapsedSeconds: runtimeNode?.runningElapsedSeconds ?? 0,
