@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- While an agent step runs on a host that has no live trace for its run, its
+  Trace tab says "Live trace isn't available for this run; events appear when
+  the step ends." instead of saying the node has no trace. A step that ended
+  without a trace keeps the earlier message.
+
 ## 0.20.38
 
 - A run whose input fails its workflow's input model now fails once, with code

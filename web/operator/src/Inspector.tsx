@@ -1103,9 +1103,12 @@ function AgentAndStepInspector({
                     className="inspector-panel h-full min-w-0 overflow-auto px-5 pt-[18px] pb-[30px]"
                   >
                     <p className="text-[11px] text-muted">
-                      {node
-                        ? "No structured agent trace is available for this node."
-                        : "This node has no execution data yet."}
+                      {/* A host without a live trace for this run fills it when the step ends. */}
+                      {node?.status === "running"
+                        ? "Live trace isn't available for this run; events appear when the step ends."
+                        : node
+                          ? "No structured agent trace is available for this node."
+                          : "This node has no execution data yet."}
                     </p>
                   </section>
                 )}
