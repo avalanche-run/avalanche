@@ -4,6 +4,7 @@ import { X } from "lucide-react";
 
 import { AgentTraceExplorer, type AgentTraceTurn } from "./AgentTraceExplorer";
 import { formatElapsedSeconds } from "./elapsedDuration";
+import { useStepElapsedSeconds } from "./useStepElapsedSeconds";
 import { parseAgentLiveEvent } from "./agentTrace/common";
 import {
   type AgentTraceStep,
@@ -139,6 +140,25 @@ const EMPTY_EVENT_PAGE: DescriptorPageState<AgentEventDescriptorMsg> = {
   nextPageToken: "",
   nextCursor: "0",
 };
+
+function StepDuration({ seconds }: { seconds: number }) {
+  return (
+    <span className="font-mono text-[9px] text-muted" title={`${seconds.toFixed(1)} seconds`}>
+      {formatElapsedSeconds(seconds)}
+    </span>
+  );
+}
+
+function RunningStepDuration({
+  startedAt,
+  runningElapsedSeconds,
+}: {
+  startedAt: number;
+  runningElapsedSeconds: number;
+}) {
+  const seconds = useStepElapsedSeconds({ startedAt, running: true, runningElapsedSeconds });
+  return <StepDuration seconds={seconds} />;
+}
 
 function traceDurationSeconds(durationMs: string) {
   const parsed = Number(durationMs);
@@ -805,13 +825,11 @@ function AgentAndStepInspector({
     </div>
   );
   const activePageError = pageError?.key === pageKey ? pageError.value : undefined;
-  const nodeSeconds = node
-    ? node.status === "running" && node.runningElapsedSeconds !== undefined
-      ? Math.max(0, node.runningElapsedSeconds)
-      : node.startedAt > 0 && node.endedAt >= node.startedAt
-        ? node.endedAt - node.startedAt
-        : undefined
-    : undefined;
+  const nodeRunning = node?.status === "running" && node.runningElapsedSeconds !== undefined;
+  const nodeSeconds =
+    node && !nodeRunning && node.startedAt > 0 && node.endedAt >= node.startedAt
+      ? node.endedAt - node.startedAt
+      : undefined;
   const traceHeader = run && isAgentNode ? node?.trace?.header : undefined;
   const traceViewer = traceHeader ? viewerFor(traceHeader.native.format) : undefined;
   const declaredModels = isUnknownRecord(workflowDeclaration?.model)
@@ -819,9 +837,12 @@ function AgentAndStepInspector({
     : undefined;
   const declaredMainModel = declaredModelName(declaredModels?.main);
   const declaredSubModel = declaredModelName(declaredModels?.sub);
-  const headerSeconds = traceHeader
-    ? traceDurationSeconds(traceHeader.durationMs)
-    : nodeSeconds;
+  // A running step counts on the same clock as its graph card.
+  const headerSeconds = nodeRunning
+    ? undefined
+    : traceHeader
+      ? traceDurationSeconds(traceHeader.durationMs)
+      : nodeSeconds;
   const nodeStatusClass =
     node?.status === "success"
       ? "status-success text-success"
@@ -893,13 +914,13 @@ function AgentAndStepInspector({
                   {capText(<>{node.status}</>)}
                 </span>
               )}
-              {headerSeconds !== undefined && (
-                <span
-                  className="font-mono text-[9px] text-muted"
-                  title={`${headerSeconds.toFixed(1)} seconds`}
-                >
-                  {formatElapsedSeconds(headerSeconds)}
-                </span>
+              {nodeRunning ? (
+                <RunningStepDuration
+                  startedAt={node.startedAt}
+                  runningElapsedSeconds={node.runningElapsedSeconds ?? 0}
+                />
+              ) : (
+                headerSeconds !== undefined && <StepDuration seconds={headerSeconds} />
               )}
             </div>
             {node?.attempt !== undefined && node.attempt > 1 && (

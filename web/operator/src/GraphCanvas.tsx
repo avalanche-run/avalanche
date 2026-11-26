@@ -70,6 +70,7 @@ import { decodeClassifierDeclaration, decodeEvaluationDeclaration } from "./clas
 import { decodeStepInterface } from "./stepInterface";
 import type { EvaluationRecord } from "./evaluations";
 import { formatElapsedSeconds } from "./elapsedDuration";
+import { useStepElapsedSeconds } from "./useStepElapsedSeconds";
 import { CompositeSummary } from "./CompositeSummary";
 import {
   arrangeGraph,
@@ -385,38 +386,12 @@ export const NodeDuration = memo(
     runningElapsedSeconds: number;
     compact: boolean;
   }) => {
-    const [nowMs, setNowMs] = useState(() => performance.now());
-    const runningClock = useRef<
-      { startedAt: number; elapsedSeconds: number; receivedAtMs: number } | undefined
-    >(undefined);
-    const isRunning = running && endedAt === undefined;
-    if (
-      isRunning &&
-      (runningClock.current?.startedAt !== startedAt ||
-        runningClock.current.elapsedSeconds !== runningElapsedSeconds)
-    ) {
-      runningClock.current = {
-        startedAt,
-        elapsedSeconds: runningElapsedSeconds,
-        receivedAtMs: performance.now(),
-      };
-    }
-    useEffect(() => {
-      if (!isRunning) return;
-      setNowMs(performance.now());
-      const interval = window.setInterval(() => setNowMs(performance.now()), 100);
-      return () => window.clearInterval(interval);
-    }, [isRunning, runningElapsedSeconds, startedAt]);
-    const elapsedSeconds =
-      endedAt !== undefined
-        ? Math.max(0, endedAt - startedAt)
-        : isRunning
-          ? Math.max(
-              0,
-              (runningClock.current?.elapsedSeconds ?? runningElapsedSeconds) +
-                (nowMs - (runningClock.current?.receivedAtMs ?? nowMs)) / 1_000,
-            )
-          : 0;
+    const elapsedSeconds = useStepElapsedSeconds({
+      startedAt,
+      endedAt,
+      running,
+      runningElapsedSeconds,
+    });
     return (
       <span
         className={`node-duration absolute font-mono text-muted transition-[font-size] duration-150 ease-out motion-reduce:transition-none ${compact ? "top-3 right-3 text-sm" : "top-4 right-4 text-[9px]"}`}
