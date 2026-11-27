@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- The Avalanche skill for coding agents (`skills/avalanche`, installed by `ava init`) is
+  rewritten. `SKILL.md` is now a short entry point: the rules that always apply, the working
+  loop and an index. Under `references/` there is one file per feature (workflows, Python
+  steps, agent steps, runtimes, tools and skills, evaluations, classifier steps, state
+  machines, inputs and files, map and skip, retries and reruns, waits, approvals, triggers,
+  integrations, running locally, testing, self-hosting, Avalanche Cloud, templates), four
+  guides (from a process to a workflow, choosing a feature, ten runnable patterns,
+  debugging) and complete references for the Python API, error types, the `ava` and `delta`
+  commands, the operator's REST API and the project layout. The earlier `references/api/`
+  copy of `docs/api/` is gone.
+
 ## 0.20.39
 
 - A retried step's graph card shows its retry badge beside its status instead of

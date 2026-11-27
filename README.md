@@ -29,8 +29,8 @@ Avalanche makes agents first-class steps in typed data pipelines. Compose adapti
 The [API reference](docs/api/README.md) covers the interfaces used to write and run
 workflows: step decorators, graph operations, run handles, inputs and context,
 files and workspaces, agents, classifiers, CLI commands. Entries list parameters, fields, returns, and errors.
-The same reference is bundled in the [Avalanche skill](skills/avalanche/SKILL.md)
-for offline API lookup.
+The [Avalanche skill](skills/avalanche/SKILL.md) carries its own complete reference
+for coding agents.
 
 ## Requirements
 

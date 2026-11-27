@@ -51,6 +51,6 @@ remains an early-release, local-development toolkit.
 
 ## Offline skill reference
 
-The same reference tree is bundled under `skills/avalanche/references/api/`.
-Keep those files identical to `docs/api/` when updating an API entry; all topic
-links work in either location without a repository checkout.
+The [Avalanche skill](../../skills/avalanche/SKILL.md) bundles its own reference for
+coding agents under `skills/avalanche/references/reference/`. When an API entry changes,
+update the matching skill file too.

@@ -1,802 +1,241 @@
 ---
 name: avalanche
 description: >-
-  Design, build, run, and refactor agentic workflows with Avalanche. Use when a
-  user describes an outcome that should become a typed multi-step workflow, or
-  when creating an Avalanche flow or belt, choosing deterministic, TypeSafe
-  classifier, or PredictRLM-backed agent steps, composing DAGs with >> and &,
-  selecting operator/browser/TUI execution, or looking up Avalanche workflow-author API signatures, fields, and behavior.
+  Write, run and debug Avalanche workflows: Python workflows whose steps are
+  plain functions, AI agent steps and classifier steps, composed into a DAG
+  with >> and &. Use when creating or changing an Avalanche workflow, when a
+  user describes a process to automate with agents, or when looking up any
+  Avalanche feature (map, retries, reruns, waits, approvals, webhooks,
+  schedules, state machines, integrations, evaluations), the ava and delta
+  CLIs, the Python API, the local operator or Avalanche Cloud.
 compatibility: >-
-  Requires Python 3.13 and avalanche-ai. Agent and classifier steps
-  are included in the base package. Includes a vendored copy of PredictRLM's RLM-design skill
-  as a reference; check its upstream source for updates when access is available.
-metadata:
-  author: Trampoline AI
-  version: "1.0"
+  Requires Python 3.13 and the avalanche-ai package. Agent and classifier
+  steps need package extras and model provider keys; see
+  references/reference/project-layout.md.
 ---
 
-# Design and build Avalanche agentic workflows
-
-> Before using this skill, check for an update with
-> `npx skills update avalanche` when it was installed through the Skills CLI.
-> Replace `npx` with `pnpx`, `bunx`, or the equivalent package runner in use.
-
-Avalanche turns a desired outcome into a typed, observable agentic workflow. A
-workflow combines deterministic Python nodes, TypeSafe-backed classifier nodes,
-and PredictRLM-backed agent nodes inside one DAG, then runs it through the
-operator with the CLI, browser UI, or TUI. The main design task is deciding where
-typed classification or adaptive agent work belongs, what each stage
-promises, and how data and artifacts move between stages. Decorators and arrow
-syntax come after that design.
-
-## Route to the right reference
-
-Load only what the task needs:
-
-- Workflow-author API lookup (call forms, defaults, fields, return values, and
-  errors): [API reference](references/api/README.md). Follow its topic links
-  for workflows, runs, inputs/context, files/workspaces, agents, classifiers,
-  and CLI commands. For reference-only
-  questions, look up the API directly; the workflow-design approval gates below
-  apply when designing or implementing a workflow, not when explaining an API.
-- Designing and implementing one PredictRLM-backed Avalanche step:
-  [agent-steps.md](references/agent-steps.md). It loads the vendored original
-  PredictRLM skill for the single-step design process, then covers the Avalanche
-  integration surface.
-- Outside services a step uses (Connectors, MCP declarations, accounts and
-  `ava connect`): [integrations.md](references/integrations.md).
-- Native observation-only agent quality metrics and composites:
-  [agent-steps.md](references/agent-steps.md#native-evaluations). Use the first
-  successful agent call to return: its keyword arguments, validated
-  outputs, and only that invocation's trace—not the enclosing step's inputs,
-  postprocessed return, or all invocation traces. Do not invent a second context
-  schema or a separate evaluation workflow.
-- Agent runtime data (request, result, trace, live events):
-  [agent-runtime-contract.md](references/agent-runtime-contract.md); every model,
-  without explanations: [agent-runtime-models.md](references/agent-runtime-models.md).
-  Each runtime's settings, own data, and how it fills the shared data:
-  [predict-rlm.md](references/runtimes/predict-rlm.md) and
-  [claude-agent.md](references/runtimes/claude-agent.md).
-- Usage, native classifier syntax, question-object design for routing, labels,
-  scoring, extraction, and verification, local execution, and CLI flags:
-  [usage.md](references/usage.md#native-classifier-steps).
-- File layout and maintainability: [project-layout.md](references/project-layout.md).
-
-This skill designs the complete agentic workflow: stage boundaries,
-deterministic work, agent responsibilities, typed handoffs, topology,
-persistence, execution, and end-to-end verification. The agent-step reference
-uses the original PredictRLM skill to design each individual adaptive agent
-before implementing its Avalanche inline invocation or decorated body.
-
-## Design an agentic workflow
-
-Design has two user-alignment gates: agree on the outcome, then approve a
-concrete workflow plan. Do not implement, scaffold, or edit workflow code until
-the user explicitly approves the presented plan.
-
-### Deliver the workflow, not the requested outcome
-
-The deliverable is a working Avalanche workflow that can achieve the user's
-outcome when the user runs it. You are building that workflow—not performing
-the workflow's domain work for the user now.
-
-Do not independently research, analyze, transform, publish, notify, or otherwise
-act on the user's real inputs to produce the requested business result outside
-the constructed workflow. Use supplied materials to understand requirements and
-to define contracts. Exercise the requested behavior only by running the
-implemented Avalanche workflow for verification, using safe test inputs and
-destinations unless the user explicitly authorizes real side effects.
-
-This boundary remains after plan approval: implementation produces the workflow
-code, configuration, and verification evidence, not a one-off substitute for
-the workflow's eventual output.
-
-### Step 1: Interview the user and align on the outcome
-
-Read any description or materials the user already supplied, then ask focused
-questions. At minimum, establish:
-
-- **Goal:** What do you want the workflow to accomplish, and for whom?
-- **Success:** What does a good result look like? What will you inspect or
-  evaluate first?
-- **Inputs:** What information goes in? Identify its source, format, volume,
-  authority, and whether it is documents, files, data, code, APIs, feedback, or
-  persistent state.
-- **Outputs:** What do you expect to receive? Identify the required structured
-  data, files, reports, edits, notifications, destination, and presentation
-  format.
-- **Boundaries:** What may the workflow change, what must remain read-only, and
-  which decisions require human approval?
-- **Operating constraints:** Is this one run or a recurring process? Which
-  quality, latency, cost, privacy, compliance, or environment constraints are
-  material?
-
-Ask follow-up questions when an answer changes the outcome or boundary. Do not
-substitute architecture questions such as “How many agents?” for outcome
-questions. The user supplies domain intent; the agent owns the later workflow
-decomposition and implementation decisions.
-
-Before drafting a workflow plan, summarize the agreement in this form and have
-the user align on it:
-
-> Given **[authoritative inputs]**, the workflow will **[accomplish the goal]**
-> and produce **[specific outputs and destination]**. It succeeds when
-> **[observable criteria]**, while respecting **[side effects, approval points,
-> and constraints]**.
-
-Separate the requested outcome from a proposed implementation. “Review these
-submissions and publish an approved package” is an outcome; “use five agents” is
-an architecture claim that still needs justification.
-
-### Step 2: Decompose the work into meaningful stages
-
-Start with the smallest stage graph that can deliver the outcome. Each stage
-must have one stable responsibility, an observable result, and a reason to exist
-as an independent node.
-
-For an agent stage, one stable responsibility means **one logical unit of
-work**: one specific task with one cohesive result. That result may contain
-multiple related fields or files when they jointly complete the same task.
-Completing the task may require an internal sequence such as survey, extract,
-compare, and validate; those are steps in the RLM's strategy, not separate
-workflow responsibilities. Do not assign one agent a list of independently
-useful tasks or deliverables.
-
-Define each logical agent task with:
-
-- one imperative responsibility;
-- authoritative inputs and inherited decisions it must preserve;
-- one cohesive typed result;
-- explicit non-goals that belong to earlier or later stages;
-- a completion condition that can be validated at its boundary.
-
-Split proposed agent work into one agent step per logical task. A logical task
-has one purpose, produces one cohesive result, and can be judged complete on its
-own. These are signals that the work contains distinct logical tasks:
-
-- outputs could be accepted, retried, reused, or changed independently;
-- one result is consumed separately by later stages;
-- portions can run independently or in parallel;
-- portions require genuinely different responsibilities or validation;
-- each portion creates its own durable or reviewable artifact.
-
-Different tools, permissions, capabilities, or budgets may support a boundary,
-but they do not determine the number of agent steps. Do not merge separate
-logical tasks merely because they share context or capabilities. Merge
-activities only when they jointly complete one task and the intermediate work
-has no independent purpose. Separate deterministic work into `@ava.step` nodes
-when it forms an expressible, testable boundary. Do not turn every procedural
-action inside one task into a node.
-
-### Step 3: Assign the right execution type
-
-For each stage, choose:
-
-- `@ava.source` to ingest or construct the first runtime value;
-- `@ava.step` for deterministic parsing, normalization, calculation, lookup,
-  validation, conversion, routing, or artifact assembly;
-- `@ava.classifier_step` for Choice, Noul, or Score questions over runtime state;
-  declare defaults or supply questions per call when candidates or rubrics vary.
-  Prefer this native TypeSafe integration over a custom client wrapper or an
-  agent whose only task is classification;
-- `ava.agent.step(Signature, ...)` inside the workflow for one direct adaptive
-  agent invocation requiring exploration, evidence, tool choice, judgment, or
-  synthesis; use `@ava.agent_step` or `@ava.agent.step` outside workflow
-  construction when a body adds meaningful preparation, mapping, batching,
-  custom validation or transforms, composition, or persistence;
-- `@ava.dest` for the final publish, export, notification, or external write.
-
-Prefer deterministic code whenever the algorithm is known. The number of agent
-steps follows the number of logical agentic tasks: use one agent step for each
-task. Do not merge distinct tasks because they share context or capabilities,
-and do not split one task into a chain of prompt fragments. Artifacts,
-capabilities, budgets, and validation boundaries can expose task boundaries,
-but the logical tasks decide the decomposition.
-
-### Step 4: Design typed stage contracts
-
-Define the workflow's `ava.BaseInput`, final result, and every meaningful
-inter-stage payload before writing node bodies. For each stage record:
-
-- input model and source;
-- source authority and prior-stage decisions the node must not rediscover or
-  change;
-- output model or artifact;
-- invariants the stage establishes;
-- errors or incomplete states the next stage must handle;
-- explicit non-goals owned by adjacent stages;
-- whether large content should travel as a file/table reference instead of an
-  injected string.
-
-Contracts should expose facts and artifacts needed by downstream stages, not
-private reasoning. A stage boundary is justified only when its output can be
-named, validated, reused, persisted, or inspected.
-
-### Step 5: Design each RLM agent
-
-For every proposed agent stage, use
-[agent-steps.md](references/agent-steps.md), which invokes the bundled original
-PredictRLM skill for Steps 1–6:
-
-1. validate that this stage is a good RLM fit;
-2. define its inputs;
-3. define its outputs;
-4. research sandbox and host-side feasibility;
-5. select reusable Skills, host tools, and any extension boundary;
-6. write the complete strategy in the signature docstring.
-
-The signature docstring is that agent's instruction. Do not move
-agent-specific instructions into a one-off Skill. A Skill represents reusable
-knowledge or capability shared by multiple agents.
-
-When the agreed success criteria call for quality observation, attach
-`ava.Evaluations` with named `ava.Metric(state=..., question=...)` declarations.
-Selectors choose evidence; TypeSafe Choice/Noul/Score questions judge it.
-Composites use the existing answer accessors and explicitly normalize an
-`N`-level Score with `score / (N - 1)`. Equal selected state is batched without
-merging unrelated evidence. Follow the
-[native evaluation reference](references/agent-steps.md#native-evaluations).
-
-Native evaluations are operator-only and never gate the workflow. They require
-`TYPESAFE_API_KEY` separately from agent credentials, use classifier
-model/timeout defaults, and expose independent pending/results/errors per
-execution. Their records are kept in the operator's state database, so they
-survive an operator restart; one still pending at a restart is marked failed,
-not resumed.
-Embedded execution reports **not evaluated**. Never promise file/media
-evaluation or durable recovery, and never describe controlled fixture responses
-as live model judgments.
-
-### Step 6: Draw the dependency graph
-
-Connect stages from data dependencies, not from an imagined conversation among
-agents.
-
-- Run stages in parallel only when neither consumes the other's result.
-- Fan out when one validated result feeds independent work.
-- Fan in through a typed stage that names and validates the combined result.
-- Keep explicit references to earlier outputs when a downstream stage needs
-  more than its immediate predecessor.
-- Avoid serial agent chains whose intermediate outputs merely restate the same
-  context.
-
-The graph should make critical inputs, concurrency, reusable outputs, and the
-terminal result visible without reading node bodies.
-
-### Step 7: Choose persistence and execution deliberately
-
-Use in-memory typed values for ordinary within-run handoffs. Tables and
-streams are being rebuilt; until they return, keep artifacts that must outlive
-a run in files or an external store the flow owns. Persistence is an
-architectural requirement, not a default stage.
-
-Run workflows through the operator. Do not add standalone runner scripts,
-`main()` functions, `if __name__ == "__main__"` blocks, or direct
-`Workflow.run()` entry points. Choose the operator client from the caller:
-
-- operator/CLI execution for discovered flows run through the control plane;
-- the browser UI for interactive local operator work; prefer it to the TUI unless
-  the user explicitly asks for terminal interaction;
-- the TUI only when the user requests terminal interaction; give them the
-  command to run in their own terminal rather than launching it from the agent.
-
-### Step 8: Check feasibility and define proof
-
-Before implementation, verify:
-
-- every stage has a necessary responsibility and typed boundary;
-- every agent stage has completed the RLM feasibility and capability design;
-- independent work is parallel and required dependencies are explicit;
-- host tools, network access, packages, files, and persistence are available;
-- the final output can be checked against concrete acceptance criteria;
-- one representative end-to-end scenario exercises the actual execution
-  surface and terminal result.
-
-### Step 9: Present the workflow plan and obtain approval
-
-Turn the completed design into a user-facing proposal using the required
-workflow-plan format below. The plan is a proposal, not an implementation
-instruction: explain the selected stages, their dependencies, node types, and
-capabilities so the user can evaluate the design rather than infer it from
-code.
-
-End by asking for explicit approval to implement the proposed plan. Do not
-create project files, write node bodies, run scaffolding, or begin any other
-implementation activity until the user affirmatively approves it. A question,
-comment, or requested change is not approval; revise the plan and present it
-again. Once approved, implement the approved plan and surface any later change
-that would materially alter its goal, boundary, or topology.
-
-## Examples: from a goal to agent steps
-
-Use these examples to calibrate logical task size. The numbered items are agent
-steps; deterministic staging, validation, aggregation, and publication are
-called out separately.
-
-### First-pass RFP response package
-
-**Goal:** Turn an issuer's RFP package and available bidder evidence into a
-reviewable first-pass response package with analysis, proposal artifacts,
-completed returnables where safe, and a customer handoff.
-
-Agent steps:
-
-1. **Audit the RFP package:** establish requirements, deliverables, dates, file
-   roles, and returnable routing; return the package audit and control sheet.
-2. **Build the vendor evidence profile:** map bidder facts, examples, and gaps
-   to the audited requirement IDs.
-3. **Plan the submission:** decide safe writes, intentional non-writes,
-   unsupported fields, missing inputs, questions, assumptions, and next actions.
-4. **Draft proposal content:** write substantive proposal sections and a
-   requirement-to-response traceability map; do not render final files.
-5. Run three independent rendering tasks in parallel:
-   - **Render the internal briefing** from the structured audit report.
-   - **Render the proposal document** from the approved content draft.
-   - **Render the compliance matrix** from audit, evidence, plan, and
-     traceability.
-6. Run three independent returnable-filling tasks in parallel:
-   - **Fill PDF returnables** by executing the typed fill plans.
-   - **Fill spreadsheet returnables** by executing the typed fill plans.
-   - **Fill other document returnables** by executing only safe, precise edits.
-7. **Compose the customer handoff:** explain the generated package, remaining
-   blockers, required review, and next actions without re-deciding prior work.
-
-Deterministic nodes prepare inputs, validate agent outputs, combine parallel
-artifacts, and save the final package. Inventorying, extraction, and file
-routing are procedures inside the package-audit task; proposal drafting and
-document rendering are separate tasks because they produce independently
-reviewable results with different completion conditions.
-
-### Persistent project revision loop
-
-**Goal:** Incorporate new information and operator feedback into a persistent
-RFP project safely, while preserving an auditable authorization boundary and
-publishing only validated revisions.
-
-Agent steps:
-
-1. **Reconcile the project:** inspect the current artifacts and intake and
-   return a complete factual account of supported facts, discrepancies, and
-   gaps. This step is read-only and neither proposes nor performs edits.
-2. **Plan the revision:** turn the reconciliation and intake into the exact,
-   reviewable authorization for this revision. This step specifies changes but
-   does not touch project files.
-3. **Apply the revision:** execute only the authorized changes, verify each
-   edit, and report applied, partial, or blocked operations. This step does not
-   reinterpret business meaning or broaden the plan.
-
-Deterministic nodes seal the staged baseline, validate the plan and resulting
-mutations, enforce structural invariants, and commit atomically. Reconciliation,
-authorization, and execution remain separate agent tasks even though they work
-on the same project and share context.
-
-### Meeting transcript cleanup
-
-**Goal:** Turn messy or overlapping captures of meetings into accurate,
-readable transcripts with grounded decisions, action items, and unresolved
-issues.
-
-Agent steps:
-
-1. **Reconcile and clean the meeting transcripts:** group alternate captures,
-   choose the strongest timeline, repair gaps and speaker labels from supporting
-   sources, preserve uncertainty, and produce readable transcripts plus
-   decisions and actions.
-
-Deterministic nodes discover supported input files and publish the returned
-models as JSON and Markdown. Surveying sources, grouping captures, repairing
-gaps, and extracting actions remain one agent step because they jointly
-complete the single transcript-reconciliation task.
-
-## What a good Avalanche workflow looks like
-
-A good workflow is:
-
-- **Outcome-oriented:** its terminal artifact directly satisfies the user's goal.
-- **Minimal:** every node adds a real execution or validation boundary.
-- **Typed:** node contracts make data flow and failure states inspectable.
-- **Deterministic where possible:** LMs do not perform known calculations or
-  mechanical transforms.
-- **Coherently agentic:** each RLM owns one logical task and one cohesive result.
-  Its strategy may be multi-step, but its responsibility is not a list of
-  independently useful jobs or one turn of a scripted conversation.
-- **Explicitly parallel:** independent branches are visible in the DAG.
-- **Capability-bounded:** each agent receives only the Skills and tools it needs.
-- **Observable:** intermediate outputs are meaningful enough to inspect and
-  validate.
-- **Durable only when needed:** storage exists for a stated cross-run or external
-  consumption requirement.
-- **Readable from `flow.py`:** the file reveals the stages and topology without
-  hiding business logic in helpers or the workflow body.
-
-Reject designs built from “one agent per verb,” one agent assigned a list of
-independent deliverables, agents that only forward or reformat another agent's
-prose, untyped prompt blobs, duplicated agent-specific Skills, unnecessary
-persistence, or a giant agent with broad host access and no validated output
-boundary.
-
-## Workflow plan output
-
-After completing the design analysis but before any implementation, present a
-workflow plan with every section below. Scale the detail to the workflow, but
-do not omit a section because the design appears simple.
-
-1. **Outcome agreement:** the aligned outcome statement, success criteria,
-   authoritative inputs, required outputs and destination, side effects,
-   constraints, and human approval points.
-2. **Stage plan:** a table with stage name, node type, responsibility,
-   authoritative typed input and source, typed output, required capabilities
-   (Skills, tools, permissions, or packages), and why this is a separate
-   boundary. State why each stage is deterministic, classifier-backed, or agentic; list explicit
-   non-goals where they prevent responsibility overlap.
-3. **Mermaid DAG:** render the proposed data-flow graph as a `mermaid` diagram.
-   Every node label must identify its stage name, node type, brief
-   responsibility, typed input, and typed output. Show data dependencies,
-   parallel branches, fan-in, earlier-stage references, and the terminal
-   destination. Use a legend or Mermaid classes so `@ava.source`, `@ava.step`,
-   `@ava.classifier_step`, agent-backed STEP nodes, and `@ava.dest` remain distinguishable.
-4. **Contracts:** complete Pydantic contract sketches for the workflow input,
-   each meaningful handoff, and final result, including invariants and
-   incomplete/error states at boundaries.
-5. **Agent designs:** an RLM Steps 1–6 design for every agent stage,
-   including its bounded responsibility and completion condition.
-6. **Tools, Skills, packages, and integrations:** inventory every required
-   reusable Skill, host tool, Python package, and external integration. For
-   each, state its purpose, consuming stage or stages, and whether it already
-   exists, is installed as a dependency, or must be developed. Name required
-   packages and why they are needed. For a third-party API, specify the
-   service, operation, authentication/configuration boundary, client package or
-   protocol, typed tool inputs/outputs, and the adapter or tool that must be
-   built. Assign only the minimum needed capabilities to each agent stage and
-   surface missing prerequisites rather than hiding them in a generic prompt.
-7. **Operational decisions:** persistence and execution-surface choices, with
-   their rationale.
-8. **Implementation and proof:** package/file layout plus a representative
-   end-to-end verification scenario and, when requested, the local
-   operator/browser-UI handoff. Name the narrow flow file or clean flow
-   directory, chosen launch command, expected UI endpoint, and browser check.
-
-End the proposal with a direct request for approval to implement it. Do not
-create or modify workflow implementation files, generate scaffolding, or begin
-implementation until the user explicitly approves the plan. If the user asks
-for changes, update and re-present the complete plan for approval.
-
-## Write step descriptions as a coherent story
-
-Always give every workflow step a succinct, plain-language description in its
-function docstring. Start with one self-contained sentence on a single line:
-state the concrete action and the result it contributes to the workflow. Use
-familiar words and meaningful names for the data; do more than repeat the
-function name. Put any necessary technical detail after the opening sentence.
-
-The UI uses the first non-empty function-docstring line for ordinary steps,
-including sources, destinations, and classifiers. For agent steps, it uses the
-opening line of the signature's instructions: begin the signature docstring
-(or inline signature instructions) with the same kind of clear summary, then
-retain the full agent instructions below it. Keep a decorated agent function's
-summary consistent with its signature summary.
-
-Read all descriptions in graph order, from the first input to the final result.
-Together they must tell a coherent story of how the workflow reaches its goal.
-Use consistent terms for the same inputs and artifacts, and make each handoff
-clear enough that a reader can follow the work without opening the code. Each
-description must also make sense on its own. Describe parallel branches and
-conditional outcomes accurately; do not imply an order the graph does not have.
-
-For example: "Read the selected source article." → "Develop one article pitch
-from the source's evidence." → "Approve the pitch or explain why it should not
-be published."
-
-Whenever a step's behavior, inputs, outputs, or role changes, update its
-description in the same edit. Re-read the complete sequence and adjust affected
-neighboring descriptions so the story remains accurate and connected.
-
-## Build the designed workflow
-
-1. Define workflow inputs and every meaningful payload/result as Pydantic models.
-2. Choose the package layout before writing `flow.py`.
-3. Implement deterministic `@ava.source`, `@ava.step`, and `@ava.dest` nodes.
-4. For each agent step, follow the bundled RLM reference's design workflow,
-   then define its signature and choose a direct inline `ava.agent.step(...)`
-   invocation or a meaningful decorated body. For classifiers, design state,
-   question instructions, and Choice/Noul/Score criteria using the
-   [question-design guidance](references/usage.md#structure-the-questions-object).
-   Batch independent judgments, declare defaults on `@ava.classifier_step` or
-   pass runtime `questions=` to the injected classifier, and return the desired
-   typed result from its body.
-5. Declare the DAG at the bottom of `flow.py` as one returned, parenthesized
-   `>>` / `&` expression. Bind futures with `:=` only for explicit dependencies.
-
-## Run the local operator and browser UI
-
-Start local services only when the user asks to run, inspect, or verify a
-workflow through the operator. The browser UI is the normal interactive surface;
-the TUI is an optional terminal alternative.
-
-See more details in the usage reference [usage.md](references/usage.md)
-
-For the combined local path, use a specific target or workspace configuration:
-
-```bash
-uv run ava dev [<flow-file-or-clean-flow-directory> ...]
-```
-
-`ava dev` starts the local operator, browser UI, and development REST API.
-When no `FLOW` is supplied, it reads `[tool.avalanche].flow_targets` from the
-nearest `pyproject.toml`;
-relative entries resolve from that file. Explicit `FLOW` values replace the
-configured list. Without either, the command fails before services start and
-never scans the current directory by default. Its flags are:
-
-- `--port PORT`: operator gRPC port, default `7433`;
-- `--web-port PORT`: browser UI and REST API HTTP port, default `7435`; it must
-  differ from `--port`;
-
-For programmatic control without the UI, send JSON HTTP requests to
-`http://127.0.0.1:7435/api/v1` by default. `ava dev`, `ava operator`, and
-`ava web` all serve this API on their browser listener. Paths below are relative
-to that base URL:
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| GET | `/flows` | Discover flows and their `workflow_selector` values. |
-| POST | `/runs` | Start a workflow asynchronously; returns `202` with a `run_id`. |
-| GET | `/runs` | List run summaries; optionally filter by `workflow_selector`. |
-| GET | `/runs/{run_id}` | Inspect run status, node states, and topology. |
-| POST | `/runs/{run_id}/cancel` | Request cancellation; poll the run for terminal status. |
-| GET | `/runs/{run_id}/output` | Fetch the encoded result in `value.value_json` and file descriptors. |
-| GET | `/runs/{run_id}/activity` | List log descriptors, or node events with `node_id`; accepts `order=forward\|newest_first`. |
-
-To create a run, POST a JSON object with `workflow_selector` from `/flows`.
-Optional `input_json` and `context_json` are JSON objects; optional `run_id`
-defaults to a generated ID. Both POST routes require
-`Content-Type: application/json`; cancellation needs no body.
-There is no built-in authentication; keep the API local or behind a trusted,
-authenticated proxy.
-
-Use a specific flow file or a clean configured flow-only directory; never pass
-a mixed repository root.
-
-For separate processes or a custom browser-listener host, start them in separate
-terminals:
-
-```bash
-uv run ava operator [<flow-file-or-clean-flow-directory> ...] \
-  --host 127.0.0.1 --port 7433 --webhook-port 7434 --log-level WARNING --no-web
-uv run ava web --connect localhost:7433 --host 127.0.0.1 --port 7435
-```
-
-`ava operator` resolves targets with the same explicit-or-configured rule and
-serves the browser UI and REST API on port `7435` by default. Use `--web-port`
-to change that port, or `--no-web` when running `ava web` separately as above.
-Its `--log-level` accepts `DEBUG`, `INFO`, `WARNING`,
-or `ERROR`. `ava web` connects with `--connect HOST:PORT`; use `--trusted-proxy`
-only for non-loopback traffic protected by a trusted, authenticated proxy.
-
-Start a discovered workflow with:
-
-```bash
-uv run ava run <workflow-selector> --connect localhost:7433 \
-  --input '<json-object>'
-```
-
-`ava run` also accepts `--context <json-object>`, repeated
-`--file FIELD=PATH`, and repeated `--workspace FIELD=DIR` for top-level input
-fields.
-
-## Hand off the TUI only on request
-
-Do not launch `uv run ava tui` from the agent or a background process. Its
-interactive terminal would not be available to the user. When the user asks for
-the TUI, ensure they have an already-running operator, then give them this
-command to run in another terminal:
-
-```bash
-uv run ava tui [flow[/node]] --connect localhost:7433
-```
-
-The TUI also supports `--token`, `--tls`, `--insecure`, and
-`--tls-ca-cert PATH` for its gRPC connection. `uv run ava tui` without
-`--connect` is mock mode for UI exploration only.
-
-When a browser UI is launched, report its actual local endpoint. Always hand off
-operator-based execution commands, never a standalone Python runner.
-
-## Non-negotiable conventions
-
-- Use Pydantic `BaseModel` classes as the source of truth for structured workflow
-  data. Use `ava.BaseInput` for the runtime input model. Compact inline signature
-  fields may be scalar types; do not pass unstructured dictionaries between
-  nodes when a model can express the contract.
-- Restrict `flow.py` to imports, decorated node definitions, and workflow
-  declarations. Workflow declarations form the final section of the file;
-  nothing follows them.
-- Always run authored workflows through the operator. Do not create standalone
-  execution scripts, `main()` functions, `__main__` blocks, or direct `.run()`
-  entry points, including in examples.
-- Put every undecorated helper function in `util.py`, including private,
-  single-use, mapping, validation, formatting, conversion, and filesystem
-  helpers.
-- Define Pydantic models in `schema.py`; keep signature classes, config loading,
-  namespace construction, CLI entry points, and execution code out of `flow.py`.
-- Construct compact signatures directly inside inline `ava.agent.step(...)`
-  workflow calls or either agent-step decorator. Every named signature MUST live
-  in a separate `signature.py`, even when used only once. Use a root
-  `signature.py` for a small flow or
-  `agents/<agent_name>/signature.py` for larger per-agent contracts; keep private
-  models in that agent's `schema.py`.
-- The docstring on an `ava.Signature` class is the agent's instruction. Put all
-  instructions specific to that agent step in this docstring.
-- A Skill is reusable knowledge or a reusable capability shared by multiple
-  agent steps. Never create a Skill solely to carry instructions for one agent
-  step; keep those instructions in its signature docstring. On PredictRLM steps,
-  pass reusable PredictRLM skills (`ava.runtimes.predict_rlm.skills`) through the
-  runtime, `runtime=ava.runtimes.PredictRLM(skills=[...])`. On ClaudeAgent and
-  OpenAIAgent steps, pass `ava.agent.Skill` objects (Agent Skills format) in the
-  step's `skills=`.
-- In decorated bodies, `agent` is framework-injected, keyword-only, annotated
-  `ava.Agent`, and never passed at DAG call sites. `await agent(...)` returns an
-  `ava.agent.AgentResult` whose `outputs` are already validated against the
-  signature; the body selects, composes, and returns or persists the intended
-  output explicitly.
-- Use direct returned `>>` chains with `ava.agent.step(Signature, ...)` for
-  a single agent call. Inputs and outputs follow signature order; `&` supplies
-  inputs in branch order. Invalid or missing outputs raise an error.
-- Define agent decorators outside workflows, only when the function adds useful
-  work. Both forms accept the same models, skills, and tools.
-- `classifier` is framework-injected, keyword-only, annotated `ava.Classifier`,
-  and never passed at DAG call sites. `await classifier(state=...)` returns
-  `ava.ClassificationResult`; keep probabilities when downstream work needs them.
-- Declare default classifier questions on the decorator or construct runtime
-  questions inside the step body. A call's `questions=` replaces the complete
-  default mapping; it does not merge. Resolve `TYPESAFE_API_KEY` only in the
-  executing environment, never in workflow definitions or metadata.
-- Workflow bodies only declare the graph; agents run later. No runtime loops,
-  data-dependent branches, file/network I/O, or transformations there.
-- Always parenthesize parallel groups: `a() >> (b() & c()) >> d()`.
-- Bind a node future with `:=` when another node must reference it explicitly,
-  such as a fan-in or a dependency on an earlier stage:
-  `(s0 := prepare()) >> (s1 := analyze(s0)) >> publish(s0, s1)`.
-  Bind the node call itself, not the whole chain.
-
-## Choosing node types
-
-- `@ava.source`: ingest or construct the first runtime value.
-- `@ava.step`: deterministic transformation.
-- `@ava.classifier_step`: TypeSafe Choice/Noul/Score questions with an injected
-  callable `ava.Classifier`; use an async body and optional runtime `questions=`.
-- `ava.agent.step(Signature, ...)` inside the workflow: one direct PredictRLM
-  invocation with signature-derived inputs and strictly validated outputs.
-- `@ava.agent_step` / `@ava.agent.step` outside workflow construction: a
-  meaningful body around PredictRLM with an injected callable `ava.Agent`.
-- `@ava.dest`: publish, export, or summarize final results.
-
-Functions may be synchronous or asynchronous. Calling a decorated node or
-inline agent inside a workflow returns a deferred `NodeFuture`, not its runtime
-value. Passing that future to another node creates the dependency.
-
-## DAG notation
-
-### Simple one-to-one flow
-
-Start with standard arrows when each node's output maps positionally to the next
-node's input:
+# Avalanche
+
+Avalanche runs workflows written in Python. A workflow is a graph of steps; a step is a
+function. Some steps are plain Python, some call an AI agent, some ask a classifier a closed
+question. An operator runs the workflow, records every run (inputs, outputs, errors, agent
+traces) and can rerun it from any step (except workflows that declare a run key). The same code runs on the local operator and on
+Avalanche Cloud.
+
+This file holds the rules that always apply and the index of the reference files. Read the
+file for a feature before you use it: each one has the full interface, a proven example and
+the mistakes to avoid.
+
+## The shape of a workflow
 
 ```python
+from pydantic import BaseModel
+
+import avalanche as ava
+
+
+class Ticket(BaseModel):
+    subject: str
+    body: str
+
+
+class Triage(BaseModel):
+    category: str
+    summary: str
+
+
+class TriageTicket(ava.Signature):
+    """Triage one support ticket: pick the best category and write a one-sentence summary."""
+
+    ticket: Ticket = ava.InputField(desc="The ticket as the customer wrote it.")
+    triage: Triage = ava.OutputField(desc="Category and one-sentence summary.")
+
+
+@ava.source
+def load_ticket() -> Ticket:
+    """Load the ticket to triage."""
+    return Ticket(subject="Charged twice", body="My card shows two charges for May.")
+
+
+@ava.agent_step(TriageTicket, runtime=ava.runtimes.PredictRLM(lm="openai/gpt-5.5"))
+async def triage_ticket(ticket: Ticket, *, agent: ava.Agent) -> Triage:
+    """Ask the agent for the ticket's category and summary."""
+    return (await agent(ticket=ticket)).outputs.triage
+
+
+@ava.dest
+def file_ticket(triage: Triage) -> str:
+    """File the ticket in the queue of its category."""
+    return f"{triage.category}: {triage.summary}"
+
+
 @ava.workflow
-def document_flow():
-    return ingest_documents() >> analyze_documents() >> publish_report()
+def support_triage():
+    """Triage a support ticket and file it."""
+    return load_ticket() >> triage_ticket() >> file_ticket()
 ```
 
-For signatures shaped like:
+## Rules that always apply
 
-```text
-ingest_documents() -> DocumentBatch
-analyze_documents(batch: DocumentBatch) -> DocumentAnalysis
-publish_report(analysis: DocumentAnalysis) -> PublishedReport
+Design:
+
+1. **Build every workflow with the DAG API**: `@ava.workflow` returning steps composed with
+   `>>` (then) and `&` (in parallel). Use a state machine only for a long-lived entity that
+   reacts to outside events in an order you cannot know in advance.
+2. **One job per step.** Plain Python (`@ava.step`) for anything a rule can decide, a
+   classifier step when the answer is one of a known set, an agent step only where judgment
+   or reading is needed. Never call a model outside an agent or classifier step.
+3. **Type every input and output.** Pass Pydantic models between steps, not free text or
+   bare dicts. Parameters are validated; return annotations are not, so return what you
+   annotate.
+4. **Every function has a one-line docstring.** A step's docstring is the description the
+   user reads under the step in the UI. For an agent step the UI shows the first line of the
+   signature's instructions, so write that line for the user too.
+5. **Name steps verb_object** (`load_orders`, `score_lead`). The names are the graph.
+6. **Side effects go in their own step, last, and must be safe to repeat.** A failed step is
+   run again: up to 8 attempts by default, at once, for any exception except
+   `ava.NonRetryableError`. Raise `ava.NonRetryableError` for errors that will not go away.
+   Make outside calls idempotent with a key built from a business id (`deal-for-lead-<id>`)
+   when the effect must happen once per thing; the run context's step key is the same across
+   retries of one run only, and changes with every new run or rerun. Set `retries=0` on a
+   step that must not repeat. A workflow with `key=` cannot be rerun, and a failed run keeps
+   its key for good: add an `attempt` or date field to the key if it must be startable again.
+7. **Secrets come from the environment or from integrations**, never from code or inputs.
+
+Composition (the mistakes that cost the most time):
+
+8. **The workflow function runs once, to build the graph.** A step call returns a
+   placeholder, not a value: no `if`, `for` or arithmetic on it. Branch with `ava.skip`,
+   loop with `.map`. Waits, decisions and child runs (`ava.sleep`, `ava.wait_for_event`,
+   `ava.decision`, `ava.call`, `ava.start_run`) are called in the workflow function, never
+   inside a step.
+9. **Parenthesise every `&` group.** `>>` binds tighter than `&`: write `(a() & b()) >> c()`.
+   `a() & b() >> c()` fails at run time, and so does returning a bare `a() & b()`.
+10. **Never pass a `>>` chain as an argument.** `x = a() >> b(); c(x)` gives `c` the output
+    of `a`, not `b`. Only returning a chain gives its last step's output. To reuse a step's
+    output, bind that step's own call: `x = b(a()); c(x)`. Continuing a chain with `>>` is fine.
+11. **`>>` spreads a returned list or tuple** across the next step's parameters. To pass a
+   list as one value, pass it explicitly: `x = load_items(); count_items(x)`.
+12. **Run input does not reach steps by parameter name.** Declare `@ava.workflow(input=Model)`
+    and give the step a parameter typed with that model, or pass `ava.input.<field>`.
+13. **To loop over items use `.map`**, not a Python loop. A map has a limit of 8 items by
+    default and 64 at most, and going over it fails the run. A mapped agent step makes one
+    agent call per item, all at once (on PredictRLM, one sandbox each): for more than a
+    handful of items, give one agent call the whole list.
+14. **A step output must be JSON-like, a Pydantic model, a dataclass, an `ava.File` or an
+    `ava.Workspace`.** Put a `datetime` or a custom class inside a model. Only the operator
+    checks this; an in-process run does not.
+15. **With `output=Model` on the workflow, the returned step must never be skipped.** A
+    skipped result is `None` and fails the run.
+
+Working:
+
+16. **Prove it before you say it works.** Start the operator, run the workflow, read the
+    result, and on failure read the failed step's error. The loop is below.
+17. **Do not invent API.** If a name, option or flag is not in these files, it does not
+    exist. Check [python-api.md](references/reference/python-api.md) and
+    [ava-cli.md](references/reference/ava-cli.md).
+18. **Tell the user what you could not run.** Agent and classifier steps need provider keys;
+    if none is set, say so, and run the graph on the operator with stand-in steps: a wiring
+    function plus a key-free twin workflow, as in
+    [testing.md](references/run/testing.md#key-free-on-the-operator). Do not leave scripting
+    in step bodies.
+
+## The working loop
+
+```bash
+PYTHONUNBUFFERED=1 uv run ava dev                 # start the operator; keep it running
+uv run ava flow list                              # what was discovered
+RUN=$(uv run ava run support_triage)              # start a run; add --input '{"field": ...}'
+uv run ava result "$RUN" --wait --json            # wait and read the result
+uv run ava run show "$RUN" --json                 # on failure: status, failed step, error
 ```
 
-the calls to `analyze_documents()` and `publish_report()` need no explicit
-arguments. `>>` records the dependency and passes the immediate upstream result
-into the next available positional or positional-or-keyword data parameter.
-Framework-injected runtime parameters are skipped.
+`ava result --json` prints a Python traceback when the run failed; that is expected, read the
+failure with `ava run show`. `ava run` prints a run id and exits 0 even when the input has a
+wrong type or breaks a constraint, so always read the run. A failed run with no steps and
+`error_code: unknown` failed while loading the file: read its log
+([debugging.md](references/guides/debugging.md)). The operator reloads changed files, so edit and run again. Provider
+keys must be in the environment of the operator, not of the shell that runs `ava run`. Full
+detail: [local.md](references/run/local.md). Failures:
+[debugging.md](references/guides/debugging.md).
 
-An inline agent follows the same ordering:
+## Where to read
 
-```python
-@ava.workflow
-def document_flow():
-    return (
-        ingest_documents()
-        >> ava.agent.step(
-            AnalyzeDocuments,
-            runtime=ava.runtimes.PredictRLM(skills=[ava.runtimes.predict_rlm.skills.pdf]),
-        )
-        >> publish_report()
-    )
-```
+Start here when the user describes a need, not a feature:
 
-Import `AnalyzeDocuments` from `signature.py`; its input field consumes the
-document batch and its single output field is the strictly validated analysis.
+| The user | Read |
+|---|---|
+| describes a process to automate | [process-to-workflow.md](references/guides/process-to-workflow.md) |
+| asks "can Avalanche do X" or you must pick between features | [choose-a-feature.md](references/guides/choose-a-feature.md) |
+| wants a common shape quickly | [patterns.md](references/guides/patterns.md) |
+| has a failing run or an error message | [debugging.md](references/guides/debugging.md) |
 
-Parallel results also bind positionally in branch order:
+Building blocks:
 
-```python
-@ava.workflow
-def comparison_flow():
-    return (load_primary() & load_secondary()) >> compare_batches()
-```
+| Topic | File |
+|---|---|
+| `@ava.workflow`, `>>` and `&`, how outputs reach the next step | [workflows.md](references/building-blocks/workflows.md) |
+| `@ava.step`, `@ava.source`, `@ava.dest`, run context, logging | [python-steps.md](references/building-blocks/python-steps.md) |
+| `@ava.agent_step`, signatures, outputs, uncertainty | [agent-steps.md](references/building-blocks/agent-steps.md) |
+| PredictRLM, ClaudeAgent, OpenAIAgent: options, models, how to choose | [runtimes.md](references/building-blocks/runtimes.md) |
+| Tools, skills and integrations for an agent | [tools-and-skills.md](references/building-blocks/tools-and-skills.md) |
+| Evaluations and agent traces | [evaluations.md](references/building-blocks/evaluations.md) |
+| `@ava.classifier_step`, question types, providers | [classifier-steps.md](references/building-blocks/classifier-steps.md) |
+| `ava.machine`, states, events | [state-machines.md](references/building-blocks/state-machines.md) |
+| Run input, `ava.File`, `ava.Workspace`, dataframes | [inputs-and-files.md](references/building-blocks/inputs-and-files.md) |
 
-This maps to `compare_batches(primary, secondary)` when its parameter order
-matches the two branch results. Do not assign intermediate futures in these
-positionally aligned flows.
+Orchestration:
 
-### Complex flow with explicit dependencies
+| Topic | File |
+|---|---|
+| `.map`, `ava.skip`, branching, child workflows (`ava.call`, `ava.start_run`) | [control-flow.md](references/orchestration/control-flow.md) |
+| Retries, non-retryable and unknown outcomes, reruns, run keys | [retries.md](references/orchestration/retries.md) |
+| `ava.sleep`, `ava.wait_for_event` | [waits.md](references/orchestration/waits.md) |
+| `ava.decision`: a person approves or chooses | [approvals.md](references/orchestration/approvals.md) |
 
-Bind node futures inline when a later node needs outputs that positional chaining
-cannot express:
+Connect:
 
-```python
-@ava.workflow(input=ProposalInput)
-def proposal_flow():
-    (
-        (s0 := prepare_inputs())
-        >> (s1 := audit_package(s0))
-        >> (s2 := build_plan(s0, s1))
-        >> (
-            (s3_briefing := draft_briefing(s1, s2))
-            & (s3_proposal := draft_proposal(s0, s1, s2))
-            & (s3_matrix := build_compliance_matrix(s1, s2))
-        )
-        >> (
-            s3 := combine_drafts(
-                s3_briefing,
-                s3_proposal,
-                s3_matrix,
-            )
-        )
-        >> publish_package(s0, s1, s2, s3)
-    )
-```
+| Topic | File |
+|---|---|
+| What starts a run: CLI, UI, REST, webhooks, cron schedules, events | [triggers.md](references/connect/triggers.md) |
+| Connectors, MCP servers, built-in integrations, connections | [integrations.md](references/connect/integrations.md) |
 
-Use `:=` and explicit node arguments when:
+Run:
 
-- a node consumes an output from an earlier, non-immediate stage;
-- a fan-in needs a subset, different order, or combination of prior outputs;
-- the same output feeds multiple later nodes;
-- a data argument must be supplied by keyword rather than position;
-- the downstream node call already contains explicit workflow arguments.
+| Topic | File |
+|---|---|
+| The local operator and reading runs from the command line | [local.md](references/run/local.md) |
+| Tests in pytest; key-free runs on the operator | [testing.md](references/run/testing.md) |
+| Running the operator as a service | [self-hosting.md](references/run/self-hosting.md) |
+| Avalanche Cloud: deploy, runs, secrets, limits | [cloud.md](references/run/cloud.md) |
+| Templates and share pages | [templates-and-sharing.md](references/run/templates-and-sharing.md) |
 
-In this form, `:=` names each reused `NodeFuture`, explicit arguments carry data,
-`>>` shows stage ordering, and parenthesized `&` groups show parallel fan-out and
-fan-in. Return the terminal `NodeFuture` when its value should be available as
-the operator run result; a publishing or persisted flow may leave the graph as
-the workflow body's expression statement.
+Reference (complete lookup tables):
 
-## Completion checks
+| Topic | File |
+|---|---|
+| Every public Python name with its signature | [python-api.md](references/reference/python-api.md) |
+| Every error type, when it is raised, what to do | [errors.md](references/reference/errors.md) |
+| Every `ava` command and flag | [ava-cli.md](references/reference/ava-cli.md) |
+| Every `delta` command and flag (Avalanche Cloud) | [delta-cli.md](references/reference/delta-cli.md) |
+| The local operator's REST API | [operator-api.md](references/reference/operator-api.md) |
+| Project files, settings, environment variables, extras | [project-layout.md](references/reference/project-layout.md) |
+| Terms | [glossary.md](references/reference/glossary.md) |
 
-- Every step has a current, succinct docstring summary in the location used by
-  the UI. Read together in graph order, the summaries tell a coherent story from
-  input to outcome, including branches and conditional outcomes.
-- User and agent aligned on goal, authoritative inputs, expected outputs,
-  success criteria, boundaries, and approvals before design.
-- Every structured inter-node data shape has a Pydantic model; compact inline
-  signature fields may use scalar types directly.
-- `flow.py` contains only the allowed declarations, has no helper definitions,
-  and ends with its workflow declarations.
-- Inline chains follow signature input/output order. In decorated functions,
-  `await agent(...)` arguments and returned fields match the signature.
-- Every named signature lives in a separate `signature.py` and every
-  signature class has an instruction-bearing docstring. Every custom Skill
-  represents knowledge or capability reused across agent steps.
-- Every tool has a stable unique function name, typed arguments, a precise
-  docstring, and a serializable return value.
-- Workflow handoff uses the operator, never a standalone Python runner.
-- Execution verification uses the operator through `uv run ava dev` or
-  `uv run ava operator` with `uv run ava run`. Exercise the browser only when
-  browser verification is needed.
-- When a browser UI is started, the user receives its exact local URL and an
-  explicit instruction to open it in a browser.
-- Operator discovery, CLI input, or browser UI is exercised only when it changes
-  or the user requests it. Hand off a requested TUI command to the user; do not
-  launch the TUI from the agent.
+## What the user can and cannot expect
+
+Say these plainly when they matter to the request:
+
+- On the local operator, a workflow run that is waiting (sleep, event, decision) does not
+  survive an operator restart; state machine instances do. If that run had a key, the key
+  stays taken by the failed run.
+- An operator cannot fast-forward a workflow's sleeps and timeouts. Make long timeouts
+  configurable to check them locally.
+- The local operator has no authentication; its UI, REST API and webhooks listen on
+  127.0.0.1 only.
+- Built-in integrations and named connections are not available on every account yet.
+  Custom connectors and MCP servers work everywhere.
+- Avalanche Cloud is in private preview.
+- Tables and streams (`avalanche.iceberg`, `avalanche.lance`, `ava.Stream`) were removed and
+  raise an error. Do not use them, and tell a user who asks.
