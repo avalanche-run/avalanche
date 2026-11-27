@@ -585,15 +585,13 @@ const WorkflowNodeCard = memo(({ data, selected }: NodeProps<Node<CardData>>) =>
           </span>
         )}
         {data.status && (
-          <span
-            className={`node-card-meta node-status absolute top-[19px] right-0 font-mono text-[8px] uppercase text-[color:var(--node-state-color)]`}
-          >
-            {capText(
-              <>
-                {!isCompact && <RetryBadge attempt={data.attempt} max={data.maxAttempts} />}
-                {data.status}
-              </>,
-            )}
+          // The retry badge sits beside the status, not inside it: `.node-status`
+          // holds only the step's state, which hosts and proofs read as its text.
+          <span className="node-card-meta absolute top-[19px] right-0 inline-flex items-center font-mono text-[8px]">
+            {!isCompact && <RetryBadge attempt={data.attempt} max={data.maxAttempts} />}
+            <span className="node-status uppercase text-[color:var(--node-state-color)]">
+              {capText(<>{data.status}</>)}
+            </span>
           </span>
         )}
       </header>

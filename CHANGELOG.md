@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A retried step's graph card shows its retry badge beside its status instead of
+  inside it, so the card's status reads only the step's state ("failed", not
+  "↻ 3/8failed") for tools that read it.
+
 - While an agent step runs on a host that has no live trace for its run, its
   Trace tab says "Live trace isn't available for this run; events appear when
   the step ends." instead of saying the node has no trace. A step that ended
