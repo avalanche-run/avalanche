@@ -807,6 +807,19 @@ def _status(url: str) -> int | None:
         return None
 
 
+def _accepts_connections(host: str, port: int) -> bool:
+    """Whether a TCP connection to ``host:port`` is accepted.
+
+    A closed port is refused at once, or, behind a firewall that drops rather than
+    rejects (macOS stealth mode), left unanswered: both mean nothing is reachable.
+    """
+    try:
+        socket.create_connection((host, port), timeout=3).close()
+    except (ConnectionRefusedError, TimeoutError):
+        return False
+    return True
+
+
 def _other_address() -> str | None:
     """An address of this machine that is not the loopback one, if it has a route."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
@@ -918,7 +931,7 @@ def test_browser_logins_refresh_and_fail_when_revoked(tmp_path):
             other_address = _other_address()
             if other_address is not None:
                 # The listener is on the loopback address and on no other.
-                assert _status(f"http://{other_address}:{login_port}/callback") is None
+                assert not _accepts_connections(other_address, login_port)
             assert waiting.poll() is None
             assert _accounts(address)["notes"] is False
             assert service.entries("tokens") == []
