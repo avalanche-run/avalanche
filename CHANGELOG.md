@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.39
 
 - A retried step's graph card shows its retry badge beside its status instead of
   inside it, so the card's status reads only the step's state ("failed", not
