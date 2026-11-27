@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The Avalanche skill has a getting-started file: how to create a starter project with
+  `uvx avalanche-ai@latest init`, how to add Avalanche to an existing project with
+  `uv add`, which extra to install for which feature, and how to check either setup with a
+  first run. `SKILL.md` links to it from its index and from the working loop.
+
 - The Avalanche skill for coding agents (`skills/avalanche`, installed by `ava init`) is
   rewritten. `SKILL.md` is now a short entry point: the rules that always apply, the working
   loop and an index. Under `references/` there is one file per feature (workflows, Python

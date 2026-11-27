@@ -143,6 +143,10 @@ Working:
 
 ## The working loop
 
+No project yet? Either `uvx avalanche-ai@latest init` in an empty directory (a starter
+project), or `uv add 'avalanche-ai[agents]'` in an existing one:
+[getting-started.md](references/getting-started.md).
+
 ```bash
 PYTHONUNBUFFERED=1 uv run ava dev                 # start the operator; keep it running
 uv run ava flow list                              # what was discovered
@@ -166,6 +170,7 @@ Start here when the user describes a need, not a feature:
 
 | The user | Read |
 |---|---|
+| has no Avalanche project yet, or wants it added to an existing project | [getting-started.md](references/getting-started.md) |
 | describes a process to automate | [process-to-workflow.md](references/guides/process-to-workflow.md) |
 | asks "can Avalanche do X" or you must pick between features | [choose-a-feature.md](references/guides/choose-a-feature.md) |
 | wants a common shape quickly | [patterns.md](references/guides/patterns.md) |
