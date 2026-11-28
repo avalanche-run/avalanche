@@ -1,6 +1,6 @@
 [project]
 name = "avalanche-ai"
-version = "0.20.39"
+version = "0.20.40"
 description = "Python toolkit for local-first data workflows"
 authors = [{ name = "Gabriel Lesperance", email = "611342+glesperance@users.noreply.github.com" }]
 requires-python = ">=3.13,<3.14"

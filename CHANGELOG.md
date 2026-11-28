@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.20.40
 
 - The Avalanche skill has a getting-started file: how to create a starter project with
   `uvx avalanche-ai@latest init`, how to add Avalanche to an existing project with
